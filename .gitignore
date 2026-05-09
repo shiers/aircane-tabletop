@@ -1,0 +1,121 @@
+# ============================================================
+# Aircane Tabletop - .gitignore
+# ============================================================
+
+# ------------------------------------------------------------
+# Kiro IDE
+# ------------------------------------------------------------
+.kiro/
+
+# ------------------------------------------------------------
+# Planning and brainstorm documents (local reference only)
+# ------------------------------------------------------------
+README_KIRO.md
+*.pdf
+
+# ------------------------------------------------------------
+# .NET / ASP.NET Core
+# ------------------------------------------------------------
+# Build output
+bin/
+obj/
+out/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# ASP.NET Core user secrets (never commit)
+**/secrets.json
+**/appsettings.Development.json
+
+# Publish output
+publish/
+**/Properties/PublishProfiles/
+
+# Test results
+TestResults/
+coverage/
+*.trx
+*.coveragexml
+
+# ------------------------------------------------------------
+# Node / Vue / Vite frontend
+# ------------------------------------------------------------
+node_modules/
+dist/
+.vite/
+.cache/
+
+# Environment files (may contain API keys)
+.env
+.env.local
+.env.*.local
+
+# Vite build output
+src/frontend/aircane-web/dist/
+
+# ------------------------------------------------------------
+# Docker
+# ------------------------------------------------------------
+# Local override files (may contain secrets or local paths)
+docker-compose.override.yml
+
+# ------------------------------------------------------------
+# PostgreSQL / Database
+# ------------------------------------------------------------
+# Local data volumes (created by Docker Compose)
+pgdata/
+redisdata/
+
+# ------------------------------------------------------------
+# AI / API keys and secrets
+# ------------------------------------------------------------
+*.key
+*.pem
+*.pfx
+*.p12
+.secrets/
+secrets/
+
+# ------------------------------------------------------------
+# Logs and temp files
+# ------------------------------------------------------------
+*.log
+logs/
+tmp/
+temp/
+
+# ------------------------------------------------------------
+# OS generated files
+# ------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ------------------------------------------------------------
+# Uploaded / imported source documents
+# (user PDFs are personal content and should not be committed)
+# ------------------------------------------------------------
+src/backend/Aircane.Api/uploads/
+storage/
+library/

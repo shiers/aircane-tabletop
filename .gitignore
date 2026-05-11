@@ -1,25 +1,15 @@
 # ============================================================
-# Aircane Tabletop - .gitignore
+# .NET / C#
 # ============================================================
-
-# ------------------------------------------------------------
-# Kiro IDE
-# ------------------------------------------------------------
-.kiro/
-
-# ------------------------------------------------------------
-# Planning and brainstorm documents (local reference only)
-# ------------------------------------------------------------
-README_KIRO.md
-*.pdf
-
-# ------------------------------------------------------------
-# .NET / ASP.NET Core
-# ------------------------------------------------------------
-# Build output
 bin/
 obj/
-out/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.idea/
+*.DotSettings.user
 
 # NuGet
 *.nupkg
@@ -30,79 +20,47 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
-# Visual Studio / Rider
-.vs/
-.idea/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-*.rsuser
+# Publish output
+publish/
+out/
 
-# ASP.NET Core user secrets (never commit)
+# ASP.NET Core user secrets
 **/secrets.json
 **/appsettings.Development.json
 
-# Publish output
-publish/
-**/Properties/PublishProfiles/
-
-# Test results
-TestResults/
-coverage/
-*.trx
-*.coveragexml
-
-# ------------------------------------------------------------
-# Node / Vue / Vite frontend
-# ------------------------------------------------------------
+# ============================================================
+# Node / Frontend
+# ============================================================
 node_modules/
 dist/
 .vite/
+.nuxt/
+.output/
 .cache/
+*.local
 
-# Environment files (may contain API keys)
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ============================================================
+# Environment and secrets
+# ============================================================
 .env
 .env.local
 .env.*.local
-
-# Vite build output
-src/frontend/aircane-web/dist/
-
-# ------------------------------------------------------------
-# Docker
-# ------------------------------------------------------------
-# Local override files (may contain secrets or local paths)
-docker-compose.override.yml
-
-# ------------------------------------------------------------
-# PostgreSQL / Database
-# ------------------------------------------------------------
-# Local data volumes (created by Docker Compose)
-pgdata/
-redisdata/
-
-# ------------------------------------------------------------
-# AI / API keys and secrets
-# ------------------------------------------------------------
-*.key
+.env.development
+.env.production
 *.pem
-*.pfx
+*.key
 *.p12
-.secrets/
-secrets/
+*.pfx
 
-# ------------------------------------------------------------
-# Logs and temp files
-# ------------------------------------------------------------
-*.log
-logs/
-tmp/
-temp/
-
-# ------------------------------------------------------------
-# OS generated files
-# ------------------------------------------------------------
+# ============================================================
+# OS files
+# ============================================================
 .DS_Store
 .DS_Store?
 ._*
@@ -112,10 +70,41 @@ ehthumbs.db
 Thumbs.db
 desktop.ini
 
-# ------------------------------------------------------------
-# Uploaded / imported source documents
-# (user PDFs are personal content and should not be committed)
-# ------------------------------------------------------------
-src/backend/Aircane.Api/uploads/
-storage/
-library/
+# ============================================================
+# Editors and IDEs
+# ============================================================
+*.swp
+*.swo
+*~
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+# Keep .vscode/extensions.json if present
+!.vscode/extensions.json
+
+# ============================================================
+# Test output
+# ============================================================
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+playwright-report/
+test-results/
+
+# ============================================================
+# Docker
+# ============================================================
+docker-compose.override.yml
+
+# ============================================================
+# Kiro
+# ============================================================
+.kiro/
+
+# ============================================================
+# Misc
+# ============================================================
+*.bak
+*.tmp
+*.log

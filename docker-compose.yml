@@ -1,0 +1,82 @@
+services:
+  # ─────────────────────────────────────────────
+  # PostgreSQL with pgvector
+  # ─────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aircane-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aircane
+      POSTGRES_USER: aircane
+      POSTGRES_PASSWORD: aircane_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aircane -d aircane"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─────────────────────────────────────────────
+  # Redis (optional — enable with --profile redis)
+  # ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: aircane-redis
+    restart: unless-stopped
+    profiles:
+      - redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ─────────────────────────────────────────────
+  # Backend — ASP.NET Core API
+  # Enable with --profile app
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: src/backend
+      dockerfile: Aircane.Api/Dockerfile
+    container_name: aircane-backend
+    restart: unless-stopped
+    profiles:
+      - app
+    ports:
+      - "5000:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=aircane;Username=aircane;Password=aircane_dev"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ─────────────────────────────────────────────
+  # Frontend — Vue 3 + Vite dev server
+  # Enable with --profile app
+  # ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: src/frontend/aircane-web
+      dockerfile: Dockerfile
+    container_name: aircane-frontend
+    restart: unless-stopped
+    profiles:
+      - app
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+    driver: local

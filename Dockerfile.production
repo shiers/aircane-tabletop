@@ -1,0 +1,75 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Aircane Tabletop — Production Multi-Stage Dockerfile
+#
+# Builds both the .NET backend and Vue frontend, then produces a minimal
+# runtime image that serves the API and static frontend files.
+#
+# Build:
+#   docker build -f Dockerfile.production -t aircane-tabletop .
+#
+# Run:
+#   docker run -p 8080:8080 \
+#     -e ConnectionStrings__DefaultConnection="Host=..." \
+#     aircane-tabletop
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ═══════════════════════════════════════════════════════════════
+# Stage 1: Frontend build
+# ═══════════════════════════════════════════════════════════════
+FROM node:20-alpine AS frontend-build
+
+WORKDIR /app
+
+COPY src/frontend/aircane-web/package.json src/frontend/aircane-web/package-lock.json* ./
+RUN npm ci --silent
+
+COPY src/frontend/aircane-web/ ./
+RUN npm run build
+
+# ═══════════════════════════════════════════════════════════════
+# Stage 2: Backend restore and build
+# ═══════════════════════════════════════════════════════════════
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS backend-build
+
+WORKDIR /src
+
+# Copy project files for layer-cached restore
+COPY src/backend/Aircane.sln ./
+COPY src/backend/Aircane.Api/Aircane.Api.csproj ./Aircane.Api/
+COPY src/backend/Aircane.Application/Aircane.Application.csproj ./Aircane.Application/
+COPY src/backend/Aircane.Domain/Aircane.Domain.csproj ./Aircane.Domain/
+COPY src/backend/Aircane.Infrastructure/Aircane.Infrastructure.csproj ./Aircane.Infrastructure/
+COPY src/backend/Aircane.Workers/Aircane.Workers.csproj ./Aircane.Workers/
+
+RUN dotnet restore Aircane.Api/Aircane.Api.csproj
+
+# Copy all backend source and publish
+COPY src/backend/ ./
+RUN dotnet publish Aircane.Api/Aircane.Api.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore
+
+# ═══════════════════════════════════════════════════════════════
+# Stage 3: Production runtime
+# ═══════════════════════════════════════════════════════════════
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+
+WORKDIR /app
+
+# Copy published backend
+COPY --from=backend-build /app/publish ./
+
+# Copy frontend static files into wwwroot for serving
+COPY --from=frontend-build /app/dist ./wwwroot/
+
+# Non-root user for security
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
+
+EXPOSE 8080
+
+ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_ENVIRONMENT=Production
+
+ENTRYPOINT ["dotnet", "Aircane.Api.dll"]

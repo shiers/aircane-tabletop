@@ -1,0 +1,53 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Aircane Tabletop — Production Docker Compose
+#
+# Usage:
+#   docker compose -f docker-compose.production.yml up -d
+#
+# This builds and runs the full production stack:
+#   - PostgreSQL with pgvector
+#   - Aircane Tabletop (backend + frontend in one container)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ─────────────────────────────────────────────
+  # PostgreSQL with pgvector
+  # ─────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aircane-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aircane
+      POSTGRES_USER: aircane
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aircane_prod}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aircane -d aircane"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─────────────────────────────────────────────
+  # Aircane Tabletop (API + static frontend)
+  # ─────────────────────────────────────────────
+  aircane:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: aircane-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=aircane;Username=aircane;Password=${POSTGRES_PASSWORD:-aircane_prod}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local

@@ -45,7 +45,7 @@ builder.Services.AddCors(options =>
 
 // Configure JWT Bearer authentication for MVP session tokens.
 // The signing key must be set via environment variable (Jwt__SigningKey) or user secrets.
-// The development key in appsettings.Development.json is for local dev only — never use it in production.
+// The development key in appsettings.Development.json is for local dev only - never use it in production.
 var jwtSigningKey = builder.Configuration["Jwt:SigningKey"];
 if (!string.IsNullOrWhiteSpace(jwtSigningKey))
 {
@@ -84,7 +84,7 @@ if (!string.IsNullOrWhiteSpace(jwtSigningKey))
 }
 else
 {
-    // No signing key configured — add a no-op authentication scheme so the pipeline doesn't break.
+    // No signing key configured - add a no-op authentication scheme so the pipeline doesn't break.
     // This allows the app to start without auth in environments where it hasn't been configured yet.
     builder.Services.AddAuthentication();
 }
@@ -117,7 +117,7 @@ var app = builder.Build();
 
 // SECURITY: Block direct access to source document files (PDFs, etc.).
 // Aircane never serves source documents to clients. Files are read server-side for indexing only.
-// This middleware is a defense-in-depth measure — no static file serving is configured for user
+// This middleware is a defense-in-depth measure - no static file serving is configured for user
 // content directories, but this ensures requests are rejected even if a misconfiguration occurs.
 app.UseSourceFileAccessBlocker();
 
@@ -126,15 +126,15 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// SignalR hubs — authorization is enforced via [Authorize] attributes on the hub classes.
+// SignalR hubs - authorization is enforced via [Authorize] attributes on the hub classes.
 app.MapHub<LibraryHub>("/hubs/library");
 app.MapHub<SessionHub>("/hubs/session");
 
-// Health endpoint — reports API, database, vector search, and AI provider status
+// Health endpoint - reports API, database, vector search, and AI provider status
 app.MapGet("/health", async (HealthCheckService healthService, CancellationToken ct) =>
 {
     var result = await healthService.CheckAllAsync(ct);
-    var statusCode = result.Status == "healthy" ? 200 : 503;
+    var statusCode = result.Status == "unhealthy" ? 503 : 200;
     return Results.Json(result, statusCode: statusCode);
 })
 .WithName("Health")

@@ -37,9 +37,11 @@ public sealed class HealthCheckService
         var vectorSearch = await CheckVectorSearchAsync(ct);
         var aiProvider = CheckAiProvider();
 
-        var overallStatus = (database.Status == "healthy" && vectorSearch.Status == "healthy")
-            ? "healthy"
-            : "degraded";
+        var overallStatus = database.Status == "unhealthy"
+            ? "unhealthy"
+            : (database.Status == "healthy" && vectorSearch.Status == "healthy" && aiProvider.Status == "healthy")
+                ? "healthy"
+                : "degraded";
 
         var result = new HealthCheckResult(overallStatus, api, database, vectorSearch, aiProvider);
 

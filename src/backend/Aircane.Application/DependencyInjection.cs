@@ -17,7 +17,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddValidatorsFromAssemblyContaining<RegisterFolderValidator>();
-        services.AddSingleton<AiOutputParser>();
+        services.AddScoped<AiOutputParser>();
         services.AddSingleton<IGameSystemDefaultsApplicator, GameSystemDefaultsApplicator>();
 
         // Game System Definition serialization

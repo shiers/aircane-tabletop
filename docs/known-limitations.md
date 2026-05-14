@@ -16,13 +16,14 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 
 ## Game Systems
 
-- **D&D 5e 2014 only.** Pathfinder 2e support is planned but not yet implemented.
+- **System-agnostic framework is in place, but built-in definitions are limited.** The Game System Definition engine supports any TTRPG declaratively, but only D&D 5e 2014 and a generic freeform system ship as starter templates. Custom system definitions can be created but are not yet battle-tested across all mechanics.
 - **No full combat automation.** The AI can request rolls and propose damage/healing, but there is no automated initiative tracker, turn enforcement, or condition duration tracking.
 - **Encounter validation is basic.** The encounter difficulty checker uses placeholder logic and may not accurately assess all encounters.
 
 ## AI
 
-- **AI quality depends on the provider and model.** Smaller local models (via Ollama) produce lower-quality narration and rules answers than cloud models like GPT-4o.
+- **Only OpenAI is implemented as a chat provider.** Azure OpenAI, AWS Bedrock, Ollama (chat), and Grok are planned but not yet wired up. Configuring an unimplemented provider will silently fall back to the Fake provider.
+- **AI quality depends on the provider and model.** Smaller local models (via Ollama, once implemented) will produce lower-quality narration and rules answers than cloud models like GPT-4o.
 - **No streaming narration in all modes.** Some AI responses may appear all at once rather than streaming token-by-token, depending on the provider.
 - **Context window limits.** Very long sessions or large document libraries may exceed the AI's context window. The RAG pipeline mitigates this but cannot eliminate it.
 - **No multi-turn memory beyond session events.** The AI does not have persistent memory across sessions beyond what is stored in campaign state.

@@ -4,14 +4,16 @@ Aircane Tabletop supports multiple AI providers. You can configure them through 
 
 ## Supported Providers
 
-| Provider | Use Case | Requires Internet |
-|----------|----------|-------------------|
-| **OpenAI** | GPT-4o, GPT-4o-mini | Yes |
-| **Azure OpenAI** | OpenAI models on Azure | Yes |
-| **AWS Bedrock** | Claude, Titan, etc. | Yes |
-| **Ollama** | Local models (fully offline) | No |
-| **Grok (xAI)** | Grok models | Yes |
-| **Fake** | Development/testing (deterministic) | No |
+| Provider | Use Case | Requires Internet | Status |
+|----------|----------|-------------------|--------|
+| **OpenAI** | GPT-4o, GPT-4o-mini | Yes | Implemented |
+| **Azure OpenAI** | OpenAI models on Azure | Yes | Planned |
+| **AWS Bedrock** | Claude, Titan, etc. | Yes | Planned |
+| **Ollama** | Local models (fully offline) | No | Planned (embeddings only for now) |
+| **Grok (xAI)** | Grok models | Yes | Planned |
+| **Fake** | Development/testing (deterministic) | No | Implemented |
+
+> **Note:** Only OpenAI and Fake are currently implemented as chat AI providers. Ollama is implemented for embeddings only. Other providers will fall back to Fake until their implementations are added. Configuration examples below are provided so you can pre-configure credentials for when support lands.
 
 ## Quick Setup via UI
 

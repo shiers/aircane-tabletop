@@ -29,7 +29,7 @@ This checklist verifies release readiness for the Aircane Tabletop MVP. Run thro
 | # | Action | Expected Result | Pass |
 |---|--------|-----------------|------|
 | 2.1 | Navigate to Campaigns and click "Create Campaign" | Campaign creation form appears | [ ] |
-| 2.2 | Enter a campaign name, select D&D 5e 2014 ruleset, choose an AI role (e.g., Co-DM), and set AI authority (e.g., Ask Before Applying) | Campaign is created and appears in the campaign list | [ ] |
+| 2.2 | Enter a campaign name, select a game system (e.g., D&D 5e 2014), choose an AI role (e.g., Co-DM), and set AI authority (e.g., Ask Before Applying) | Campaign is created and appears in the campaign list | [ ] |
 | 2.3 | Open the campaign detail page | Campaign shows correct name, ruleset, AI role, and authority settings | [ ] |
 
 ---

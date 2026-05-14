@@ -142,6 +142,7 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
     /// <summary>
     /// Extracts text from all pages and attempts to parse "Label: Value" patterns.
     /// This is a best-effort heuristic for text-layer PDFs that are not form-fillable.
+    /// Uses word-level extraction with Y-position grouping for consistent cross-platform behavior.
     /// </summary>
     private static Dictionary<string, string> TryExtractTextFields(
         PdfDocument document,
@@ -151,11 +152,20 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
 
         try
         {
-            foreach (var text in document.GetPages().Select(p => p.Text))
+            foreach (var page in document.GetPages())
             {
-                if (string.IsNullOrWhiteSpace(text))
+                var words = page.GetWords().ToList();
+                if (words.Count == 0)
                     continue;
 
+                // Group words into lines by Y-position (words within 3pt of each other are on the same line)
+                var lines = words
+                    .GroupBy(w => Math.Round(w.BoundingBox.Bottom / 3.0) * 3.0)
+                    .OrderByDescending(g => g.Key) // top of page first
+                    .Select(g => string.Join(" ", g.OrderBy(w => w.BoundingBox.Left).Select(w => w.Text)))
+                    .ToList();
+
+                var text = string.Join("\n", lines);
                 ParseLabelValuePairs(text, fields);
             }
         }

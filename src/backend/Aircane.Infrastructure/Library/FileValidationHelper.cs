@@ -66,25 +66,39 @@ public static class FileValidationHelper
     /// The sanitized name is used only for display/metadata; the actual stored file
     /// always uses a GUID-based name.
     /// </summary>
+    // Characters that are invalid on Windows filesystems. We enforce these on all
+    // platforms so that sanitized names are portable regardless of where the server runs.
+    private static readonly HashSet<char> WindowsInvalidChars = new(
+        Path.GetInvalidFileNameChars()
+            .Concat(new[] { '<', '>', ':', '"', '|', '?', '*', '\\', '/' }));
+
     public static string SanitizeFileName(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
             return "upload";
 
-        // Strip directory components — take only the last segment.
-        fileName = Path.GetFileName(fileName);
+        // Normalize path separators so we can strip directory components on any OS.
+        // This ensures Windows-style paths like C:\Users\admin\file.pdf are handled on Linux.
+        fileName = fileName.Replace('\\', '/');
+
+        // Strip directory components - take only the last segment after any slash.
+        var lastSlash = fileName.LastIndexOf('/');
+        if (lastSlash >= 0)
+            fileName = fileName[(lastSlash + 1)..];
+
+        // Strip Windows drive letter prefix if still present (e.g. "C:file.pdf").
+        if (fileName.Length >= 2 && fileName[1] == ':' && char.IsLetter(fileName[0]))
+            fileName = fileName[2..];
 
         // Replace characters that are invalid on Windows or Linux filesystems.
-        var invalidChars = Path.GetInvalidFileNameChars();
-        foreach (var c in invalidChars)
+        // We use a fixed set so behavior is consistent across platforms.
+        foreach (var c in WindowsInvalidChars)
             fileName = fileName.Replace(c, '_');
 
-        // Replace additional risky characters not always covered by GetInvalidFileNameChars on all platforms.
+        // Collapse double-dots to prevent extension spoofing and path traversal.
         fileName = fileName
-            .Replace("..", "_")   // collapse double-dots
-            .Replace("/", "_")
-            .Replace("\\", "_")
-            .Replace("\0", "_");  // null byte — always unsafe
+            .Replace("..", "_")
+            .Replace("\0", "_");  // null byte - always unsafe
 
         // Trim whitespace and leading/trailing dots.
         fileName = fileName.Trim().Trim('.');

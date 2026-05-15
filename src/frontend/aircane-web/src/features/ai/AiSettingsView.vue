@@ -6,7 +6,6 @@ import {
   updateAiConfig,
   testAiConnection,
   getProviders,
-  type AiProviderConfig,
   type UpdateAiProviderRequest,
   type TestConnectionResult,
   type ProviderInfo,
@@ -203,60 +202,64 @@ function isKeyMasked(value: string): boolean {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto p-6">
-    <h1 class="text-2xl font-bold mb-2">AI Provider Settings</h1>
-    <p class="text-gray-600 mb-6">
-      Configure which AI provider powers rules lookup, narration, and the AI DM runtime.
-      API keys are stored server-side only and never sent to the browser.
-    </p>
+  <div class="mx-auto max-w-2xl space-y-6">
+    <!-- Page header -->
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-white">AI Provider Settings</h1>
+        <p class="mt-1 text-sm text-gray-400">
+          Configure which AI provider powers rules lookup, narration, and the AI DM runtime.
+          API keys are stored server-side only and never sent to the browser.
+        </p>
+      </div>
+    </div>
 
     <!-- Loading state -->
-    <div v-if="loading" class="text-gray-500">Loading configuration...</div>
+    <div v-if="loading" class="text-gray-400">Loading configuration...</div>
 
     <!-- Error banner -->
     <div
       v-if="error"
-      class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4"
+      class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300"
       role="alert"
     >
       {{ error }}
     </div>
 
     <!-- Success banner -->
-    <div
+    <output
       v-if="successMessage"
-      class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded mb-4"
-      role="status"
+      class="block rounded-lg border border-green-800 bg-green-950 px-4 py-3 text-sm text-green-300"
     >
       {{ successMessage }}
-    </div>
+    </output>
 
     <!-- Test result banner -->
     <div
       v-if="testResult"
       :class="[
-        'px-4 py-3 rounded mb-4 border',
+        'rounded-lg px-4 py-3 border text-sm',
         testResult.success
-          ? 'bg-green-50 border-green-200 text-green-700'
-          : 'bg-red-50 border-red-200 text-red-700',
+          ? 'bg-green-950 border-green-800 text-green-300'
+          : 'bg-red-950 border-red-800 text-red-300',
       ]"
       role="status"
     >
       <p class="font-medium">{{ testResult.success ? '✓ Connection successful' : '✗ Connection failed' }}</p>
-      <p v-if="testResult.message" class="text-sm mt-1">{{ testResult.message }}</p>
-      <p v-if="testResult.model" class="text-sm mt-1">Model: {{ testResult.model }}</p>
+      <p v-if="testResult.message" class="mt-1">{{ testResult.message }}</p>
+      <p v-if="testResult.model" class="mt-1">Model: {{ testResult.model }}</p>
     </div>
 
     <form v-if="!loading" @submit.prevent="saveConfig" class="space-y-6">
       <!-- Provider selector -->
       <div>
-        <label for="provider-select" class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="provider-select" class="block text-sm font-medium text-gray-300 mb-1">
           Active AI Provider
         </label>
         <select
           id="provider-select"
           v-model.number="activeProvider"
-          class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500 focus:border-aircane-500"
         >
           <option v-for="p in providers" :key="p.id" :value="p.id">
             {{ p.name }}
@@ -270,31 +273,31 @@ function isKeyMasked(value: string): boolean {
       <!-- OpenAI settings -->
       <fieldset
         v-if="activeProvider === AiProviderType.OpenAi"
-        class="border border-gray-200 rounded-md p-4 space-y-4"
+        class="border border-surface-700/50 rounded-md p-4 space-y-4"
       >
-        <legend class="text-sm font-medium text-gray-700 px-2">OpenAI Configuration</legend>
+        <legend class="text-sm font-medium text-gray-300 px-2">OpenAI Configuration</legend>
 
         <div>
-          <label for="openai-key" class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+          <label for="openai-key" class="block text-sm font-medium text-gray-300 mb-1">API Key</label>
           <input
             id="openai-key"
             v-model="openAiApiKey"
             type="password"
             placeholder="sk-..."
             autocomplete="off"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
           <p class="text-xs text-gray-500 mt-1">Stored server-side only. Leave unchanged to keep existing key.</p>
         </div>
 
         <div>
-          <label for="openai-model" class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+          <label for="openai-model" class="block text-sm font-medium text-gray-300 mb-1">Model</label>
           <input
             id="openai-model"
             v-model="openAiModel"
             type="text"
             placeholder="gpt-4o-mini"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
       </fieldset>
@@ -302,52 +305,52 @@ function isKeyMasked(value: string): boolean {
       <!-- Azure OpenAI settings -->
       <fieldset
         v-if="activeProvider === AiProviderType.AzureOpenAi"
-        class="border border-gray-200 rounded-md p-4 space-y-4"
+        class="border border-surface-700/50 rounded-md p-4 space-y-4"
       >
-        <legend class="text-sm font-medium text-gray-700 px-2">Azure OpenAI Configuration</legend>
+        <legend class="text-sm font-medium text-gray-300 px-2">Azure OpenAI Configuration</legend>
 
         <div>
-          <label for="azure-key" class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+          <label for="azure-key" class="block text-sm font-medium text-gray-300 mb-1">API Key</label>
           <input
             id="azure-key"
             v-model="azureApiKey"
             type="password"
             placeholder="Azure API key"
             autocomplete="off"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
 
         <div>
-          <label for="azure-endpoint" class="block text-sm font-medium text-gray-700 mb-1">Endpoint</label>
+          <label for="azure-endpoint" class="block text-sm font-medium text-gray-300 mb-1">Endpoint</label>
           <input
             id="azure-endpoint"
             v-model="azureEndpoint"
             type="url"
             placeholder="https://your-resource.openai.azure.com/"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
 
         <div>
-          <label for="azure-deployment" class="block text-sm font-medium text-gray-700 mb-1">Deployment Name</label>
+          <label for="azure-deployment" class="block text-sm font-medium text-gray-300 mb-1">Deployment Name</label>
           <input
             id="azure-deployment"
             v-model="azureDeploymentName"
             type="text"
             placeholder="gpt-4o-mini"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
 
         <div>
-          <label for="azure-version" class="block text-sm font-medium text-gray-700 mb-1">API Version</label>
+          <label for="azure-version" class="block text-sm font-medium text-gray-300 mb-1">API Version</label>
           <input
             id="azure-version"
             v-model="azureApiVersion"
             type="text"
             placeholder="2024-02-01"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
       </fieldset>
@@ -355,53 +358,53 @@ function isKeyMasked(value: string): boolean {
       <!-- AWS Bedrock settings -->
       <fieldset
         v-if="activeProvider === AiProviderType.AwsBedrock"
-        class="border border-gray-200 rounded-md p-4 space-y-4"
+        class="border border-surface-700/50 rounded-md p-4 space-y-4"
       >
-        <legend class="text-sm font-medium text-gray-700 px-2">AWS Bedrock Configuration</legend>
+        <legend class="text-sm font-medium text-gray-300 px-2">AWS Bedrock Configuration</legend>
 
         <div>
-          <label for="aws-key-id" class="block text-sm font-medium text-gray-700 mb-1">Access Key ID</label>
+          <label for="aws-key-id" class="block text-sm font-medium text-gray-300 mb-1">Access Key ID</label>
           <input
             id="aws-key-id"
             v-model="awsAccessKeyId"
             type="password"
             placeholder="AKIA..."
             autocomplete="off"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
 
         <div>
-          <label for="aws-secret" class="block text-sm font-medium text-gray-700 mb-1">Secret Access Key</label>
+          <label for="aws-secret" class="block text-sm font-medium text-gray-300 mb-1">Secret Access Key</label>
           <input
             id="aws-secret"
             v-model="awsSecretAccessKey"
             type="password"
             placeholder="Secret access key"
             autocomplete="off"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
 
         <div>
-          <label for="aws-region" class="block text-sm font-medium text-gray-700 mb-1">Region</label>
+          <label for="aws-region" class="block text-sm font-medium text-gray-300 mb-1">Region</label>
           <input
             id="aws-region"
             v-model="awsRegion"
             type="text"
             placeholder="us-east-1"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
 
         <div>
-          <label for="aws-model" class="block text-sm font-medium text-gray-700 mb-1">Model ID</label>
+          <label for="aws-model" class="block text-sm font-medium text-gray-300 mb-1">Model ID</label>
           <input
             id="aws-model"
             v-model="awsModelId"
             type="text"
             placeholder="anthropic.claude-3-sonnet-20240229-v1:0"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
       </fieldset>
@@ -409,30 +412,30 @@ function isKeyMasked(value: string): boolean {
       <!-- Ollama settings -->
       <fieldset
         v-if="activeProvider === AiProviderType.Ollama"
-        class="border border-gray-200 rounded-md p-4 space-y-4"
+        class="border border-surface-700/50 rounded-md p-4 space-y-4"
       >
-        <legend class="text-sm font-medium text-gray-700 px-2">Ollama Configuration</legend>
+        <legend class="text-sm font-medium text-gray-300 px-2">Ollama Configuration</legend>
 
         <div>
-          <label for="ollama-url" class="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
+          <label for="ollama-url" class="block text-sm font-medium text-gray-300 mb-1">Base URL</label>
           <input
             id="ollama-url"
             v-model="ollamaBaseUrl"
             type="url"
             placeholder="http://localhost:11434"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
           <p class="text-xs text-gray-500 mt-1">No API key required. Ollama runs fully offline.</p>
         </div>
 
         <div>
-          <label for="ollama-model" class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+          <label for="ollama-model" class="block text-sm font-medium text-gray-300 mb-1">Model</label>
           <input
             id="ollama-model"
             v-model="ollamaModel"
             type="text"
             placeholder="llama3"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
       </fieldset>
@@ -440,31 +443,31 @@ function isKeyMasked(value: string): boolean {
       <!-- Grok settings -->
       <fieldset
         v-if="activeProvider === AiProviderType.Grok"
-        class="border border-gray-200 rounded-md p-4 space-y-4"
+        class="border border-surface-700/50 rounded-md p-4 space-y-4"
       >
-        <legend class="text-sm font-medium text-gray-700 px-2">Grok (xAI) Configuration</legend>
+        <legend class="text-sm font-medium text-gray-300 px-2">Grok (xAI) Configuration</legend>
 
         <div>
-          <label for="grok-key" class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+          <label for="grok-key" class="block text-sm font-medium text-gray-300 mb-1">API Key</label>
           <input
             id="grok-key"
             v-model="grokApiKey"
             type="password"
             placeholder="xai-..."
             autocomplete="off"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
           <p class="text-xs text-gray-500 mt-1">Stored server-side only. Leave unchanged to keep existing key.</p>
         </div>
 
         <div>
-          <label for="grok-model" class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+          <label for="grok-model" class="block text-sm font-medium text-gray-300 mb-1">Model</label>
           <input
             id="grok-model"
             v-model="grokModel"
             type="text"
             placeholder="grok-3-mini"
-            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
       </fieldset>
@@ -472,10 +475,10 @@ function isKeyMasked(value: string): boolean {
       <!-- Fake provider info -->
       <div
         v-if="activeProvider === AiProviderType.Fake"
-        class="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded"
+        class="rounded-lg border border-yellow-800 bg-yellow-950/40 px-4 py-3 text-sm text-yellow-300"
       >
         <p class="font-medium">Development Mode</p>
-        <p class="text-sm mt-1">
+        <p class="mt-1 text-yellow-400">
           The fake provider returns deterministic responses for testing. No external API calls are made.
         </p>
       </div>
@@ -485,7 +488,7 @@ function isKeyMasked(value: string): boolean {
         <button
           type="submit"
           :disabled="saving"
-          class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="rounded-lg bg-aircane-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {{ saving ? 'Saving...' : 'Save Configuration' }}
         </button>
@@ -493,7 +496,7 @@ function isKeyMasked(value: string): boolean {
         <button
           type="button"
           :disabled="testing"
-          class="px-4 py-2 bg-gray-100 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="rounded-lg border border-gray-600 bg-surface-850 px-4 py-2 text-sm font-semibold text-gray-300 shadow hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:opacity-50 disabled:cursor-not-allowed"
           @click="testConnection"
         >
           {{ testing ? 'Testing...' : 'Test Connection' }}

@@ -10,7 +10,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as signalR from '@microsoft/signalr'
 import { useSessionStore } from './store'
-import { endSession, SessionStatus, type ParticipantDto } from './api'
+import { endSession, SessionStatus } from './api'
 import { getRollLog, type RollDto } from '../dice/api'
 import LanJoinScreen from './LanJoinScreen.vue'
 import ParticipantApprovalPanel from './ParticipantApprovalPanel.vue'
@@ -197,61 +197,50 @@ onUnmounted(async () => {
 </script>
 
 <template>
-  <main class="min-h-screen bg-gray-950 text-gray-100">
-    <!-- Header -->
-    <header class="border-b border-gray-800 px-6 py-4">
-      <div class="mx-auto flex max-w-7xl items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-          <RouterLink
-            to="/sessions"
-            class="text-sm text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-            aria-label="Back to sessions"
-          >
-            ← Sessions
-          </RouterLink>
-          <span class="text-gray-700" aria-hidden="true">/</span>
-          <h1 class="text-lg font-semibold text-white">
-            {{ store.currentSession?.name ?? 'Loading…' }}
-          </h1>
-          <span
-            v-if="store.currentSession"
-            :class="{
-              'text-green-400': store.currentSession.status === SessionStatus.Active,
-              'text-yellow-400': store.currentSession.status === SessionStatus.Pending,
-              'text-orange-400': store.currentSession.status === SessionStatus.Paused,
-              'text-gray-500': store.currentSession.status === SessionStatus.Ended,
-            }"
-            class="text-xs font-medium"
-          >
-            {{
-              store.currentSession.status === SessionStatus.Active ? 'Active'
-              : store.currentSession.status === SessionStatus.Pending ? 'Pending'
-              : store.currentSession.status === SessionStatus.Paused ? 'Paused'
-              : 'Ended'
-            }}
-          </span>
-        </div>
-
-        <!-- Session controls -->
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            :disabled="endingSession || store.currentSession?.status === SessionStatus.Ended"
-            class="rounded-md border border-red-800 bg-red-950 px-3 py-1.5 text-sm font-medium text-red-300 hover:bg-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 transition-colors"
-            @click="handleEndSession"
-          >
-            <span v-if="endingSession">Ending…</span>
-            <span v-else>End Session</span>
-          </button>
-        </div>
+  <div class="mx-auto max-w-6xl space-y-6">
+    <!-- Page header -->
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <h1 class="text-2xl font-bold text-white">
+          {{ store.currentSession?.name ?? 'Loading…' }}
+        </h1>
+        <span
+          v-if="store.currentSession"
+          :class="{
+            'text-green-400': store.currentSession.status === SessionStatus.Active,
+            'text-yellow-400': store.currentSession.status === SessionStatus.Pending,
+            'text-orange-400': store.currentSession.status === SessionStatus.Paused,
+            'text-gray-500': store.currentSession.status === SessionStatus.Ended,
+          }"
+          class="text-xs font-medium"
+        >
+          {{
+            store.currentSession.status === SessionStatus.Active ? 'Active'
+            : store.currentSession.status === SessionStatus.Pending ? 'Pending'
+            : store.currentSession.status === SessionStatus.Paused ? 'Paused'
+            : 'Ended'
+          }}
+        </span>
       </div>
-    </header>
+
+      <!-- Session controls -->
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          :disabled="endingSession || store.currentSession?.status === SessionStatus.Ended"
+          class="rounded-md border border-red-800 bg-red-950 px-3 py-1.5 text-sm font-medium text-red-300 hover:bg-red-900 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 transition-colors"
+          @click="handleEndSession"
+        >
+          <span v-if="endingSession">Ending…</span>
+          <span v-else>End Session</span>
+        </button>
+      </div>
+    </div>
 
     <!-- Error banner -->
     <div
       v-if="store.error || hubError || endError"
       role="alert"
-      class="mx-auto max-w-7xl px-6 pt-4"
     >
       <div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">
         {{ store.error ?? hubError ?? endError }}
@@ -268,9 +257,9 @@ onUnmounted(async () => {
       <span class="text-gray-400">Loading session…</span>
     </div>
 
-    <div v-else-if="store.currentSession" class="mx-auto max-w-7xl px-6 py-6">
+    <template v-else-if="store.currentSession">
       <!-- LAN join info (shown when invite code is available) -->
-      <div v-if="showLanJoin" class="mb-6">
+      <div v-if="showLanJoin">
         <LanJoinScreen
           :session="store.currentSession"
           :join-url="joinUrl"
@@ -283,7 +272,7 @@ onUnmounted(async () => {
         <!-- Left: Participants + AI proposals -->
         <div class="space-y-6 lg:col-span-2">
           <!-- Participant approval panel -->
-          <div class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+          <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-6">
             <ParticipantApprovalPanel
               :session-id="sessionId"
               :participants="store.participants"
@@ -295,7 +284,7 @@ onUnmounted(async () => {
           </div>
 
           <!-- AI proposals placeholder -->
-          <div class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+          <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-6">
             <h2 class="mb-3 text-lg font-semibold text-white">Pending AI Proposals</h2>
             <p class="text-sm text-gray-500">
               AI proposals will appear here when the AI DM runtime is active.
@@ -306,7 +295,7 @@ onUnmounted(async () => {
         <!-- Right: Chat + Roll log -->
         <div class="space-y-6">
           <!-- Chat -->
-          <div class="rounded-xl border border-gray-800 bg-gray-900 p-6 flex flex-col" style="height: 400px;">
+          <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-6 flex flex-col" style="height: 400px;">
             <ChatPanel
               :messages="chatMessages"
               :disabled="!hubConnection"
@@ -317,7 +306,7 @@ onUnmounted(async () => {
           </div>
 
           <!-- Roll log -->
-          <div class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+          <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-6">
             <h3 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
               Roll Log
             </h3>
@@ -347,6 +336,6 @@ onUnmounted(async () => {
           </div>
         </div>
       </div>
-    </div>
-  </main>
+    </template>
+  </div>
 </template>

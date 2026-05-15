@@ -39,28 +39,17 @@ async function submitQuestion() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-950 text-gray-100">
-    <!-- Header -->
-    <header class="border-b border-gray-800 px-6 py-4">
-      <div class="mx-auto flex max-w-3xl items-center justify-between">
-        <div class="flex items-center gap-3">
-          <RouterLink
-            to="/"
-            class="text-sm text-gray-400 hover:text-white"
-            aria-label="Back to home"
-          >
-            ← Home
-          </RouterLink>
-          <h1 class="text-xl font-bold tracking-tight text-aircane-400">Rules Lookup</h1>
-        </div>
-      </div>
-    </header>
-
-    <main class="mx-auto max-w-3xl px-6 py-8">
-      <p class="mb-6 text-gray-400">
+  <div class="mx-auto max-w-3xl space-y-6">
+    <!-- Page header -->
+    <div>
+      <h1 class="text-2xl font-bold text-white">Rules Lookup</h1>
+      <p class="mt-1 text-sm text-gray-400">
         Ask a rules question and get an AI-generated answer grounded in your indexed source
         documents.
       </p>
+    </div>
+
+    <div>
 
       <!-- Question form -->
       <form @submit.prevent="submitQuestion" class="space-y-4">
@@ -73,7 +62,7 @@ async function submitQuestion() {
             v-model="question"
             rows="3"
             placeholder="e.g. How does grappling work in D&D 5e?"
-            class="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:ring-2 focus:ring-aircane-500 focus:outline-none"
+            class="w-full rounded-lg border border-surface-700 bg-surface-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-600 focus:ring-2 focus:ring-aircane-600/20 focus:outline-none"
             :disabled="loading"
           ></textarea>
         </div>
@@ -89,7 +78,7 @@ async function submitQuestion() {
               v-model="gameSystem"
               type="text"
               placeholder="e.g. D&D 5e 2014"
-              class="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:ring-2 focus:ring-aircane-500 focus:outline-none"
+              class="w-full rounded-lg border border-surface-700 bg-surface-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-600 focus:ring-2 focus:ring-aircane-600/20 focus:outline-none"
               :disabled="loading"
             />
           </div>
@@ -102,7 +91,7 @@ async function submitQuestion() {
               v-model="ruleset"
               type="text"
               placeholder="e.g. PHB, DMG"
-              class="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:ring-2 focus:ring-aircane-500 focus:outline-none"
+              class="w-full rounded-lg border border-surface-700 bg-surface-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-600 focus:ring-2 focus:ring-aircane-600/20 focus:outline-none"
               :disabled="loading"
             />
           </div>
@@ -186,13 +175,13 @@ async function submitQuestion() {
         </output>
 
         <!-- Answer -->
-        <div class="rounded-lg border border-gray-800 bg-gray-900 p-5">
+        <div class="rounded-lg border border-surface-700/50 bg-surface-850 p-5">
           <h2 class="mb-3 text-lg font-semibold text-white">Answer</h2>
           <div class="whitespace-pre-wrap text-gray-300 leading-relaxed">{{ result.answer }}</div>
         </div>
 
         <!-- Citations -->
-        <div v-if="result.citations.length > 0" class="rounded-lg border border-gray-800 bg-gray-900 p-5">
+        <div v-if="result.citations.length > 0" class="rounded-lg border border-surface-700/50 bg-surface-850 p-5">
           <h2 class="mb-3 text-lg font-semibold text-white">Sources</h2>
           <ul class="space-y-2">
             <li
@@ -220,6 +209,6 @@ async function submitQuestion() {
           No specific citations were returned for this answer.
         </p>
       </div>
-    </main>
+    </div>
   </div>
 </template>

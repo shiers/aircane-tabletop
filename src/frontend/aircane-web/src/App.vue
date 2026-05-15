@@ -1,7 +1,9 @@
 <script setup lang="ts">
-// Root application component - renders the active route view
+import AppLayout from '@/shared/components/AppLayout.vue'
 </script>
 
 <template>
-  <RouterView />
+  <AppLayout>
+    <RouterView />
+  </AppLayout>
 </template>

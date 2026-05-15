@@ -208,18 +208,18 @@ async function handleDelete(folder: WatchedFolderDto): Promise<void> {
 
             <!-- Scan result summary -->
             <div
-              v-if="scanResultMap[folder.id]"
+              v-if="store.scanResultMap[folder.id]"
               class="mt-2 text-xs text-gray-500"
               aria-live="polite"
             >
-              Last scan: {{ scanResultMap[folder.id].newDocuments }} new,
-              {{ scanResultMap[folder.id].updatedDocuments }} updated,
-              {{ scanResultMap[folder.id].unchangedDocuments }} unchanged
+              Last scan: {{ store.scanResultMap[folder.id].newDocuments }} new,
+              {{ store.scanResultMap[folder.id].updatedDocuments }} updated,
+              {{ store.scanResultMap[folder.id].unchangedDocuments }} unchanged
               <span
-                v-if="scanResultMap[folder.id].errors.length > 0"
+                v-if="store.scanResultMap[folder.id].errors.length > 0"
                 class="ml-1 text-orange-400"
               >
-                · {{ scanResultMap[folder.id].errors.length }} error(s)
+                · {{ store.scanResultMap[folder.id].errors.length }} error(s)
               </span>
             </div>
           </div>

@@ -163,7 +163,7 @@ public sealed class AiSettingsService : IAiSettingsService
                 AiProviderType.AzureOpenAi => await TestAzureOpenAiAsync(request.AzureOpenAi, ct),
                 AiProviderType.Ollama => await TestOllamaAsync(request.Ollama, ct),
                 AiProviderType.Grok => await TestGrokAsync(request.Grok, ct),
-                AiProviderType.AwsBedrock => await TestAwsBedrockAsync(request.AwsBedrock),
+                AiProviderType.AwsBedrock => await TestAwsBedrockAsync(MergeBedrockSettings(request.AwsBedrock)),
                 AiProviderType.Fake => new TestConnectionResult
                 {
                     Success = true,
@@ -194,12 +194,19 @@ public sealed class AiSettingsService : IAiSettingsService
     private async Task<TestConnectionResult> TestOpenAiAsync(
         OpenAiSettingsDto? settings, CancellationToken ct)
     {
-        if (settings is null || string.IsNullOrWhiteSpace(settings.ApiKey))
+        // Fall back to stored runtime key when the request omits it (masked on frontend)
+        var apiKey = settings?.ApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+            apiKey = GetSetting("Ai:OpenAi:ApiKey");
+
+        if (string.IsNullOrWhiteSpace(apiKey))
             return Fail("OpenAI API key is required.");
+
+        var model = settings?.Model ?? GetSetting("Ai:OpenAi:Model") ?? "gpt-4o-mini";
 
         var client = _httpClientFactory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", settings.ApiKey);
+            new AuthenticationHeaderValue("Bearer", apiKey);
 
         // Use the models endpoint as a lightweight connectivity check
         var response = await client.GetAsync("https://api.openai.com/v1/models", ct);
@@ -211,7 +218,7 @@ public sealed class AiSettingsService : IAiSettingsService
                 Success = true,
                 Message = "Successfully connected to OpenAI API.",
                 ProviderName = "OpenAI",
-                Model = settings.Model,
+                Model = model,
             };
         }
 
@@ -223,18 +230,27 @@ public sealed class AiSettingsService : IAiSettingsService
     private async Task<TestConnectionResult> TestAzureOpenAiAsync(
         AzureOpenAiSettingsDto? settings, CancellationToken ct)
     {
-        if (settings is null)
-            return Fail("Azure OpenAI settings are required.");
-        if (string.IsNullOrWhiteSpace(settings.ApiKey))
+        // Fall back to stored runtime settings when the request omits them (masked on frontend)
+        var apiKey = settings?.ApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+            apiKey = GetSetting("Ai:AzureOpenAi:ApiKey");
+
+        var endpoint = settings?.Endpoint;
+        if (string.IsNullOrWhiteSpace(endpoint))
+            endpoint = GetSetting("Ai:AzureOpenAi:Endpoint");
+
+        if (string.IsNullOrWhiteSpace(apiKey))
             return Fail("Azure OpenAI API key is required.");
-        if (string.IsNullOrWhiteSpace(settings.Endpoint))
+        if (string.IsNullOrWhiteSpace(endpoint))
             return Fail("Azure OpenAI endpoint is required.");
 
-        var client = _httpClientFactory.CreateClient();
-        client.DefaultRequestHeaders.Add("api-key", settings.ApiKey);
+        var deploymentName = settings?.DeploymentName ?? GetSetting("Ai:AzureOpenAi:DeploymentName");
+        var apiVersion = settings?.ApiVersion ?? GetSetting("Ai:AzureOpenAi:ApiVersion") ?? "2024-02-01";
 
-        var apiVersion = settings.ApiVersion ?? "2024-02-01";
-        var url = $"{settings.Endpoint.TrimEnd('/')}/openai/deployments?api-version={apiVersion}";
+        var client = _httpClientFactory.CreateClient();
+        client.DefaultRequestHeaders.Add("api-key", apiKey);
+
+        var url = $"{endpoint.TrimEnd('/')}/openai/deployments?api-version={apiVersion}";
 
         var response = await client.GetAsync(url, ct);
 
@@ -245,7 +261,7 @@ public sealed class AiSettingsService : IAiSettingsService
                 Success = true,
                 Message = "Successfully connected to Azure OpenAI.",
                 ProviderName = "Azure OpenAI",
-                Model = settings.DeploymentName,
+                Model = deploymentName,
             };
         }
 
@@ -281,12 +297,19 @@ public sealed class AiSettingsService : IAiSettingsService
     private async Task<TestConnectionResult> TestGrokAsync(
         GrokSettingsDto? settings, CancellationToken ct)
     {
-        if (settings is null || string.IsNullOrWhiteSpace(settings.ApiKey))
+        // Fall back to stored runtime key when the request omits it (masked on frontend)
+        var apiKey = settings?.ApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+            apiKey = GetSetting("Ai:Grok:ApiKey");
+
+        if (string.IsNullOrWhiteSpace(apiKey))
             return Fail("Grok API key is required.");
+
+        var model = settings?.Model ?? GetSetting("Ai:Grok:Model") ?? "grok-3-mini";
 
         var client = _httpClientFactory.CreateClient();
         client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", settings.ApiKey);
+            new AuthenticationHeaderValue("Bearer", apiKey);
 
         // xAI uses an OpenAI-compatible API at api.x.ai
         var response = await client.GetAsync("https://api.x.ai/v1/models", ct);
@@ -298,7 +321,7 @@ public sealed class AiSettingsService : IAiSettingsService
                 Success = true,
                 Message = "Successfully connected to Grok (xAI) API.",
                 ProviderName = "Grok",
-                Model = settings.Model,
+                Model = model,
             };
         }
 
@@ -311,6 +334,9 @@ public sealed class AiSettingsService : IAiSettingsService
     {
         // AWS Bedrock requires the AWS SDK for proper SigV4 signing.
         // For MVP, we validate that the required fields are present.
+        // Note: Unlike other providers, we can't fall back to runtime settings here
+        // because this is a static method. However, the same pattern applies — if the
+        // frontend omits credentials, the controller should merge them before calling.
         if (settings is null)
             return Task.FromResult(Fail("AWS Bedrock settings are required."));
         if (string.IsNullOrWhiteSpace(settings.AccessKeyId))
@@ -327,6 +353,29 @@ public sealed class AiSettingsService : IAiSettingsService
             ProviderName = "AWS Bedrock",
             Model = settings.ModelId,
         });
+    }
+
+    /// <summary>
+    /// Merges incoming Bedrock settings with stored runtime settings for fields
+    /// that were omitted (masked on frontend).
+    /// </summary>
+    private AwsBedrockSettingsDto MergeBedrockSettings(AwsBedrockSettingsDto? settings)
+    {
+        return new AwsBedrockSettingsDto
+        {
+            AccessKeyId = string.IsNullOrWhiteSpace(settings?.AccessKeyId)
+                ? GetSetting("Ai:AwsBedrock:AccessKeyId")
+                : settings.AccessKeyId,
+            SecretAccessKey = string.IsNullOrWhiteSpace(settings?.SecretAccessKey)
+                ? GetSetting("Ai:AwsBedrock:SecretAccessKey")
+                : settings.SecretAccessKey,
+            Region = string.IsNullOrWhiteSpace(settings?.Region)
+                ? GetSetting("Ai:AwsBedrock:Region")
+                : settings.Region,
+            ModelId = string.IsNullOrWhiteSpace(settings?.ModelId)
+                ? GetSetting("Ai:AwsBedrock:ModelId")
+                : settings.ModelId,
+        };
     }
 
     private void LoadSettingsFromConfig()

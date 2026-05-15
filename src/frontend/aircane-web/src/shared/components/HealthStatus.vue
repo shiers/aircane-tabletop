@@ -10,13 +10,13 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium">
+  <div class="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium">
     <!-- Status indicator dot -->
     <span
       class="h-2 w-2 rounded-full"
       :class="{
-        'bg-green-500': appStore.healthStatus === 'healthy',
-        'bg-red-500': appStore.healthStatus === 'unreachable',
+        'bg-green-500 shadow-sm shadow-green-500/50': appStore.healthStatus === 'healthy',
+        'bg-red-500 shadow-sm shadow-red-500/50': appStore.healthStatus === 'unreachable',
         'bg-gray-400 animate-pulse': appStore.healthStatus === 'unknown',
       }"
       aria-hidden="true"
@@ -25,8 +25,8 @@ onMounted(async () => {
     <!-- Status label -->
     <span
       :class="{
-        'text-green-700': appStore.healthStatus === 'healthy',
-        'text-red-700': appStore.healthStatus === 'unreachable',
+        'text-green-400': appStore.healthStatus === 'healthy',
+        'text-red-400': appStore.healthStatus === 'unreachable',
         'text-gray-500': appStore.healthStatus === 'unknown',
       }"
     >

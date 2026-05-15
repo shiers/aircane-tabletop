@@ -41,33 +41,23 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
 </script>
 
 <template>
-  <main class="min-h-screen bg-gray-950 text-gray-100">
+  <div class="mx-auto max-w-5xl space-y-6">
     <!-- Page header -->
-    <header class="border-b border-gray-800 px-6 py-4">
-      <div class="mx-auto flex max-w-5xl items-center justify-between">
-        <div class="flex items-center gap-3">
-          <RouterLink
-            to="/"
-            class="text-sm text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-            aria-label="Back to home"
-          >
-            ← Home
-          </RouterLink>
-          <span class="text-gray-700" aria-hidden="true">/</span>
-          <h1 class="text-xl font-bold tracking-tight text-aircane-400">Campaigns</h1>
-        </div>
+    <div class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold text-white">Campaigns</h1>
+      <button
+        v-if="!showForm"
+        class="btn-primary"
+        @click="openCreateForm"
+      >
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        New Campaign
+      </button>
+    </div>
 
-        <button
-          v-if="!showForm"
-          class="inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-          @click="openCreateForm"
-        >
-          + New Campaign
-        </button>
-      </div>
-    </header>
-
-    <div class="mx-auto max-w-5xl space-y-6 px-6 py-8">
+    <div class="space-y-6">
       <!-- Global error banner -->
       <div
         v-if="store.error"
@@ -94,7 +84,7 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
       <section
         v-if="showForm"
         aria-labelledby="campaign-form-heading"
-        class="rounded-xl border border-gray-800 bg-gray-900 p-6"
+        class="card"
       >
         <h2 id="campaign-form-heading" class="mb-4 text-lg font-semibold text-white">
           {{ editingCampaign ? 'Edit Campaign' : 'New Campaign' }}
@@ -110,5 +100,5 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
       <!-- Campaign list -->
       <CampaignList @edit="openEditForm" />
     </div>
-  </main>
+  </div>
 </template>

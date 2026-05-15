@@ -163,153 +163,139 @@ async function handlePdfFileChange(event: Event): Promise<void> {
 </script>
 
 <template>
-  <main class="min-h-screen bg-gray-950 text-gray-100">
+  <div class="mx-auto max-w-5xl space-y-6">
     <!-- Page header -->
-    <header class="border-b border-gray-800 px-6 py-4">
-      <div class="mx-auto flex max-w-5xl items-center justify-between">
-        <div class="flex items-center gap-3">
-          <RouterLink
-            to="/"
-            class="text-sm text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-            aria-label="Back to home"
-          >
-            ← Home
-          </RouterLink>
-          <span class="text-gray-700" aria-hidden="true">/</span>
-          <h1 class="text-xl font-bold tracking-tight text-aircane-400">Characters</h1>
-        </div>
+    <div class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold text-white">Characters</h1>
 
-        <div v-if="!showForm" class="flex items-center gap-2">
-          <!-- Hidden PDF file input -->
-          <input
-            ref="pdfFileInput"
-            type="file"
-            accept=".pdf,application/pdf"
-            class="sr-only"
-            aria-label="Select PDF character sheet"
-            @change="handlePdfFileChange"
-          />
-
-          <!-- Import PDF button -->
-          <button
-            :disabled="pdfImporting"
-            class="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-semibold text-gray-300 shadow hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
-            @click="triggerPdfImport"
-          >
-            <svg
-              v-if="pdfImporting"
-              class="h-4 w-4 animate-spin"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-            >
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-            </svg>
-            <svg v-else class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            {{ pdfImporting ? 'Importing…' : 'Import PDF' }}
-          </button>
-
-          <!-- Import JSON button -->
-          <button
-            class="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-semibold text-gray-300 shadow hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-            @click="openImportModal"
-          >
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                d="M10 3a.75.75 0 01.75.75v8.614l2.955-3.129a.75.75 0 011.09 1.03l-4.25 4.5a.75.75 0 01-1.09 0l-4.25-4.5a.75.75 0 111.09-1.03L9.25 12.364V3.75A.75.75 0 0110 3z"
-                clip-rule="evenodd"
-              />
-              <path
-                d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"
-              />
-            </svg>
-            Import JSON
-          </button>
-
-          <button
-            class="inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-            @click="openCreateForm"
-          >
-            + New Character
-          </button>
-        </div>
-      </div>
-    </header>
-
-    <div class="mx-auto max-w-5xl space-y-6 px-6 py-8">
-      <!-- Global error banner -->
-      <div
-        v-if="store.error"
-        role="alert"
-        class="flex items-start gap-3 rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300"
-      >
-        <svg
-          class="mt-0.5 h-4 w-4 shrink-0 text-red-400"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            fill-rule="evenodd"
-            d="M10 18a8 8 0 100-16 8 8 0 000 16zm-.75-9.25a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5zm.75 6a.75.75 0 100-1.5.75.75 0 000 1.5z"
-            clip-rule="evenodd"
-          />
-        </svg>
-        <span>{{ store.error }}</span>
-      </div>
-
-      <!-- PDF import error banner -->
-      <div
-        v-if="pdfImportError"
-        role="alert"
-        class="flex items-start gap-3 rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300"
-      >
-        <svg
-          class="mt-0.5 h-4 w-4 shrink-0 text-red-400"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            fill-rule="evenodd"
-            d="M10 18a8 8 0 100-16 8 8 0 000 16zm-.75-9.25a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5zm.75 6a.75.75 0 100-1.5.75.75 0 000 1.5z"
-            clip-rule="evenodd"
-          />
-        </svg>
-        <span>PDF import failed: {{ pdfImportError }}</span>
-      </div>
-
-      <!-- Create / Edit form panel -->
-      <section
-        v-if="showForm"
-        aria-labelledby="character-form-heading"
-        class="rounded-xl border border-gray-800 bg-gray-900 p-6"
-      >
-        <h2 id="character-form-heading" class="mb-6 text-lg font-semibold text-white">
-          {{ editingCharacter ? 'Edit Character' : 'New Character' }}
-        </h2>
-
-        <CharacterForm
-          :character="editingCharacter ?? undefined"
-          :campaign-id="campaignId"
-          @submit="handleFormSubmit"
-          @cancel="closeForm"
+      <div v-if="!showForm" class="flex items-center gap-2">
+        <!-- Hidden PDF file input -->
+        <input
+          ref="pdfFileInput"
+          type="file"
+          accept=".pdf,application/pdf"
+          class="sr-only"
+          aria-label="Select PDF character sheet"
+          @change="handlePdfFileChange"
         />
-      </section>
 
-      <!-- Character list -->
-      <CharacterList @edit="openEditForm" @view="openEditForm" />
+        <!-- Import PDF button -->
+        <button
+          :disabled="pdfImporting"
+          class="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-surface-850 px-4 py-2 text-sm font-semibold text-gray-300 shadow hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+          @click="triggerPdfImport"
+        >
+          <svg
+            v-if="pdfImporting"
+            class="h-4 w-4 animate-spin"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+          </svg>
+          <svg v-else class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path
+              fill-rule="evenodd"
+              d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+              clip-rule="evenodd"
+            />
+          </svg>
+          {{ pdfImporting ? 'Importing…' : 'Import PDF' }}
+        </button>
+
+        <!-- Import JSON button -->
+        <button
+          class="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-surface-850 px-4 py-2 text-sm font-semibold text-gray-300 shadow hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          @click="openImportModal"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path
+              fill-rule="evenodd"
+              d="M10 3a.75.75 0 01.75.75v8.614l2.955-3.129a.75.75 0 011.09 1.03l-4.25 4.5a.75.75 0 01-1.09 0l-4.25-4.5a.75.75 0 111.09-1.03L9.25 12.364V3.75A.75.75 0 0110 3z"
+              clip-rule="evenodd"
+            />
+            <path
+              d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"
+            />
+          </svg>
+          Import JSON
+        </button>
+
+        <button
+          class="inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          @click="openCreateForm"
+        >
+          + New Character
+        </button>
+      </div>
     </div>
+
+    <!-- Global error banner -->
+    <div
+      v-if="store.error"
+      role="alert"
+      class="flex items-start gap-3 rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300"
+    >
+      <svg
+        class="mt-0.5 h-4 w-4 shrink-0 text-red-400"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path
+          fill-rule="evenodd"
+          d="M10 18a8 8 0 100-16 8 8 0 000 16zm-.75-9.25a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5zm.75 6a.75.75 0 100-1.5.75.75 0 000 1.5z"
+          clip-rule="evenodd"
+        />
+      </svg>
+      <span>{{ store.error }}</span>
+    </div>
+
+    <!-- PDF import error banner -->
+    <div
+      v-if="pdfImportError"
+      role="alert"
+      class="flex items-start gap-3 rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300"
+    >
+      <svg
+        class="mt-0.5 h-4 w-4 shrink-0 text-red-400"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path
+          fill-rule="evenodd"
+          d="M10 18a8 8 0 100-16 8 8 0 000 16zm-.75-9.25a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5zm.75 6a.75.75 0 100-1.5.75.75 0 000 1.5z"
+          clip-rule="evenodd"
+        />
+      </svg>
+      <span>PDF import failed: {{ pdfImportError }}</span>
+    </div>
+
+    <!-- Create / Edit form panel -->
+    <section
+      v-if="showForm"
+      aria-labelledby="character-form-heading"
+      class="rounded-xl border border-surface-700/50 bg-surface-850 p-6"
+    >
+      <h2 id="character-form-heading" class="mb-6 text-lg font-semibold text-white">
+        {{ editingCharacter ? 'Edit Character' : 'New Character' }}
+      </h2>
+
+      <CharacterForm
+        :character="editingCharacter ?? undefined"
+        :campaign-id="campaignId"
+        @submit="handleFormSubmit"
+        @cancel="closeForm"
+      />
+    </section>
+
+    <!-- Character list -->
+    <CharacterList @edit="openEditForm" @view="openEditForm" />
 
     <!-- Import JSON modal -->
     <ImportCharacterModal
@@ -319,5 +305,5 @@ async function handlePdfFileChange(event: Event): Promise<void> {
       @import="handleImport"
       @close="closeImportModal"
     />
-  </main>
+  </div>
 </template>

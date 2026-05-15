@@ -224,37 +224,35 @@ onUnmounted(async () => {
 </script>
 
 <template>
-  <main class="min-h-screen bg-gray-950 text-gray-100">
-    <!-- Header -->
-    <header class="border-b border-gray-800 px-4 py-3">
-      <div class="mx-auto flex max-w-5xl items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-          <h1 class="text-base font-semibold text-white">
-            {{ store.currentSession?.name ?? 'Session' }}
-          </h1>
-          <span
-            v-if="store.currentSession?.status === SessionStatus.Active"
-            class="text-xs font-medium text-green-400"
-          >
-            Live
-          </span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span
-            :class="isConnected ? 'bg-green-500' : 'bg-red-500'"
-            class="inline-block h-2 w-2 rounded-full"
-            :title="isConnected ? 'Connected' : 'Disconnected'"
-            aria-hidden="true"
-          />
-          <span class="text-xs text-gray-400">
-            {{ participantName ?? 'Player' }}
-          </span>
-        </div>
+  <div class="mx-auto max-w-5xl space-y-6">
+    <!-- Page header -->
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <h1 class="text-2xl font-bold text-white">
+          {{ store.currentSession?.name ?? 'Session' }}
+        </h1>
+        <span
+          v-if="store.currentSession?.status === SessionStatus.Active"
+          class="text-xs font-medium text-green-400"
+        >
+          Live
+        </span>
       </div>
-    </header>
+      <div class="flex items-center gap-2">
+        <span
+          :class="isConnected ? 'bg-green-500' : 'bg-red-500'"
+          class="inline-block h-2 w-2 rounded-full"
+          :title="isConnected ? 'Connected' : 'Disconnected'"
+          aria-hidden="true"
+        />
+        <span class="text-xs text-gray-400">
+          {{ participantName ?? 'Player' }}
+        </span>
+      </div>
+    </div>
 
     <!-- Hub error -->
-    <div v-if="hubError" role="alert" class="mx-auto max-w-5xl px-4 pt-4">
+    <div v-if="hubError" role="alert">
       <div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">
         {{ hubError }}
       </div>
@@ -263,7 +261,6 @@ onUnmounted(async () => {
     <!-- Pending roll requests banner -->
     <div
       v-if="pendingRollRequests.length > 0"
-      class="mx-auto max-w-5xl px-4 pt-4"
       aria-live="polite"
     >
       <div
@@ -293,7 +290,7 @@ onUnmounted(async () => {
 
     <!-- Mobile tab bar -->
     <nav
-      class="sticky top-0 z-10 border-b border-gray-800 bg-gray-950 px-4 lg:hidden"
+      class="sticky top-0 z-10 border-b border-surface-700/50 bg-gray-950 px-4 lg:hidden"
       aria-label="Session sections"
     >
       <div class="flex gap-1 overflow-x-auto py-2">
@@ -316,234 +313,231 @@ onUnmounted(async () => {
     </nav>
 
     <!-- Content grid -->
-    <div class="mx-auto max-w-5xl px-4 py-6">
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
 
-        <!-- Scene + Character (left on desktop) -->
-        <div class="space-y-6 lg:col-span-2">
+      <!-- Scene + Character (left on desktop) -->
+      <div class="space-y-6 lg:col-span-2">
 
-          <!-- Scene description -->
+        <!-- Scene description -->
+        <div
+          :class="{ 'hidden lg:block': activeTab !== 'scene' }"
+          class="rounded-xl border border-surface-700/50 bg-surface-850 p-6"
+        >
+          <h2 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
+            Scene
+          </h2>
+          <p class="text-sm text-gray-300 leading-relaxed">
+            <!-- Placeholder until AI DM runtime provides scene descriptions -->
+            The session is active. The DM will set the scene shortly.
+          </p>
+        </div>
+
+        <!-- Character panel -->
+        <div
+          :class="{ 'hidden lg:block': activeTab !== 'character' }"
+          class="rounded-xl border border-surface-700/50 bg-surface-850 p-6"
+        >
+          <h2 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
+            Character
+          </h2>
+
+          <!-- Waiting state - no character assigned -->
           <div
-            :class="{ 'hidden lg:block': activeTab !== 'scene' }"
-            class="rounded-xl border border-gray-800 bg-gray-900 p-6"
+            v-if="!hasCharacter"
+            class="flex flex-col items-center gap-3 py-6 text-center"
+            aria-live="polite"
           >
-            <h2 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
-              Scene
-            </h2>
-            <p class="text-sm text-gray-300 leading-relaxed">
-              <!-- Placeholder until AI DM runtime provides scene descriptions -->
-              The session is active. The DM will set the scene shortly.
+            <div class="text-4xl" aria-hidden="true">⏳</div>
+            <p class="text-sm font-medium text-gray-300">Waiting for character assignment</p>
+            <p class="text-xs text-gray-500">
+              The host will assign a character to you shortly.
             </p>
           </div>
 
-          <!-- Character panel -->
-          <div
-            :class="{ 'hidden lg:block': activeTab !== 'character' }"
-            class="rounded-xl border border-gray-800 bg-gray-900 p-6"
-          >
-            <h2 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
-              Character
-            </h2>
-
-            <!-- Waiting state - no character assigned -->
-            <div
-              v-if="!hasCharacter"
-              class="flex flex-col items-center gap-3 py-6 text-center"
-              aria-live="polite"
-            >
-              <div class="text-4xl" aria-hidden="true">⏳</div>
-              <p class="text-sm font-medium text-gray-300">Waiting for character assignment</p>
-              <p class="text-xs text-gray-500">
-                The host will assign a character to you shortly.
-              </p>
-            </div>
-
-            <!-- Character assigned -->
-            <div v-else>
-              <p class="text-sm text-gray-300">
-                Character ID:
-                <code class="font-mono text-aircane-400">{{ myParticipant?.characterId }}</code>
-              </p>
-              <p class="mt-2 text-xs text-gray-500">
-                Full character sheet view will be available in a future update.
-              </p>
-            </div>
-          </div>
-
-          <!-- Dice tray -->
-          <div
-            :class="{ 'hidden lg:block': activeTab !== 'dice' }"
-            class="rounded-xl border border-gray-800 bg-gray-900 p-6"
-          >
-            <h2 class="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">
-              Dice Tray
-            </h2>
-
-            <!-- Quick roll -->
-            <div class="mb-6 space-y-3">
-              <h3 class="text-sm font-medium text-gray-300">Quick Roll</h3>
-
-              <!-- Common dice shortcuts -->
-              <div class="flex flex-wrap gap-2" role="group" aria-label="Common dice">
-                <button
-                  v-for="die in ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100']"
-                  :key="die"
-                  type="button"
-                  class="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm font-medium text-gray-300 hover:border-aircane-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 transition-colors"
-                  @click="diceFormula = `1${die}`"
-                >
-                  {{ die }}
-                </button>
-              </div>
-
-              <!-- Formula input -->
-              <div class="flex gap-2">
-                <label for="dice-formula" class="sr-only">Dice formula</label>
-                <input
-                  id="dice-formula"
-                  v-model="diceFormula"
-                  type="text"
-                  placeholder="e.g. 1d20+5"
-                  class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
-                  @keydown.enter="handleRollDice"
-                />
-                <button
-                  type="button"
-                  :disabled="rollingDice || !diceFormula.trim()"
-                  class="rounded-lg bg-aircane-600 px-4 py-2 text-sm font-semibold text-white hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  @click="handleRollDice"
-                >
-                  <span v-if="rollingDice">Rolling…</span>
-                  <span v-else>Roll</span>
-                </button>
-              </div>
-
-              <!-- Context -->
-              <div>
-                <label for="dice-context" class="sr-only">Roll context</label>
-                <input
-                  id="dice-context"
-                  v-model="diceContext"
-                  type="text"
-                  placeholder="Context (optional, e.g. Attack vs goblin)"
-                  class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
-                />
-              </div>
-
-              <!-- Visibility -->
-              <div class="flex gap-2" role="group" aria-label="Roll visibility">
-                <button
-                  type="button"
-                  :class="[
-                    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-aircane-400',
-                    diceVisibility === RollVisibility.Public
-                      ? 'bg-aircane-600 text-white'
-                      : 'border border-gray-700 bg-gray-800 text-gray-400 hover:text-gray-200',
-                  ]"
-                  :aria-pressed="diceVisibility === RollVisibility.Public"
-                  @click="diceVisibility = RollVisibility.Public"
-                >
-                  Public
-                </button>
-                <button
-                  type="button"
-                  :class="[
-                    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-aircane-400',
-                    diceVisibility === RollVisibility.Private
-                      ? 'bg-aircane-600 text-white'
-                      : 'border border-gray-700 bg-gray-800 text-gray-400 hover:text-gray-200',
-                  ]"
-                  :aria-pressed="diceVisibility === RollVisibility.Private"
-                  @click="diceVisibility = RollVisibility.Private"
-                >
-                  Private
-                </button>
-              </div>
-
-              <!-- Dice error -->
-              <p v-if="diceError" role="alert" class="text-sm text-red-400">{{ diceError }}</p>
-
-              <!-- Last roll result -->
-              <div
-                v-if="lastRoll"
-                role="status"
-                aria-live="polite"
-                class="rounded-lg border border-gray-700 bg-gray-800 p-4"
-              >
-                <p class="text-xs text-gray-500 mb-1">Last roll</p>
-                <p class="text-3xl font-bold text-aircane-400">{{ lastRoll.total }}</p>
-                <p v-if="lastRoll.formula" class="text-xs text-gray-500 mt-1">
-                  {{ lastRoll.formula }}
-                  <span v-if="lastRoll.dieResults?.length > 1">
-                    → [{{ lastRoll.dieResults.join(', ') }}]
-                  </span>
-                </p>
-                <p v-if="lastRoll.context" class="text-xs text-gray-500">{{ lastRoll.context }}</p>
-              </div>
-            </div>
-
-            <!-- Manual roll section -->
-            <div class="border-t border-gray-800 pt-4">
-              <h3 class="mb-3 text-sm font-medium text-gray-300">Manual Roll (Physical Dice)</h3>
-              <ManualRollForm
-                v-if="participantId"
-                :session-id="sessionId"
-                :roller-participant-id="participantId"
-                :character-id="myParticipant?.characterId ?? null"
-                @recorded="handleManualRollRecorded"
-              />
-              <p v-else class="text-xs text-gray-500">
-                Join the session to record manual rolls.
-              </p>
-            </div>
+          <!-- Character assigned -->
+          <div v-else>
+            <p class="text-sm text-gray-300">
+              Character ID:
+              <code class="font-mono text-aircane-400">{{ myParticipant?.characterId }}</code>
+            </p>
+            <p class="mt-2 text-xs text-gray-500">
+              Full character sheet view will be available in a future update.
+            </p>
           </div>
         </div>
 
-        <!-- Right: Chat + Roll log -->
-        <div class="space-y-6">
-          <!-- Chat -->
-          <div
-            :class="{ 'hidden lg:flex': activeTab !== 'chat' }"
-            class="rounded-xl border border-gray-800 bg-gray-900 p-6 flex flex-col"
-            style="height: 400px;"
-          >
-            <ChatPanel
-              :messages="chatMessages"
-              :disabled="!isConnected"
-              placeholder="Type a message…"
-              class="flex-1 min-h-0"
-              @send="handleSendChat"
-            />
+        <!-- Dice tray -->
+        <div
+          :class="{ 'hidden lg:block': activeTab !== 'dice' }"
+          class="rounded-xl border border-surface-700/50 bg-surface-850 p-6"
+        >
+          <h2 class="mb-4 text-sm font-medium uppercase tracking-wider text-gray-400">
+            Dice Tray
+          </h2>
+
+          <!-- Quick roll -->
+          <div class="mb-6 space-y-3">
+            <h3 class="text-sm font-medium text-gray-300">Quick Roll</h3>
+
+            <!-- Common dice shortcuts -->
+            <div class="flex flex-wrap gap-2" role="group" aria-label="Common dice">
+              <button
+                v-for="die in ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100']"
+                :key="die"
+                type="button"
+                class="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm font-medium text-gray-300 hover:border-aircane-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 transition-colors"
+                @click="diceFormula = `1${die}`"
+              >
+                {{ die }}
+              </button>
+            </div>
+
+            <!-- Formula input -->
+            <div class="flex gap-2">
+              <label for="dice-formula" class="sr-only">Dice formula</label>
+              <input
+                id="dice-formula"
+                v-model="diceFormula"
+                type="text"
+                placeholder="e.g. 1d20+5"
+                class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+                @keydown.enter="handleRollDice"
+              />
+              <button
+                type="button"
+                :disabled="rollingDice || !diceFormula.trim()"
+                class="rounded-lg bg-aircane-600 px-4 py-2 text-sm font-semibold text-white hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                @click="handleRollDice"
+              >
+                <span v-if="rollingDice">Rolling…</span>
+                <span v-else>Roll</span>
+              </button>
+            </div>
+
+            <!-- Context -->
+            <div>
+              <label for="dice-context" class="sr-only">Roll context</label>
+              <input
+                id="dice-context"
+                v-model="diceContext"
+                type="text"
+                placeholder="Context (optional, e.g. Attack vs goblin)"
+                class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+              />
+            </div>
+
+            <!-- Visibility -->
+            <div class="flex gap-2" role="group" aria-label="Roll visibility">
+              <button
+                type="button"
+                :class="[
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-aircane-400',
+                  diceVisibility === RollVisibility.Public
+                    ? 'bg-aircane-600 text-white'
+                    : 'border border-gray-700 bg-gray-800 text-gray-400 hover:text-gray-200',
+                ]"
+                :aria-pressed="diceVisibility === RollVisibility.Public"
+                @click="diceVisibility = RollVisibility.Public"
+              >
+                Public
+              </button>
+              <button
+                type="button"
+                :class="[
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-aircane-400',
+                  diceVisibility === RollVisibility.Private
+                    ? 'bg-aircane-600 text-white'
+                    : 'border border-gray-700 bg-gray-800 text-gray-400 hover:text-gray-200',
+                ]"
+                :aria-pressed="diceVisibility === RollVisibility.Private"
+                @click="diceVisibility = RollVisibility.Private"
+              >
+                Private
+              </button>
+            </div>
+
+            <!-- Dice error -->
+            <p v-if="diceError" role="alert" class="text-sm text-red-400">{{ diceError }}</p>
+
+            <!-- Last roll result -->
+            <output
+              v-if="lastRoll"
+              aria-live="polite"
+              class="block rounded-lg border border-gray-700 bg-gray-800 p-4"
+            >
+              <p class="text-xs text-gray-500 mb-1">Last roll</p>
+              <p class="text-3xl font-bold text-aircane-400">{{ lastRoll.total }}</p>
+              <p v-if="lastRoll.formula" class="text-xs text-gray-500 mt-1">
+                {{ lastRoll.formula }}
+                <span v-if="lastRoll.dieResults?.length > 1">
+                  → [{{ lastRoll.dieResults.join(', ') }}]
+                </span>
+              </p>
+              <p v-if="lastRoll.context" class="text-xs text-gray-500">{{ lastRoll.context }}</p>
+            </output>
           </div>
 
-          <!-- Roll log -->
-          <div class="rounded-xl border border-gray-800 bg-gray-900 p-6 hidden lg:block">
-            <h3 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
-              Roll Log
-            </h3>
+          <!-- Manual roll section -->
+          <div class="border-t border-surface-700/50 pt-4">
+            <h3 class="mb-3 text-sm font-medium text-gray-300">Manual Roll (Physical Dice)</h3>
+            <ManualRollForm
+              v-if="participantId"
+              :session-id="sessionId"
+              :roller-participant-id="participantId"
+              :character-id="myParticipant?.characterId ?? null"
+              @recorded="handleManualRollRecorded"
+            />
+            <p v-else class="text-xs text-gray-500">
+              Join the session to record manual rolls.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Chat + Roll log -->
+      <div class="space-y-6">
+        <!-- Chat -->
+        <div
+          :class="{ 'hidden lg:flex': activeTab !== 'chat' }"
+          class="rounded-xl border border-surface-700/50 bg-surface-850 p-6 flex flex-col"
+          style="height: 400px;"
+        >
+          <ChatPanel
+            :messages="chatMessages"
+            :disabled="!isConnected"
+            placeholder="Type a message…"
+            class="flex-1 min-h-0"
+            @send="handleSendChat"
+          />
+        </div>
+
+        <!-- Roll log -->
+        <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-6 hidden lg:block">
+          <h3 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
+            Roll Log
+          </h3>
+          <div
+            role="log"
+            aria-label="Roll log"
+            aria-live="polite"
+            class="max-h-48 overflow-y-auto space-y-1"
+          >
+            <p v-if="rollLog.length === 0" class="text-xs text-gray-600 text-center py-4">
+              No rolls yet.
+            </p>
             <div
-              role="log"
-              aria-label="Roll log"
-              aria-live="polite"
-              class="max-h-48 overflow-y-auto space-y-1"
+              v-for="roll in rollLog"
+              :key="roll.id"
+              class="flex items-baseline justify-between gap-2 rounded-md px-2 py-1 text-sm hover:bg-gray-800"
             >
-              <p v-if="rollLog.length === 0" class="text-xs text-gray-600 text-center py-4">
-                No rolls yet.
-              </p>
-              <div
-                v-for="roll in rollLog"
-                :key="roll.id"
-                class="flex items-baseline justify-between gap-2 rounded-md px-2 py-1 text-sm hover:bg-gray-800"
-              >
-                <span class="text-gray-300 truncate">{{ rollSummary(roll) }}</span>
-                <time :datetime="roll.createdAt" class="shrink-0 text-xs text-gray-600">
-                  {{ formatRollTime(roll.createdAt) }}
-                </time>
-              </div>
+              <span class="text-gray-300 truncate">{{ rollSummary(roll) }}</span>
+              <time :datetime="roll.createdAt" class="shrink-0 text-xs text-gray-600">
+                {{ formatRollTime(roll.createdAt) }}
+              </time>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </main>
+  </div>
 </template>

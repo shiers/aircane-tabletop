@@ -147,8 +147,10 @@ export const useLibraryStore = defineStore('library', () => {
     try {
       documents.value = await listDocuments(params)
 
-      // Ensure SignalR is connected so we receive live updates
-      await connectSignalR()
+      // Ensure SignalR is connected so we receive live updates (non-blocking)
+      connectSignalR().catch(() => {
+        // SignalR failure is non-critical; polling handles fallback
+      })
 
       // If SignalR is unavailable, fall back to polling for non-terminal docs
       if (!hubConnection) {

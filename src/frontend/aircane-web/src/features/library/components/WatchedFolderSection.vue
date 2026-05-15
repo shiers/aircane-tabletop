@@ -103,7 +103,7 @@ async function handleDelete(folder: WatchedFolderDto): Promise<void> {
       <span>{{ store.foldersError }}</span>
     </div>
 
-    <!-- Loading skeleton -->
+    <!-- Loading skeleton (only on initial load when no data is cached) -->
     <div
       v-if="store.foldersLoading && store.folders.length === 0"
       class="mb-4 space-y-2"

@@ -11,7 +11,7 @@ export const useAppStore = defineStore('app', () => {
   async function fetchHealth(): Promise<void> {
     try {
       const data = await checkHealth()
-      healthStatus.value = data.status === 'healthy' ? 'healthy' : 'unreachable'
+      healthStatus.value = (data.status === 'healthy' || data.status === 'degraded') ? 'healthy' : 'unreachable'
       healthMessage.value = data.status
     } catch {
       healthStatus.value = 'unreachable'

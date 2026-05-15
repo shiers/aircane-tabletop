@@ -301,7 +301,7 @@ public class PlayerActionServiceTests : IDisposable
                     Type = AiActionType.RequestRoll,
                     CharacterId = Guid.NewGuid(),
                     Label = "Stealth check",
-                    // Missing Formula — should fail validation
+                    // Missing Formula - should fail validation
                 }
             ],
         };

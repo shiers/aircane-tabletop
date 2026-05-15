@@ -83,7 +83,7 @@ public sealed class FolderScanJob : IFolderScanJob
 
             if (existingByPath.TryGetValue(file.SourcePath, out var existingDoc))
             {
-                // File already indexed — check whether it has changed.
+                // File already indexed - check whether it has changed.
                 bool hasChanged = file.LastModifiedUtc.HasValue
                     && file.LastModifiedUtc.Value > existingDoc.UpdatedAt;
 
@@ -95,7 +95,7 @@ public sealed class FolderScanJob : IFolderScanJob
                     continue;
                 }
 
-                // File changed — reset status and re-import.
+                // File changed - reset status and re-import.
                 _logger.LogInformation(
                     "File changed, re-importing. DocumentId={DocumentId}, SourcePath={SourcePath}",
                     existingDoc.Id, file.SourcePath);
@@ -109,7 +109,7 @@ public sealed class FolderScanJob : IFolderScanJob
             }
             else
             {
-                // New file — create a SourceDocument record and import it.
+                // New file - create a SourceDocument record and import it.
                 _logger.LogInformation(
                     "New file discovered, creating document. SourcePath={SourcePath}", file.SourcePath);
 

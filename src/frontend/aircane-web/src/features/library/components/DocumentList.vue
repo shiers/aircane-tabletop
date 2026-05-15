@@ -19,7 +19,7 @@ const sourceTypeLabel: Record<SourceType, string> = {
   [SourceType.Generated]: 'Generated',
 }
 
-/** Documents that have failed import — used to show per-row error details. */
+/** Documents that have failed import - used to show per-row error details. */
 const failedDocuments = computed(() =>
   store.documents.filter((d) => d.importStatus === ImportStatus.Failed),
 )
@@ -144,7 +144,7 @@ async function handleReindex(doc: SourceDocumentDto): Promise<void> {
                 <span v-if="doc.gameSystem || doc.ruleset">
                   {{ [doc.gameSystem, doc.ruleset].filter(Boolean).join(' · ') }}
                 </span>
-                <span v-else class="text-gray-600">—</span>
+                <span v-else class="text-gray-600">-</span>
               </td>
 
               <!-- Folder name -->
@@ -152,7 +152,7 @@ async function handleReindex(doc: SourceDocumentDto): Promise<void> {
                 <span v-if="doc.watchedFolderId && folderNameById[doc.watchedFolderId]" class="text-gray-400">
                   {{ folderNameById[doc.watchedFolderId] }}
                 </span>
-                <span v-else class="text-gray-600">—</span>
+                <span v-else class="text-gray-600">-</span>
               </td>
 
               <!-- Status badge -->
@@ -166,7 +166,7 @@ async function handleReindex(doc: SourceDocumentDto): Promise<void> {
               <!-- Actions -->
               <td class="px-4 py-3 text-right">
                 <div class="flex items-center justify-end gap-2">
-                  <!-- Reindex button — shown for failed or OCR-required docs -->
+                  <!-- Reindex button - shown for failed or OCR-required docs -->
                   <button
                     v-if="doc.importStatus === ImportStatus.Failed || doc.importStatus === ImportStatus.OcrRequired"
                     :disabled="reindexingId === doc.id"

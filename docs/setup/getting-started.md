@@ -12,7 +12,7 @@ This guide walks you through setting up Aircane Tabletop for local development o
 | [Git](https://git-scm.com/) | Any | Clone the repository |
 
 Optional:
-- [Ollama](https://ollama.ai/) — for fully local AI (no API key needed)
+- [Ollama](https://ollama.ai/) - for fully local AI (no API key needed)
 
 ## 1. Clone the Repository
 
@@ -84,7 +84,7 @@ docker compose down -v
 docker compose up postgres -d
 ```
 
-Then restart the backend — migrations will recreate the schema.
+Then restart the backend - migrations will recreate the schema.
 
 ## Troubleshooting
 

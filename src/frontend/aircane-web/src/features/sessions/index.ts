@@ -1,4 +1,4 @@
-// Sessions feature — session hosting, joining, and real-time play
+// Sessions feature - session hosting, joining, and real-time play
 export { default } from './JoinSessionView.vue'
 export { default as LanJoinScreen } from './LanJoinScreen.vue'
 export { default as ParticipantApprovalPanel } from './ParticipantApprovalPanel.vue'

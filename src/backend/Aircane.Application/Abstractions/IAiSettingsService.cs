@@ -4,7 +4,7 @@ namespace Aircane.Application.Abstractions;
 
 /// <summary>
 /// Service for managing AI provider configuration.
-/// Keys are stored server-side via environment variables or user secrets — never in the database.
+/// Keys are stored server-side via environment variables or user secrets - never in the database.
 /// </summary>
 public interface IAiSettingsService
 {
@@ -22,7 +22,7 @@ public interface IAiSettingsService
 
     /// <summary>
     /// Tests the connection to the specified provider using the given credentials.
-    /// Does not persist the configuration — only validates connectivity.
+    /// Does not persist the configuration - only validates connectivity.
     /// </summary>
     Task<TestConnectionResult> TestConnectionAsync(
         UpdateAiProviderRequest request,

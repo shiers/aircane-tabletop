@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Aircane Tabletop — Production Multi-Stage Dockerfile
+# Aircane Tabletop - Production Multi-Stage Dockerfile
 #
 # Builds both the .NET backend and Vue frontend, then produces a minimal
 # runtime image that serves the API and static frontend files.

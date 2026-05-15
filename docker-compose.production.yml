@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Aircane Tabletop — Production Docker Compose
+# Aircane Tabletop - Production Docker Compose
 #
 # Usage:
 #   docker compose -f docker-compose.production.yml up -d

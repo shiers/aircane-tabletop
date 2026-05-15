@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * ChatPanel — shared chat component for both host and player session screens.
+ * ChatPanel - shared chat component for both host and player session screens.
  * Displays a scrollable message log and an input field to send new messages.
  */
 import { ref, nextTick, watch } from 'vue'

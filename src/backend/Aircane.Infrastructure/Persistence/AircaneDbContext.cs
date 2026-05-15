@@ -349,7 +349,7 @@ public class AircaneDbContext : DbContext
                 .IsRequired();
             if (!_isInMemory) definitionJsonProperty.HasColumnType("jsonb");
 
-            // Ignore rich domain navigation properties — only persist the JSON blob
+            // Ignore rich domain navigation properties - only persist the JSON blob
             entity.Ignore(e => e.Tags);
             entity.Ignore(e => e.DiceConventions);
             entity.Ignore(e => e.ResolutionRules);

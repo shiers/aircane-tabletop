@@ -27,7 +27,7 @@ public sealed record UnmappedFieldDto(
 public sealed record CharacterFieldReviewDto(
     /// <summary>The ID of the draft character that was persisted and awaits review.</summary>
     Guid CharacterId,
-    /// <summary>Always true when this DTO is returned — signals the frontend to show the review UI.</summary>
+    /// <summary>Always true when this DTO is returned - signals the frontend to show the review UI.</summary>
     bool ReviewRequired,
     /// <summary>Fields that need manual mapping before the character is considered complete.</summary>
     IReadOnlyList<UnmappedFieldDto> UnmappedFields,

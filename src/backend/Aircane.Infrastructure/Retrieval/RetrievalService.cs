@@ -193,10 +193,10 @@ public sealed class RetrievalService : IRetrievalService
     /// Returns the set of <see cref="ContentVisibility"/> values visible to a caller
     /// with the given <paramref name="maxVisibility"/> level.
     /// <list type="bullet">
-    ///   <item><see cref="ContentVisibility.Public"/> — only Public chunks</item>
-    ///   <item><see cref="ContentVisibility.Revealed"/> — Public and Revealed chunks (player-visible)</item>
-    ///   <item><see cref="ContentVisibility.DMOnly"/> — Public, Revealed, and DMOnly chunks (DM/Host)</item>
-    ///   <item><see cref="ContentVisibility.Hidden"/> — all chunks including Hidden (Host/admin)</item>
+    ///   <item><see cref="ContentVisibility.Public"/> - only Public chunks</item>
+    ///   <item><see cref="ContentVisibility.Revealed"/> - Public and Revealed chunks (player-visible)</item>
+    ///   <item><see cref="ContentVisibility.DMOnly"/> - Public, Revealed, and DMOnly chunks (DM/Host)</item>
+    ///   <item><see cref="ContentVisibility.Hidden"/> - all chunks including Hidden (Host/admin)</item>
     /// </list>
     /// </summary>
     private static IReadOnlyList<ContentVisibility> GetAllowedVisibilities(ContentVisibility maxVisibility)

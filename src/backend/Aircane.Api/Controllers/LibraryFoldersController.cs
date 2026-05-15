@@ -43,7 +43,7 @@ public sealed class LibraryFoldersController : ControllerBase
     /// </summary>
     /// <remarks>
     /// The folder path must be an absolute path accessible to the server process.
-    /// Source files are never copied — the app reads them in place.
+    /// Source files are never copied - the app reads them in place.
     /// </remarks>
     [HttpPost]
     [ProducesResponseType(typeof(WatchedFolderDto), StatusCodes.Status201Created)]

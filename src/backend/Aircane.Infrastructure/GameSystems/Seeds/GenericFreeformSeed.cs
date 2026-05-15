@@ -50,9 +50,9 @@ public static class GenericFreeformSeed
                 MechanicalNotes = "No fixed dice conventions or resolution rules. Ask the host for clarification on any mechanical situations. Support any dice notation the players use.",
                 CommonMistakes = new List<string>
                 {
-                    "Do not assume d20-based mechanics — this is a freeform system.",
-                    "Do not enforce specific action economy rules — let the host manage turn structure.",
-                    "Do not reject condition names — any freeform text condition is valid."
+                    "Do not assume d20-based mechanics - this is a freeform system.",
+                    "Do not enforce specific action economy rules - let the host manage turn structure.",
+                    "Do not reject condition names - any freeform text condition is valid."
                 },
                 RollFormatExample = null
             }

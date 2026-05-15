@@ -3,7 +3,7 @@ using Aircane.Domain.Enums;
 namespace Aircane.Domain.Entities.GameSystems;
 
 /// <summary>
-/// Defines the action economy for a game system — what a character can do on their turn.
+/// Defines the action economy for a game system - what a character can do on their turn.
 /// </summary>
 public record ActionEconomyDefinition
 {

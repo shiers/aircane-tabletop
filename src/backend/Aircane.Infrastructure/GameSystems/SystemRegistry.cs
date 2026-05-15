@@ -203,7 +203,7 @@ public class SystemRegistry : ISystemRegistry
         existing.DefinitionJson = _serializer.PrintJson(definition);
         existing.UpdatedAt = DateTimeOffset.UtcNow;
 
-        // Create a new version snapshot — campaigns stay pinned to their version
+        // Create a new version snapshot - campaigns stay pinned to their version
         var version = new GameSystemDefinitionVersion(
             definitionId,
             definition.Version,

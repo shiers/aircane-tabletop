@@ -23,7 +23,7 @@ public class SessionIntegrationTests : IClassFixture<AircaneWebApplicationFactor
     [Fact]
     public async Task CreateSession_JoinSession_VerifiesParticipant()
     {
-        // Arrange — create a campaign first
+        // Arrange - create a campaign first
         var campaignRequest = new CreateCampaignRequest(
             Name: "Test Campaign",
             GameSystem: "D&D 5e 2014",
@@ -37,7 +37,7 @@ public class SessionIntegrationTests : IClassFixture<AircaneWebApplicationFactor
         var campaign = await campaignResponse.Content.ReadFromJsonAsync<CampaignDto>();
         Assert.NotNull(campaign);
 
-        // Act — start a session
+        // Act - start a session
         var startBody = new
         {
             Name = "Session 1",
@@ -53,7 +53,7 @@ public class SessionIntegrationTests : IClassFixture<AircaneWebApplicationFactor
         Assert.NotNull(session);
         Assert.NotNull(session.InviteCode);
 
-        // Act — join the session as a player
+        // Act - join the session as a player
         var joinBody = new
         {
             DisplayName = "Player One",
@@ -75,7 +75,7 @@ public class SessionIntegrationTests : IClassFixture<AircaneWebApplicationFactor
     [Fact]
     public async Task JoinSession_WithInvalidInviteCode_ReturnsBadRequest()
     {
-        // Arrange — create campaign and session
+        // Arrange - create campaign and session
         var campaignRequest = new CreateCampaignRequest(
             Name: "Auth Test Campaign",
             GameSystem: "D&D 5e 2014",
@@ -97,7 +97,7 @@ public class SessionIntegrationTests : IClassFixture<AircaneWebApplicationFactor
         var session = await sessionResponse.Content.ReadFromJsonAsync<SessionDto>();
         Assert.NotNull(session);
 
-        // Act — try to join with wrong invite code
+        // Act - try to join with wrong invite code
         var joinBody = new
         {
             DisplayName = "Hacker",

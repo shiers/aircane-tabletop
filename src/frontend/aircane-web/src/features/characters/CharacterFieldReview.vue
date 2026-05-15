@@ -123,7 +123,7 @@ async function skipReview(): Promise<void> {
   saving.value = true
 
   try {
-    // Apply an empty mappings list — the character is already persisted as a draft.
+    // Apply an empty mappings list - the character is already persisted as a draft.
     await applyFieldMappings(props.characterId, { mappings: [] })
     await router.push({ name: 'characters' })
   } catch (err: unknown) {
@@ -261,7 +261,7 @@ async function skipReview(): Promise<void> {
 
                 <!-- Source value -->
                 <td class="px-4 py-3 text-gray-300">
-                  {{ row.sourceValue || '—' }}
+                  {{ row.sourceValue || '-' }}
                 </td>
 
                 <!-- Canonical field dropdown -->
@@ -275,7 +275,7 @@ async function skipReview(): Promise<void> {
                     :disabled="!row.include"
                     class="block w-full min-w-[180px] rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <option value="">— Skip this field —</option>
+                    <option value="">- Skip this field -</option>
                     <option
                       v-for="opt in CANONICAL_FIELD_OPTIONS"
                       :key="opt.value"
@@ -324,7 +324,7 @@ async function skipReview(): Promise<void> {
           class="rounded-lg px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:cursor-not-allowed disabled:opacity-50"
           @click="skipReview"
         >
-          Skip — save as-is
+          Skip - save as-is
         </button>
 
         <button

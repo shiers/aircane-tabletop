@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * PlayerSessionView — the player session screen.
+ * PlayerSessionView - the player session screen.
  * Route: /sessions/:sessionId/play
  *
  * Shows public scene description, chat, dice tray, assigned character info,
@@ -345,7 +345,7 @@ onUnmounted(async () => {
               Character
             </h2>
 
-            <!-- Waiting state — no character assigned -->
+            <!-- Waiting state - no character assigned -->
             <div
               v-if="!hasCharacter"
               class="flex flex-col items-center gap-3 py-6 text-center"

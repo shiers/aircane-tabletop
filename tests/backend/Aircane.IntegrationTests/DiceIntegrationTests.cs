@@ -24,10 +24,10 @@ public class DiceIntegrationTests : IClassFixture<AircaneWebApplicationFactory>
     [Fact]
     public async Task RollDice_RecordsRollInSession()
     {
-        // Arrange — create campaign, session, and join to get a participant ID
+        // Arrange - create campaign, session, and join to get a participant ID
         var (sessionId, participantId) = await CreateSessionAndJoinAsync();
 
-        // Act — roll dice
+        // Act - roll dice
         var rollBody = new
         {
             RollerParticipantId = participantId,
@@ -63,7 +63,7 @@ public class DiceIntegrationTests : IClassFixture<AircaneWebApplicationFactory>
             Visibility = (int)RollVisibility.Public
         };
 
-        // Act — roll and then check the log
+        // Act - roll and then check the log
         var rollResponse = await _client.PostAsJsonAsync(
             $"/api/sessions/{sessionId}/rolls", rollBody);
         Assert.Equal(HttpStatusCode.Created, rollResponse.StatusCode);

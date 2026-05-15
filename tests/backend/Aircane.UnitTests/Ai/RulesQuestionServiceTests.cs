@@ -31,7 +31,7 @@ public class RulesQuestionServiceTests
             new(Guid.NewGuid(), Guid.NewGuid(), "Player's Handbook", 14, "Combat")
         };
         _fakeRag.SetResult(new RagContextResult(
-            ContextText: "[1] (Player's Handbook — Combat, p.14)\nAC is calculated from armor + dex.",
+            ContextText: "[1] (Player's Handbook - Combat, p.14)\nAC is calculated from armor + dex.",
             Citations: citations,
             TotalChunksRetrieved: 1,
             ChunksIncluded: 1));
@@ -165,7 +165,7 @@ public class RulesQuestionServiceTests
             new(chunkId2, Guid.NewGuid(), "XGE", 150, null)
         };
         _fakeRag.SetResult(new RagContextResult(
-            ContextText: "[1] (PHB — Spells, p.241)\nFireball text.\n[2] (XGE, p.150)\nExtra text.",
+            ContextText: "[1] (PHB - Spells, p.241)\nFireball text.\n[2] (XGE, p.150)\nExtra text.",
             Citations: citations,
             TotalChunksRetrieved: 2,
             ChunksIncluded: 2));

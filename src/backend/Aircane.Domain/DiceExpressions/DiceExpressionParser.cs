@@ -425,7 +425,7 @@ public static class DiceExpressionParser
             }
         }
 
-        // Not a keep/drop directive — that's fine, might be a modifier or something else
+        // Not a keep/drop directive - that's fine, might be a modifier or something else
         return (null, false, null);
     }
 

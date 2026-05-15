@@ -28,7 +28,7 @@ public class AiProposalIntegrationTests : IClassFixture<AircaneWebApplicationFac
     [Fact]
     public async Task CreateProposal_Approve_VerifyStatusApplied()
     {
-        // Arrange — create campaign and session
+        // Arrange - create campaign and session
         var (campaignId, sessionId) = await CreateCampaignAndSessionAsync();
 
         // Create a proposal directly via the service (simulating AI output)
@@ -55,7 +55,7 @@ public class AiProposalIntegrationTests : IClassFixture<AircaneWebApplicationFac
             Assert.Equal(AiProposalStatus.Pending, proposal.Status);
         }
 
-        // Act — approve the proposal via the API
+        // Act - approve the proposal via the API
         var approveResponse = await _client.PostAsync(
             $"/api/sessions/{sessionId}/ai/proposals/{proposalId}/approve", null);
 
@@ -72,10 +72,10 @@ public class AiProposalIntegrationTests : IClassFixture<AircaneWebApplicationFac
     [Fact]
     public async Task GetPendingProposals_ReturnsOnlyPending()
     {
-        // Arrange — create campaign and session
+        // Arrange - create campaign and session
         var (campaignId, sessionId) = await CreateCampaignAndSessionAsync();
 
-        // Create two proposals — approve one, leave one pending
+        // Create two proposals - approve one, leave one pending
         using (var scope = _factory.Services.CreateScope())
         {
             var proposalService = scope.ServiceProvider.GetRequiredService<IAiProposalService>();
@@ -105,7 +105,7 @@ public class AiProposalIntegrationTests : IClassFixture<AircaneWebApplicationFac
             await proposalService.ApproveProposalAsync(proposal1.Id);
         }
 
-        // Act — get pending proposals
+        // Act - get pending proposals
         var response = await _client.GetAsync(
             $"/api/sessions/{sessionId}/ai/proposals");
 
@@ -143,7 +143,7 @@ public class AiProposalIntegrationTests : IClassFixture<AircaneWebApplicationFac
             proposalId = proposal.Id;
         }
 
-        // Act — reject the proposal
+        // Act - reject the proposal
         var rejectBody = new { Reason = "Too much damage for this encounter" };
         var rejectResponse = await _client.PostAsJsonAsync(
             $"/api/sessions/{sessionId}/ai/proposals/{proposalId}/reject", rejectBody);

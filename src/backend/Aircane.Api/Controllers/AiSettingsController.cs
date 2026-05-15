@@ -35,7 +35,7 @@ public class AiSettingsController : ControllerBase
 
     /// <summary>
     /// Updates the active AI provider and its configuration.
-    /// Keys are stored server-side only — never in the database or client.
+    /// Keys are stored server-side only - never in the database or client.
     /// </summary>
     [HttpPut]
     public IActionResult UpdateConfig([FromBody] UpdateAiProviderRequest request)

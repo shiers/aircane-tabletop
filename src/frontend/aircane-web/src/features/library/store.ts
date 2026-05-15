@@ -97,7 +97,7 @@ export const useLibraryStore = defineStore('library', () => {
       await hubConnection.start()
       await hubConnection.invoke('JoinLibraryGroup')
     } catch (err) {
-      // SignalR unavailable — fall back to polling for non-terminal documents
+      // SignalR unavailable - fall back to polling for non-terminal documents
       console.warn('[LibraryStore] SignalR connection failed, falling back to polling.', err)
       hubConnection = null
       for (const doc of documents.value) {
@@ -265,7 +265,7 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
-  /** Tear down SignalR and polling — call on store/component cleanup. */
+  /** Tear down SignalR and polling - call on store/component cleanup. */
   async function cleanup(): Promise<void> {
     stopAllPolling()
     await disconnectSignalR()

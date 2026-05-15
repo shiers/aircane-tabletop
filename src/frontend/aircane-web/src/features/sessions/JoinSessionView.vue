@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * JoinSessionView — the page players open when they follow a join URL.
+ * JoinSessionView - the page players open when they follow a join URL.
  * Route: /join/:sessionId
  *
  * Loads the session details, then shows the PlayerJoinForm.
@@ -79,7 +79,7 @@ function handleJoined(result: JoinSessionResult): void {
         </RouterLink>
       </div>
 
-      <!-- Joined — waiting for approval -->
+      <!-- Joined - waiting for approval -->
       <div
         v-else-if="joinResult"
         class="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center"

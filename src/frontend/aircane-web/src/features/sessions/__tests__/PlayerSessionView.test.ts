@@ -59,7 +59,7 @@ vi.mock('../../dice/api', async (importOriginal) => {
   }
 })
 
-// Mock session store — player with no character assigned
+// Mock session store - player with no character assigned
 const mockStoreNoCharacter = {
   currentSession: {
     id: 'session-1',
@@ -92,7 +92,7 @@ const mockStoreNoCharacter = {
   fetchParticipants: vi.fn().mockResolvedValue(undefined),
 }
 
-// Mock session store — player with character assigned
+// Mock session store - player with character assigned
 const mockStoreWithCharacter = {
   ...mockStoreNoCharacter,
   participants: [
@@ -189,7 +189,7 @@ describe('PlayerSessionView', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // Waiting state — no character assigned
+  // Waiting state - no character assigned
   // ---------------------------------------------------------------------------
 
   it('shows waiting state when no character is assigned', async () => {

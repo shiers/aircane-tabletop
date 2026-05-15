@@ -188,7 +188,7 @@ public sealed class Dnd5eEncounterValidatorTests
     [Fact]
     public void ValidateEncounter_unparsable_cr_adds_warning()
     {
-        // Mix of parsable and unparsable CRs — the unparsable one should produce a warning
+        // Mix of parsable and unparsable CRs - the unparsable one should produce a warning
         var encounter = new GeneratedEncounter
         {
             Title = "Mixed Encounter",

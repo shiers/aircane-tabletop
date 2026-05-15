@@ -11,12 +11,12 @@ namespace Aircane.Infrastructure.Ai;
 
 /// <summary>
 /// AI provider that calls the OpenAI chat completions API using raw <see cref="HttpClient"/> calls.
-/// No OpenAI SDK is used — all serialization is handled by <c>System.Text.Json</c>.
+/// No OpenAI SDK is used - all serialization is handled by <c>System.Text.Json</c>.
 /// <para>
 /// Configuration keys:
 /// <list type="bullet">
-///   <item><c>Ai:OpenAi:ApiKey</c> — OpenAI API key (required; read from environment or user secrets)</item>
-///   <item><c>Ai:OpenAi:Model</c> — model name (default: <c>gpt-4o-mini</c>)</item>
+///   <item><c>Ai:OpenAi:ApiKey</c> - OpenAI API key (required; read from environment or user secrets)</item>
+///   <item><c>Ai:OpenAi:Model</c> - model name (default: <c>gpt-4o-mini</c>)</item>
 /// </list>
 /// </para>
 /// <para>

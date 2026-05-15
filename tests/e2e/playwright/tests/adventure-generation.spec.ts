@@ -29,7 +29,7 @@ test.describe('Adventure Generation Page', () => {
   test('switches between Solo and Group mode', async ({ page }) => {
     await page.goto('/adventures/generate')
 
-    // Default is Solo — party size should not be visible
+    // Default is Solo - party size should not be visible
     await expect(page.getByLabel(/party size/i)).not.toBeVisible()
 
     // Switch to Group mode

@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aircane.Api.Controllers;
 
 /// <summary>
-/// Campaign state and event log endpoints — provides access to the current
+/// Campaign state and event log endpoints - provides access to the current
 /// campaign state snapshot and the paginated event audit log.
 /// </summary>
 [ApiController]

@@ -130,7 +130,7 @@ public class PdfPigTextExtractorTests
         }
         catch (OperationCanceledException)
         {
-            // Expected — cancellation propagated correctly.
+            // Expected - cancellation propagated correctly.
         }
     }
 

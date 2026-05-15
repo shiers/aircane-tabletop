@@ -7,7 +7,7 @@ namespace Aircane.Application.Abstractions;
 /// </summary>
 public enum AiActionType
 {
-    /// <summary>Pure narration — no state change; always safe to display.</summary>
+    /// <summary>Pure narration - no state change; always safe to display.</summary>
     Narrate,
 
     /// <summary>Ask a player or character to make a dice roll.</summary>

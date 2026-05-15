@@ -82,7 +82,7 @@ public class DiceServiceTests : IDisposable
     [Fact]
     public async Task RollAsync_KeepHighest_DropsLowestDice()
     {
-        // 4d6kh3 — rolls: 1, 5, 3, 6 → keep highest 3: 5, 3, 6 → total = 14
+        // 4d6kh3 - rolls: 1, 5, 3, 6 → keep highest 3: 5, 3, 6 → total = 14
         var svc = CreateService(new SequenceRandomizer(1, 5, 3, 6));
         var request = SimpleRequest("4d6kh3");
 
@@ -97,7 +97,7 @@ public class DiceServiceTests : IDisposable
     [Fact]
     public async Task RollAsync_Advantage_KeepsHigherOfTwoD20s()
     {
-        // advantage = 2d20kh1 — rolls: 8, 17 → keep highest: 17
+        // advantage = 2d20kh1 - rolls: 8, 17 → keep highest: 17
         var svc = CreateService(new SequenceRandomizer(8, 17));
         var request = SimpleRequest("advantage");
 
@@ -110,7 +110,7 @@ public class DiceServiceTests : IDisposable
     [Fact]
     public async Task RollAsync_Disadvantage_KeepsLowerOfTwoD20s()
     {
-        // disadvantage = 2d20kl1 — rolls: 8, 17 → keep lowest: 8
+        // disadvantage = 2d20kl1 - rolls: 8, 17 → keep lowest: 8
         var svc = CreateService(new SequenceRandomizer(8, 17));
         var request = SimpleRequest("disadvantage");
 

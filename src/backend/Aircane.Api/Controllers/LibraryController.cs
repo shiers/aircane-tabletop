@@ -15,7 +15,7 @@ namespace Aircane.Api.Controllers;
 /// <para>
 /// SECURITY DESIGN DECISION: Source documents (PDFs, rulebooks, adventures) are NEVER served
 /// directly to clients through this controller or any other endpoint. The API returns only
-/// metadata (title, type, status, etc.) — never file content or filesystem paths.
+/// metadata (title, type, status, etc.) - never file content or filesystem paths.
 /// </para>
 /// <para>
 /// Source files are read server-side by the import pipeline for text extraction, chunking,
@@ -170,7 +170,7 @@ public sealed class LibraryController : ControllerBase
     /// <remarks>
     /// This endpoint intentionally returns only the <see cref="SourceDocumentDto"/> which excludes
     /// the <c>SourcePath</c> property from the domain entity. There is no companion endpoint to
-    /// download or stream the source file — this is by design to protect private source documents.
+    /// download or stream the source file - this is by design to protect private source documents.
     /// </remarks>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(SourceDocumentDto), StatusCodes.Status200OK)]

@@ -23,7 +23,7 @@ public class PdfCharacterExtractorTests
     /// </summary>
     private static Stream EmptyPdfStream()
     {
-        // Minimal valid PDF 1.4 with one empty page — no text, no AcroForm
+        // Minimal valid PDF 1.4 with one empty page - no text, no AcroForm
         const string minimalPdf = "%PDF-1.4\n" +
                                   "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
                                   "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +

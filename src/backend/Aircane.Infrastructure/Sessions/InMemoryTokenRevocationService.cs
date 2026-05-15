@@ -6,7 +6,7 @@ namespace Aircane.Infrastructure.Sessions;
 /// <summary>
 /// In-memory token revocation list for the MVP.
 /// Tracks which sessions have been ended so that participant tokens can be rejected.
-/// This is intentionally a singleton — the revocation set must survive request lifetimes.
+/// This is intentionally a singleton - the revocation set must survive request lifetimes.
 /// </summary>
 /// <remarks>
 /// For internet/cloud mode this should be replaced with a persistent store (e.g. Redis or a DB table).

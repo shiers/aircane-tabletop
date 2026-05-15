@@ -14,8 +14,8 @@ namespace Aircane.Infrastructure.Embeddings;
 /// <para>
 /// Configuration keys:
 /// <list type="bullet">
-///   <item><c>Embeddings:Ollama:BaseUrl</c> — base URL of the Ollama server (default: <c>http://localhost:11434</c>)</item>
-///   <item><c>Embeddings:Ollama:Model</c> — model name (default: <c>nomic-embed-text</c>)</item>
+///   <item><c>Embeddings:Ollama:BaseUrl</c> - base URL of the Ollama server (default: <c>http://localhost:11434</c>)</item>
+///   <item><c>Embeddings:Ollama:Model</c> - model name (default: <c>nomic-embed-text</c>)</item>
 /// </list>
 /// </para>
 /// <para>

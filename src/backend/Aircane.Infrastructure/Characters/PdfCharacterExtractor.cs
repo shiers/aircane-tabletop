@@ -486,7 +486,7 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
         if (int.TryParse(cleaned, out var score))
             return score;
 
-        warnings.Add($"'{fieldName}' value '{value}' is not a valid integer — defaulting to 10.");
+        warnings.Add($"'{fieldName}' value '{value}' is not a valid integer - defaulting to 10.");
         return 10;
     }
 
@@ -501,7 +501,7 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
         if (int.TryParse(cleaned, out var result))
             return result;
 
-        warnings.Add($"'{fieldName}' value '{value}' is not a valid integer — defaulting to {defaultValue}.");
+        warnings.Add($"'{fieldName}' value '{value}' is not a valid integer - defaulting to {defaultValue}.");
         return defaultValue;
     }
 
@@ -529,14 +529,14 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
             }
             else if (parts.Length == 1)
             {
-                // Class name only, no level — add with level 1 as a placeholder
+                // Class name only, no level - add with level 1 as a placeholder
                 character.Classes.Add(new CharacterClass
                 {
                     ClassName = parts[0],
                     Level = 1,
                     HitDie = DefaultHitDieForClass(parts[0])
                 });
-                warnings.Add($"'ClassLevel' value '{value}' did not include a level — defaulting to 1.");
+                warnings.Add($"'ClassLevel' value '{value}' did not include a level - defaulting to 1.");
             }
             else
             {
@@ -552,7 +552,7 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
     {
         if (!int.TryParse(value.Trim(), out var level))
         {
-            warnings.Add($"'Level' value '{value}' is not a valid integer — ignoring.");
+            warnings.Add($"'Level' value '{value}' is not a valid integer - ignoring.");
             return;
         }
 
@@ -562,7 +562,7 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
         }
         else
         {
-            // No class yet — create a placeholder
+            // No class yet - create a placeholder
             character.Classes.Add(new CharacterClass
             {
                 ClassName = "Unknown",

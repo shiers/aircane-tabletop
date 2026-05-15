@@ -23,7 +23,7 @@ public static class DependencyInjection
         // Game System Definition serialization
         services.AddSingleton<IGameSystemDefinitionSerializer, GameSystemDefinitionSerializer>();
 
-        // System-agnostic mechanic components (stateless — safe as singletons)
+        // System-agnostic mechanic components (stateless - safe as singletons)
         services.AddSingleton<IMechanicResolver, MechanicResolver>();
         services.AddSingleton<ICharacterSchemaEngine, CharacterSchemaEngine>();
         services.AddSingleton<IConditionRegistry, ConditionRegistry>();

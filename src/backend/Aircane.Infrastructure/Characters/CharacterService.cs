@@ -225,7 +225,7 @@ public sealed class CharacterService : ICharacterService
         // 1. Extract fields from the PDF
         var extraction = await _pdfExtractor.ExtractAsync(request.FileContent, cancellationToken);
 
-        // 2. OCR required — cannot proceed without text content
+        // 2. OCR required - cannot proceed without text content
         if (extraction.IsOcrRequired)
         {
             throw new InvalidOperationException(
@@ -234,7 +234,7 @@ public sealed class CharacterService : ICharacterService
                 "Please use a form-fillable or text-readable PDF.");
         }
 
-        // 3. No name mapped — return a draft character for manual review
+        // 3. No name mapped - return a draft character for manual review
         var mapped = extraction.MappedCharacter;
         if (mapped is null || string.IsNullOrWhiteSpace(mapped.Identity.Name))
         {
@@ -320,7 +320,7 @@ public sealed class CharacterService : ICharacterService
         if (string.IsNullOrWhiteSpace(request.CanonicalJson))
             return CharacterImportResult.Fail("JSON content is required.");
 
-        // 1. Parse JSON — catch malformed input
+        // 1. Parse JSON - catch malformed input
         CanonicalCharacter canonical;
         try
         {
@@ -329,7 +329,7 @@ public sealed class CharacterService : ICharacterService
         }
         catch (System.Text.Json.JsonException ex)
         {
-            _logger.LogWarning("JSON character import failed — malformed JSON: {Message}", ex.Message);
+            _logger.LogWarning("JSON character import failed - malformed JSON: {Message}", ex.Message);
             return CharacterImportResult.Fail($"Invalid JSON: {ex.Message}");
         }
 
@@ -342,7 +342,7 @@ public sealed class CharacterService : ICharacterService
                 .ToList();
 
             _logger.LogWarning(
-                "JSON character import failed — {ErrorCount} validation error(s): {Errors}",
+                "JSON character import failed - {ErrorCount} validation error(s): {Errors}",
                 errors.Count,
                 string.Join("; ", errors));
 

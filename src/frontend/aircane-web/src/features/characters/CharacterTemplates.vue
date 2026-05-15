@@ -14,7 +14,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const emit = defineEmits<{
-  /** Emitted when the user clicks "Use Template" — passes the template's field definitions
+  /** Emitted when the user clicks "Use Template" - passes the template's field definitions
    *  so the parent can pre-fill the character creation form. */
   useTemplate: [template: CharacterTemplateDto]
 }>()
@@ -37,7 +37,7 @@ const newTemplateName = ref('')
 const newTemplateGameSystem = ref('D&D 5e')
 const newTemplateRuleset = ref('2014')
 
-/** Field rows for the save form — each row maps a canonical field to a display group. */
+/** Field rows for the save form - each row maps a canonical field to a display group. */
 interface FieldRow {
   fieldName: string
   canonicalFieldPath: string
@@ -449,7 +449,7 @@ function handleUseTemplate(template: CharacterTemplateDto): void {
                       class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-100 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
                       @change="onCanonicalPathChange(row)"
                     >
-                      <option value="">— Select —</option>
+                      <option value="">- Select -</option>
                       <option
                         v-for="opt in CANONICAL_FIELD_OPTIONS"
                         :key="opt.value"

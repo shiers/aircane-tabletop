@@ -61,7 +61,7 @@ async function loadProviders() {
   try {
     providers.value = await getProviders()
   } catch {
-    // Non-critical — use defaults
+    // Non-critical - use defaults
     providers.value = [
       { id: AiProviderType.Fake, name: 'Fake (Development)', description: 'Deterministic fake provider for testing' },
       { id: AiProviderType.OpenAi, name: 'OpenAI', description: 'GPT-4o, GPT-4o-mini, and other OpenAI models' },

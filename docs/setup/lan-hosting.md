@@ -140,7 +140,7 @@ sudo ufw allow 5173/tcp
 
 ## Limitations (MVP)
 
-- LAN only — no internet/tunnel hosting yet
+- LAN only - no internet/tunnel hosting yet
 - No HTTPS on LAN (acceptable for trusted local networks)
 - Session tokens expire after 24 hours by default
-- No persistent user accounts — players are identified by session tokens
+- No persistent user accounts - players are identified by session tokens

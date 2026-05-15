@@ -433,7 +433,7 @@ public sealed class AdventureGenerationServiceTests : IDisposable
             }
             else
             {
-                // Default fallback — return a pitch
+                // Default fallback - return a pitch
                 response = JsonSerializer.Serialize(new AdventurePitch
                 {
                     Title = "Default Adventure",

@@ -23,7 +23,7 @@ public class LibraryIntegrationTests : IClassFixture<AircaneWebApplicationFactor
     [Fact]
     public async Task UploadDocument_CreatesDocumentRecord()
     {
-        // Arrange — create a minimal PDF-like file (the import pipeline won't fully process
+        // Arrange - create a minimal PDF-like file (the import pipeline won't fully process
         // in-memory, but the upload endpoint should accept it and create the record)
         var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent("%PDF-1.4 fake content"u8.ToArray());
@@ -54,7 +54,7 @@ public class LibraryIntegrationTests : IClassFixture<AircaneWebApplicationFactor
     [Fact]
     public async Task UploadDocument_ListDocuments_ReturnsUploadedDocument()
     {
-        // Arrange — upload a document first
+        // Arrange - upload a document first
         var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent("%PDF-1.4 adventure content"u8.ToArray());
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
@@ -68,7 +68,7 @@ public class LibraryIntegrationTests : IClassFixture<AircaneWebApplicationFactor
         var uploadResponse = await _client.PostAsync("/api/library/documents", content);
         Assert.Equal(HttpStatusCode.Created, uploadResponse.StatusCode);
 
-        // Act — list documents
+        // Act - list documents
         var listResponse = await _client.GetAsync("/api/library/documents");
 
         // Assert

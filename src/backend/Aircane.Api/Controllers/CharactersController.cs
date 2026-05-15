@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aircane.Api.Controllers;
 
 /// <summary>
-/// Character CRUD — create, retrieve, update, delete, and list characters.
+/// Character CRUD - create, retrieve, update, delete, and list characters.
 /// </summary>
 [ApiController]
 [Route("api/characters")]
@@ -218,7 +218,7 @@ public sealed class CharactersController : ControllerBase
             return Ok(reviewDto);
         }
 
-        // All fields mapped — return the extraction result for the frontend review UI
+        // All fields mapped - return the extraction result for the frontend review UI
         return Ok(extraction);
     }
 
@@ -639,7 +639,7 @@ public sealed class CharactersController : ControllerBase
         {
             var definition = await _registry.GetByCampaignAsync(campaignId, cancellationToken);
             if (definition.CharacterSchema is null)
-                return null; // No schema bound — freeform mode
+                return null; // No schema bound - freeform mode
 
             var validationResult = _schemaEngine.Validate(characterJson, definition.CharacterSchema);
             if (!validationResult.IsValid)
@@ -664,14 +664,14 @@ public sealed class CharactersController : ControllerBase
         }
         catch (KeyNotFoundException)
         {
-            // No definition bound to this campaign — skip schema validation
+            // No definition bound to this campaign - skip schema validation
             return null;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Schema validation skipped for campaign {CampaignId}: {Message}",
                 campaignId, ex.Message);
-            return null; // Graceful degradation — don't block character creation
+            return null; // Graceful degradation - don't block character creation
         }
     }
 }

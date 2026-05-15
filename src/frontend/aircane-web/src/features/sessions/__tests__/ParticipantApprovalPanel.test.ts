@@ -115,7 +115,7 @@ describe('ParticipantApprovalPanel', () => {
   it('shows a dash when no character is assigned and no characters are available', () => {
     const wrapper = mountPanel({ availableCharacters: [] })
     // Gandalf has no character assigned and no characters available
-    expect(wrapper.text()).toContain('—')
+    expect(wrapper.text()).toContain('-')
   })
 
   // ---------------------------------------------------------------------------

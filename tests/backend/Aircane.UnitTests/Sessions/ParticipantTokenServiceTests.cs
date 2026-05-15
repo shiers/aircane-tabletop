@@ -96,7 +96,7 @@ public class ParticipantTokenServiceTests
         Assert.NotEqual(token1, token2);
     }
 
-    // ── Token validation — happy path ─────────────────────────────────────────
+    // ── Token validation - happy path ─────────────────────────────────────────
 
     [Fact]
     public void ValidateToken_ReturnsClaimsForValidToken()
@@ -142,7 +142,7 @@ public class ParticipantTokenServiceTests
         Assert.Equal(displayName, claims!.DisplayName);
     }
 
-    // ── Token validation — failure cases ─────────────────────────────────────
+    // ── Token validation - failure cases ─────────────────────────────────────
 
     [Fact]
     public void ValidateToken_ReturnsNullForEmptyString()
@@ -184,7 +184,7 @@ public class ParticipantTokenServiceTests
         var token = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "Thorin", "Player");
 
         // Wait for the token to expire (plus clock skew of 30s means we need to wait longer).
-        // Instead, validate immediately — the token should still be valid.
+        // Instead, validate immediately - the token should still be valid.
         var claimsBeforeExpiry = svc.ValidateToken(token);
         Assert.NotNull(claimsBeforeExpiry);
 

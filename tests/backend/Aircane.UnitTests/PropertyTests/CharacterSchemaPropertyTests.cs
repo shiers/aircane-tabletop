@@ -230,7 +230,7 @@ public class CharacterSchemaPropertyTests
     /// </summary>
     private static Gen<CalculatedFieldTestInput> CalculatedFieldTestInputGen =>
         Gen.OneOf(
-            // Formula: floor((source - 10) / 2) — D&D ability modifier
+            // Formula: floor((source - 10) / 2) - D&D ability modifier
             from sourceValue in Gen.Choose(1, 30)
             let expected = Math.Floor((sourceValue - 10.0) / 2.0)
             select new CalculatedFieldTestInput(
@@ -239,7 +239,7 @@ public class CharacterSchemaPropertyTests
                 new Dictionary<string, double> { ["source"] = sourceValue },
                 expected),
 
-            // Formula: a + b — simple addition
+            // Formula: a + b - simple addition
             from a in Gen.Choose(-20, 20)
             from b in Gen.Choose(-20, 20)
             let expected2 = (double)(a + b)
@@ -249,7 +249,7 @@ public class CharacterSchemaPropertyTests
                 new Dictionary<string, double> { ["a"] = a, ["b"] = b },
                 expected2),
 
-            // Formula: a * b + c — multiplication and addition
+            // Formula: a * b + c - multiplication and addition
             from a in Gen.Choose(1, 10)
             from b in Gen.Choose(1, 10)
             from c in Gen.Choose(-5, 5)
@@ -260,7 +260,7 @@ public class CharacterSchemaPropertyTests
                 new Dictionary<string, double> { ["a"] = a, ["b"] = b, ["c"] = c },
                 expected3),
 
-            // Formula: ceil(x / 2) — ceiling division
+            // Formula: ceil(x / 2) - ceiling division
             from x in Gen.Choose(1, 20)
             let expected4 = Math.Ceiling(x / 2.0)
             select new CalculatedFieldTestInput(

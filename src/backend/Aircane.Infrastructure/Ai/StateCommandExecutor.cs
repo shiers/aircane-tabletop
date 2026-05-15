@@ -66,7 +66,7 @@ public sealed class StateCommandExecutor : IStateCommandExecutor
                 $"AI role '{context.AiRole}' does not have permission for action '{command.Type}'.");
         }
 
-        // Step 3: Check authority level — auto-apply or queue for approval
+        // Step 3: Check authority level - auto-apply or queue for approval
         if (_authorityService.CanAutoApply(context.AiAuthority, command.Type))
         {
             return await ApplyDirectlyAsync(command, context, cancellationToken);
@@ -84,7 +84,7 @@ public sealed class StateCommandExecutor : IStateCommandExecutor
             return validator.Validate(command);
         }
 
-        // No specific validator registered — allow the command through.
+        // No specific validator registered - allow the command through.
         // This supports future action types without requiring a validator for each.
         return null;
     }

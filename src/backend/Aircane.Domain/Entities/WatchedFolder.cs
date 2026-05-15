@@ -5,7 +5,7 @@ namespace Aircane.Domain.Entities;
 
 /// <summary>
 /// Represents a host-registered folder path from which source documents are discovered and indexed.
-/// The app never copies files from this folder — it reads them in place and stores only derived data.
+/// The app never copies files from this folder - it reads them in place and stores only derived data.
 /// </summary>
 public class WatchedFolder : EntityBase
 {
@@ -14,7 +14,7 @@ public class WatchedFolder : EntityBase
 
     /// <summary>
     /// Default source type applied to documents discovered in this folder.
-    /// Does not include Generated or Unknown — those are not valid defaults for a watched folder.
+    /// Does not include Generated or Unknown - those are not valid defaults for a watched folder.
     /// </summary>
     public SourceType DefaultSourceType { get; set; }
 

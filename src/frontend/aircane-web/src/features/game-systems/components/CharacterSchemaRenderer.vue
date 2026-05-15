@@ -144,7 +144,7 @@ const visibleSections = computed(() =>
             <input
               :id="`field-${field.id}`"
               type="text"
-              :value="getFieldValue(field.id) ?? '—'"
+              :value="getFieldValue(field.id) ?? '-'"
               disabled
               class="block w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-400 disabled:opacity-60"
             />

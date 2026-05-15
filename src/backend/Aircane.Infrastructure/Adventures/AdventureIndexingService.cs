@@ -117,7 +117,7 @@ public sealed class AdventureIndexingService : IAdventureIndexingService
         {
             foreach (var scene in scenes)
             {
-                // Scene description — Public (players can see scene descriptions during play)
+                // Scene description - Public (players can see scene descriptions during play)
                 chunks.Add(new DocumentChunk(
                     sourceDocumentId: sourceDocumentId,
                     chunkIndex: chunkIndex++,
@@ -133,7 +133,7 @@ public sealed class AdventureIndexingService : IAdventureIndexingService
                         connectsTo = scene.ConnectsTo,
                     }, JsonOptions)));
 
-                // Read-aloud text — Public
+                // Read-aloud text - Public
                 if (!string.IsNullOrWhiteSpace(scene.ReadAloudText))
                 {
                     chunks.Add(new DocumentChunk(
@@ -150,7 +150,7 @@ public sealed class AdventureIndexingService : IAdventureIndexingService
                         }, JsonOptions)));
                 }
 
-                // DM notes — DMOnly
+                // DM notes - DMOnly
                 if (!string.IsNullOrWhiteSpace(scene.DmNotes))
                 {
                     chunks.Add(new DocumentChunk(
@@ -219,7 +219,7 @@ public sealed class AdventureIndexingService : IAdventureIndexingService
         var clues = DeserializeOrNull<AdventureClues>(adventure.CluesJson);
         if (clues is not null)
         {
-            // Secrets — Hidden (until revealed by DM)
+            // Secrets - Hidden (until revealed by DM)
             foreach (var secret in clues.Secrets)
             {
                 chunks.Add(new DocumentChunk(
@@ -237,7 +237,7 @@ public sealed class AdventureIndexingService : IAdventureIndexingService
                     }, JsonOptions)));
             }
 
-            // Handouts — DMOnly (until revealed)
+            // Handouts - DMOnly (until revealed)
             foreach (var handout in clues.Handouts)
             {
                 chunks.Add(new DocumentChunk(
@@ -254,7 +254,7 @@ public sealed class AdventureIndexingService : IAdventureIndexingService
                     }, JsonOptions)));
             }
 
-            // Fail-forward paths — DMOnly
+            // Fail-forward paths - DMOnly
             foreach (var path in clues.FailForwardPaths)
             {
                 chunks.Add(new DocumentChunk(

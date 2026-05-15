@@ -117,14 +117,14 @@ export Embeddings__Ollama__BaseUrl=http://localhost:11434
 export Embeddings__Ollama__Model=nomic-embed-text
 ```
 
-Other options: `OpenAi`, `AzureOpenAi`, `Fake` (development only — generates random vectors).
+Other options: `OpenAi`, `AzureOpenAi`, `Fake` (development only - generates random vectors).
 
 ---
 
 ## Security Notes
 
 - API keys are **never** stored in the database or sent to the client unmasked.
-- Use .NET user secrets for local development — never commit keys to source control.
+- Use .NET user secrets for local development - never commit keys to source control.
 - In production, use environment variables or a secret manager.
 - The `Fake` provider is for development only and returns deterministic placeholder responses.
 

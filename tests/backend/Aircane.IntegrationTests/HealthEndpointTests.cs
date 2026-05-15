@@ -24,7 +24,7 @@ public class HealthEndpointTests : IClassFixture<AircaneWebApplicationFactory>
 
         // With InMemory database, the health check may report degraded (503) because
         // relational-specific checks (raw SQL) don't work with InMemory provider.
-        // The endpoint should still respond — either 200 or 503.
+        // The endpoint should still respond - either 200 or 503.
         Assert.True(
             response.StatusCode == HttpStatusCode.OK ||
             response.StatusCode == HttpStatusCode.ServiceUnavailable,

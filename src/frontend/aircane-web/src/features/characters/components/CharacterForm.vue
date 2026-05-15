@@ -175,7 +175,7 @@ async function handleSubmit(): Promise<void> {
     const canonicalJson = buildCanonicalJson()
 
     if (props.character) {
-      // Edit mode — only send changed fields
+      // Edit mode - only send changed fields
       const payload: UpdateCharacterRequest = {
         name: form.name.trim(),
         level: form.level,

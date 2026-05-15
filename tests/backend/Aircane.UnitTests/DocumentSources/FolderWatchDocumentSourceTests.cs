@@ -6,7 +6,7 @@ namespace Aircane.UnitTests.DocumentSources;
 
 /// <summary>
 /// Unit tests for <see cref="FolderWatchDocumentSource"/> using a real temp directory.
-/// No mocks are used — all tests exercise actual filesystem I/O.
+/// No mocks are used - all tests exercise actual filesystem I/O.
 /// </summary>
 public sealed class FolderWatchDocumentSourceTests : IDisposable
 {

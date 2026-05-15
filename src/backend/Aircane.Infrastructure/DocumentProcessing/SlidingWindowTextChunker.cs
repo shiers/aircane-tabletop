@@ -60,7 +60,7 @@ public sealed class SlidingWindowTextChunker : ITextChunker
 
             if (remaining <= MaxChunkSize)
             {
-                // Last (or only) chunk — take everything that's left.
+                // Last (or only) chunk - take everything that's left.
                 var lastText = text[position..].Trim();
                 if (lastText.Length > 0)
                 {
@@ -116,7 +116,7 @@ public sealed class SlidingWindowTextChunker : ITextChunker
                 return i + 1; // position after the split character
         }
 
-        // No boundary found — use the hard cut.
+        // No boundary found - use the hard cut.
         return hardCut;
     }
 }

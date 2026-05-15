@@ -1,4 +1,4 @@
-# Aircane Tabletop MVP — Smoke Test Checklist
+# Aircane Tabletop MVP - Smoke Test Checklist
 
 This checklist verifies release readiness for the Aircane Tabletop MVP. Run through each step manually before tagging a release candidate. All steps assume the application is running locally via `docker compose up` or the production build scripts.
 

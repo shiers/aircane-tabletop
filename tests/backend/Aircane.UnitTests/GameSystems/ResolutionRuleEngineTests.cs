@@ -619,7 +619,7 @@ public class ResolutionRuleEngineTests
             Modifier = 0,
             Total = 10
         };
-        // Gaps in thresholds — total 10 doesn't match any band
+        // Gaps in thresholds - total 10 doesn't match any band
         var rule = new ResolutionRule
         {
             Name = "gappyCheck",

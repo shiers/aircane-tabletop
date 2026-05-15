@@ -20,7 +20,7 @@ public class OpenAiProviderTests
 
     /// <summary>
     /// Builds a minimal IConfiguration containing the required OpenAI settings.
-    /// The API key is a placeholder — no real key is used in tests.
+    /// The API key is a placeholder - no real key is used in tests.
     /// </summary>
     private static IConfiguration BuildConfig(
         string apiKey = "test-api-key-placeholder",
@@ -107,7 +107,7 @@ public class OpenAiProviderTests
         Assert.Contains("API key", ex.Message);
     }
 
-    // ── ChatCompletionAsync — request format ──────────────────────────────────
+    // ── ChatCompletionAsync - request format ──────────────────────────────────
 
     [Fact]
     public async Task ChatCompletionAsync_SendsPostToCorrectEndpoint()
@@ -183,7 +183,7 @@ public class OpenAiProviderTests
         Assert.DoesNotContain("json_object", body);
     }
 
-    // ── ChatCompletionAsync — response handling ───────────────────────────────
+    // ── ChatCompletionAsync - response handling ───────────────────────────────
 
     [Fact]
     public async Task ChatCompletionAsync_ReturnsMessageContent()
@@ -221,7 +221,7 @@ public class OpenAiProviderTests
             provider.ChatCompletionAsync([AiMessage.User("Hello")]));
     }
 
-    // ── ChatCompletionAsync — API error handling ──────────────────────────────
+    // ── ChatCompletionAsync - API error handling ──────────────────────────────
 
     [Fact]
     public async Task ChatCompletionAsync_401Response_ThrowsWithUnauthorizedMessage()
@@ -261,7 +261,7 @@ public class OpenAiProviderTests
         Assert.Contains("500", ex.Message);
     }
 
-    // ── StructuredChatCompletionAsync — request format ────────────────────────
+    // ── StructuredChatCompletionAsync - request format ────────────────────────
 
     [Fact]
     public async Task StructuredChatCompletionAsync_SendsJsonModeResponseFormat()
@@ -277,7 +277,7 @@ public class OpenAiProviderTests
         Assert.Contains("response_format", body);
     }
 
-    // ── StructuredChatCompletionAsync — response handling ────────────────────
+    // ── StructuredChatCompletionAsync - response handling ────────────────────
 
     [Fact]
     public async Task StructuredChatCompletionAsync_DeserializesNarration()
@@ -332,7 +332,7 @@ public class OpenAiProviderTests
             provider.StructuredChatCompletionAsync([AiMessage.User("Hello")]));
     }
 
-    // ── StructuredChatCompletionAsync — API error handling ───────────────────
+    // ── StructuredChatCompletionAsync - API error handling ───────────────────
 
     [Fact]
     public async Task StructuredChatCompletionAsync_401Response_ThrowsWithUnauthorizedMessage()

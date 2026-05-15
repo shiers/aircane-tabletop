@@ -34,7 +34,7 @@ public sealed record PdfCharacterExtractionResult
 
     /// <summary>
     /// Non-fatal warnings produced during extraction or mapping,
-    /// e.g. "STR value 'abc' is not a valid integer — defaulting to 10."
+    /// e.g. "STR value 'abc' is not a valid integer - defaulting to 10."
     /// </summary>
     public required IReadOnlyList<string> Warnings { get; init; }
 }

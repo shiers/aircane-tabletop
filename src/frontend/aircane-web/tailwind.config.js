@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Aircane brand palette — extend as needed
+        // Aircane brand palette - extend as needed
         'aircane': {
           50:  '#f0f4ff',
           100: '#dde6ff',

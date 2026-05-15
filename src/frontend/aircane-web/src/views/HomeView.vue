@@ -20,7 +20,7 @@ const features = [
   {
     icon: '🎲',
     title: 'Dice Roller',
-    description: 'Full expression parser — d20, NdM, advantage, disadvantage, modifiers.',
+    description: 'Full expression parser - d20, NdM, advantage, disadvantage, modifiers.',
   },
   {
     icon: '🤖',
@@ -53,7 +53,7 @@ const features = [
         Your AI-Assisted Tabletop RPG
       </h2>
       <p class="mx-auto max-w-xl text-lg text-gray-400">
-        Import rules, run campaigns, roll dice, and let the AI DM guide your adventure —
+        Import rules, run campaigns, roll dice, and let the AI DM guide your adventure -
         all local-first, all under your control.
       </p>
 

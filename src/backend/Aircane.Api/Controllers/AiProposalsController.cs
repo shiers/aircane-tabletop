@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aircane.Api.Controllers;
 
 /// <summary>
-/// AI proposal queue endpoints — allows the host to list, approve, and reject
+/// AI proposal queue endpoints - allows the host to list, approve, and reject
 /// AI-proposed actions before they are applied to campaign state.
 /// </summary>
 [ApiController]

@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aircane.Api.Controllers;
 
 /// <summary>
-/// Game System Definition management — CRUD, import/export, validation, templates, and previews.
+/// Game System Definition management - CRUD, import/export, validation, templates, and previews.
 /// </summary>
 [ApiController]
 [Route("api/game-systems")]
@@ -333,7 +333,7 @@ public sealed class GameSystemsController : ControllerBase
     }
 
     /// <summary>
-    /// Live preview of a dice convention — rolls dice using the definition's convention.
+    /// Live preview of a dice convention - rolls dice using the definition's convention.
     /// </summary>
     [HttpPost("{id:guid}/preview-roll")]
     [ProducesResponseType(typeof(PreviewRollResponse), StatusCodes.Status200OK)]
@@ -405,7 +405,7 @@ public sealed class GameSystemsController : ControllerBase
     }
 
     /// <summary>
-    /// Preview character schema rendering — generates a form descriptor from the definition's character schema.
+    /// Preview character schema rendering - generates a form descriptor from the definition's character schema.
     /// </summary>
     [HttpPost("{id:guid}/preview-character-form")]
     [ProducesResponseType(typeof(FormDescriptor), StatusCodes.Status200OK)]

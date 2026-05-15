@@ -74,7 +74,7 @@ public sealed class AiRoleConfigurationService : IAiRoleConfigurationService
             AiActionType.AwardTreasure => AiRoleCapability.ProposeStateChanges,
             AiActionType.AddQuestFlag => AiRoleCapability.ProposeStateChanges,
             AiActionType.UpdateWorldFlag => AiRoleCapability.ProposeStateChanges,
-            AiActionType.AskClarifyingQuestion => null, // Always allowed — no state change.
+            AiActionType.AskClarifyingQuestion => null, // Always allowed - no state change.
             _ => AiRoleCapability.ProposeStateChanges, // Default: require state change capability.
         };
     }

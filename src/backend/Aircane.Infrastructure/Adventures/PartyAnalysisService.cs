@@ -272,38 +272,38 @@ public sealed class PartyAnalysisService : IPartyAnalysisService
         var weaknesses = new List<string>();
 
         if (!hasHealing)
-            weaknesses.Add("No healing capability — consider recovery opportunities or reduced attrition");
+            weaknesses.Add("No healing capability - consider recovery opportunities or reduced attrition");
 
         if (!hasRangedAttacks)
-            weaknesses.Add("No ranged attacks — flying or distant enemies will be problematic");
+            weaknesses.Add("No ranged attacks - flying or distant enemies will be problematic");
 
         if (!hasMagic)
-            weaknesses.Add("No spellcasting — magical barriers and resistances may block progress");
+            weaknesses.Add("No spellcasting - magical barriers and resistances may block progress");
 
         if (!hasStealth)
-            weaknesses.Add("No stealth proficiency — surprise approaches will be difficult");
+            weaknesses.Add("No stealth proficiency - surprise approaches will be difficult");
 
         if (!hasPerception)
-            weaknesses.Add("No perception proficiency — hidden threats may go unnoticed");
+            weaknesses.Add("No perception proficiency - hidden threats may go unnoticed");
 
         // Check for low AC party
         var averageAC = party.Average(c => c.Combat.ArmorClass);
         if (averageAC < 14)
-            weaknesses.Add("Low average AC — party is vulnerable to sustained attacks");
+            weaknesses.Add("Low average AC - party is vulnerable to sustained attacks");
 
         // Check for low HP
         var averageHP = party.Average(c => Math.Max(c.Combat.MaxHitPoints, c.Combat.CurrentHitPoints));
         if (averageHP < 20 && party.Count > 0)
-            weaknesses.Add("Low average HP — party cannot sustain prolonged combat");
+            weaknesses.Add("Low average HP - party cannot sustain prolonged combat");
 
         // Check for wisdom saves (common in D&D 5e)
         var hasWisdomSave = party.Any(c => c.SavingThrows.Wisdom);
         if (!hasWisdomSave)
-            weaknesses.Add("No Wisdom save proficiency — vulnerable to charm and fear effects");
+            weaknesses.Add("No Wisdom save proficiency - vulnerable to charm and fear effects");
 
         // Check for class diversity
         if (classes.Count == 1 && party.Count > 1)
-            weaknesses.Add("Single-class party — limited versatility in problem-solving approaches");
+            weaknesses.Add("Single-class party - limited versatility in problem-solving approaches");
 
         return weaknesses;
     }

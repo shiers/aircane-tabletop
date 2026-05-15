@@ -27,19 +27,19 @@ function parseClass(character: CharacterDto): string {
   try {
     const canonical = JSON.parse(character.canonicalJson)
     const classes: Array<{ className: string; level: number }> = canonical?.classes ?? []
-    if (classes.length === 0) return '—'
+    if (classes.length === 0) return '-'
     return classes.map((c) => `${c.className} ${c.level}`).join(' / ')
   } catch {
-    return '—'
+    return '-'
   }
 }
 
 function parseRace(character: CharacterDto): string {
   try {
     const canonical = JSON.parse(character.canonicalJson)
-    return canonical?.identity?.raceOrAncestry ?? '—'
+    return canonical?.identity?.raceOrAncestry ?? '-'
   } catch {
-    return '—'
+    return '-'
   }
 }
 

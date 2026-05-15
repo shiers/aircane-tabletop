@@ -5,7 +5,7 @@ namespace Aircane.Domain.Entities;
 
 /// <summary>
 /// Represents an imported or generated source document (rules PDF, adventure, homebrew, etc.).
-/// The file itself is never copied into app storage — this entity holds metadata and import state.
+/// The file itself is never copied into app storage - this entity holds metadata and import state.
 /// For FolderWatch mode, SourcePath is the absolute filesystem path.
 /// For Upload mode (future), SourcePath is the managed storage key.
 /// </summary>

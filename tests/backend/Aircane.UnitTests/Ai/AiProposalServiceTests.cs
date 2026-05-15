@@ -301,7 +301,7 @@ public class AiProposalServiceTests : IDisposable
         await _sut.CreateProposalAsync(new CreateProposalRequest(session.Id, campaign.Id, action1));
         await _sut.CreateProposalAsync(new CreateProposalRequest(session.Id, campaign.Id, action2));
 
-        // List pending — should have 2
+        // List pending - should have 2
         var pending = await _sut.GetPendingProposalsAsync(session.Id);
         Assert.Equal(2, pending.Count);
 
@@ -309,7 +309,7 @@ public class AiProposalServiceTests : IDisposable
         await _sut.ApproveProposalAsync(pending[0].Id);
         await _sut.RejectProposalAsync(pending[1].Id, "Host", "Too much damage");
 
-        // List pending — should be empty
+        // List pending - should be empty
         var remaining = await _sut.GetPendingProposalsAsync(session.Id);
         Assert.Empty(remaining);
     }

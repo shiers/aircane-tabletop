@@ -48,7 +48,7 @@ public static class DependencyInjection
         services.AddScoped<ISessionHostingService, SessionHostingService>();
         // Token revocation is a singleton so the in-memory set survives across requests.
         services.AddSingleton<ITokenRevocationService, InMemoryTokenRevocationService>();
-        // ParticipantTokenService is a singleton — the signing key is loaded once from config.
+        // ParticipantTokenService is a singleton - the signing key is loaded once from config.
         services.AddSingleton<IParticipantTokenService, ParticipantTokenService>();
         services.AddScoped<CharacterSchemaValidator>();
         services.AddScoped<IPdfTextExtractor, PdfPigTextExtractor>();
@@ -67,13 +67,13 @@ public static class DependencyInjection
         RegisterEmbeddingProvider(services, configuration);
         RegisterAiProvider(services, configuration);
 
-        // AI settings management (singleton — holds runtime config in memory)
+        // AI settings management (singleton - holds runtime config in memory)
         services.AddSingleton<IAiSettingsService, AiSettingsService>();
 
-        // AI role configuration (singleton — static capability definitions)
+        // AI role configuration (singleton - static capability definitions)
         services.AddSingleton<IAiRoleConfigurationService, AiRoleConfigurationService>();
 
-        // AI authority configuration (singleton — static authority level definitions)
+        // AI authority configuration (singleton - static authority level definitions)
         services.AddSingleton<IAiAuthorityService, AiAuthorityConfigurationService>();
 
         // AI proposal queue service
@@ -88,28 +88,28 @@ public static class DependencyInjection
         services.AddSingleton<IStateCommandValidator, RevealContentValidator>();
         services.AddSingleton<IStateCommandValidator, MoveSceneValidator>();
 
-        // State command executor — single entry point for AI-initiated state changes
+        // State command executor - single entry point for AI-initiated state changes
         services.AddScoped<IStateCommandExecutor, StateCommandExecutor>();
 
-        // Player action service — orchestrates the full AI DM loop
+        // Player action service - orchestrates the full AI DM loop
         services.AddScoped<IPlayerActionService, PlayerActionService>();
 
-        // Adventure generation — party analysis
+        // Adventure generation - party analysis
         services.AddScoped<IPartyAnalysisService, PartyAnalysisService>();
 
-        // Adventure generation — encounter validation (D&D 5e placeholder)
+        // Adventure generation - encounter validation (D&D 5e placeholder)
         services.AddSingleton<IEncounterValidator, Dnd5eEncounterValidator>();
 
-        // Adventure generation — staged pipeline
+        // Adventure generation - staged pipeline
         services.AddScoped<IAdventureGenerationService, AdventureGenerationService>();
 
-        // Adventure retrieval — loading and deserializing generated adventures
+        // Adventure retrieval - loading and deserializing generated adventures
         services.AddScoped<IAdventureRetrievalService, AdventureRetrievalService>();
 
-        // Adventure indexing — converts generated adventures into searchable chunks
+        // Adventure indexing - converts generated adventures into searchable chunks
         services.AddScoped<IAdventureIndexingService, AdventureIndexingService>();
 
-        // Game System Definition — registry and migration (scoped, uses DbContext)
+        // Game System Definition - registry and migration (scoped, uses DbContext)
         services.AddScoped<ISystemRegistry, SystemRegistry>();
         services.AddScoped<IGameSystemMigrationService, GameSystemMigrationService>();
 

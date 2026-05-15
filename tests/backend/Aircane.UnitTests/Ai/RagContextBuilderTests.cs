@@ -423,9 +423,9 @@ public class RagContextBuilderTests
     }
 
     [Theory]
-    [InlineData(0.29, true)]  // Just below threshold — filtered out
-    [InlineData(0.30, true)]  // Exactly at threshold — included
-    [InlineData(0.31, true)]  // Just above threshold — included
+    [InlineData(0.29, true)]  // Just below threshold - filtered out
+    [InlineData(0.30, true)]  // Exactly at threshold - included
+    [InlineData(0.31, true)]  // Just above threshold - included
     public async Task BuildContextAsync_ScoreAtThresholdBoundary_BehavesCorrectly(double score, bool _)
     {
         var chunks = new List<ChunkResultDto>
@@ -522,7 +522,7 @@ public class RagContextBuilderTests
         var request = new RagContextRequest(Query: "test");
         var result = await _builder.BuildContextAsync(request);
 
-        Assert.Contains("PHB — Chapter 9, p.100", result.ContextText);
+        Assert.Contains("PHB - Chapter 9, p.100", result.ContextText);
     }
 
     [Fact]

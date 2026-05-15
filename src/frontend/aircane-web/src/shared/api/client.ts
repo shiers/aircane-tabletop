@@ -14,7 +14,7 @@ const apiClient = axios.create({
   timeout: 10_000,
 })
 
-// Request interceptor — attach auth token when available
+// Request interceptor - attach auth token when available
 apiClient.interceptors.request.use((config) => {
   const token = sessionStorage.getItem('participant_token')
   if (token) {
@@ -23,7 +23,7 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-// Response interceptor — surface errors consistently
+// Response interceptor - surface errors consistently
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {

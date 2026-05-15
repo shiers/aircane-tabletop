@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aircane.Api.Controllers;
 
 /// <summary>
-/// Campaign CRUD — create, list, retrieve, update, and delete campaigns.
+/// Campaign CRUD - create, list, retrieve, update, and delete campaigns.
 /// </summary>
 [ApiController]
 [Route("api/campaigns")]

@@ -133,11 +133,11 @@ public class CharacterServiceTests : IDisposable
     [Fact]
     public async Task CreateCharacterAsync_CanonicalJsonFailsSchemaValidation_ThrowsArgumentException()
     {
-        // Character with no classes — fails CharacterSchemaValidator
+        // Character with no classes - fails CharacterSchemaValidator
         var invalidCanonical = CharacterJsonSerializer.Serialize(new CanonicalCharacter
         {
             Identity = new CharacterIdentity { Name = "Test" },
-            Classes = [], // empty — invalid
+            Classes = [], // empty - invalid
             Abilities = new AbilityScores(),
             Combat = new CombatStats { MaxHitPoints = 10, CurrentHitPoints = 10 }
         });
@@ -315,7 +315,7 @@ public class CharacterServiceTests : IDisposable
         var participant2 = new Aircane.Domain.Entities.SessionParticipant(
             sessionId, "Player Two", Aircane.Domain.Enums.ParticipantRole.Player,
             isApproved: true, characterId: character.Id);
-        // A third participant assigned to a different character — should be unaffected
+        // A third participant assigned to a different character - should be unaffected
         var otherCharacterId = Guid.NewGuid();
         var participant3 = new Aircane.Domain.Entities.SessionParticipant(
             sessionId, "Player Three", Aircane.Domain.Enums.ParticipantRole.Player,
@@ -373,7 +373,7 @@ public class CharacterServiceTests : IDisposable
         var campaignId = Guid.NewGuid();
         await _sut.CreateCharacterAsync(BuildCreateRequest("Alpha", campaignId: campaignId));
         await _sut.CreateCharacterAsync(BuildCreateRequest("Beta", campaignId: campaignId));
-        // Character in a different campaign — should not appear
+        // Character in a different campaign - should not appear
         await _sut.CreateCharacterAsync(BuildCreateRequest("Other", campaignId: Guid.NewGuid()));
 
         var result = await _sut.ListByCampaignAsync(campaignId);
@@ -534,7 +534,7 @@ public class CharacterServiceTests : IDisposable
         var invalidCanonical = CharacterJsonSerializer.Serialize(new CanonicalCharacter
         {
             Identity = new CharacterIdentity { Name = "Test Hero" },
-            Classes = [], // empty — fails validation
+            Classes = [], // empty - fails validation
             Abilities = new AbilityScores(),
             Combat = new CombatStats { MaxHitPoints = 10, CurrentHitPoints = 10 }
         });

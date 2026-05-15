@@ -205,7 +205,7 @@ async function submitQuestion() {
               </span>
               <span>
                 <span class="font-medium text-gray-200">{{ citation.sourceTitle }}</span>
-                <span v-if="citation.pageNumber"> — p. {{ citation.pageNumber }}</span>
+                <span v-if="citation.pageNumber"> - p. {{ citation.pageNumber }}</span>
                 <span v-if="citation.sectionTitle"> · {{ citation.sectionTitle }}</span>
               </span>
             </li>

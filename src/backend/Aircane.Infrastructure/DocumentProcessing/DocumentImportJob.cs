@@ -142,7 +142,7 @@ public sealed class DocumentImportJob : IDocumentImportJob
             return;
         }
 
-        // Unknown extension — mark as failed.
+        // Unknown extension - mark as failed.
         _logger.LogWarning(
             "Document {DocumentId} has unsupported extension '{Extension}'. Marking as Failed.",
             document.Id, extension);

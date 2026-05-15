@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * ParticipantApprovalPanel — shown to the host during a session.
+ * ParticipantApprovalPanel - shown to the host during a session.
  * Lists all participants, highlights pending approvals, and lets the host
  * approve players and assign characters.
  */
@@ -50,7 +50,7 @@ function roleLabel(role: ParticipantRole): string {
 }
 
 function characterName(characterId: string | null): string {
-  if (!characterId) return '—'
+  if (!characterId) return '-'
   return props.availableCharacters.find((c) => c.id === characterId)?.name ?? 'Unknown'
 }
 

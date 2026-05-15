@@ -4,7 +4,7 @@ namespace Aircane.Application.DTOs.Dice;
 
 /// <summary>
 /// Request to record a physical dice roll entered manually by a participant.
-/// Formula is optional — physical dice rolls may not have an associated expression.
+/// Formula is optional - physical dice rolls may not have an associated expression.
 /// </summary>
 public sealed record ManualRollRequest(
     Guid SessionId,

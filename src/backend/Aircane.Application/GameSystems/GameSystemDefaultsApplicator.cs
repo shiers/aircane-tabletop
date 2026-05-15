@@ -6,7 +6,7 @@ namespace Aircane.Application.GameSystems;
 /// <summary>
 /// Applies sensible defaults to a GameSystemDefinition for any omitted optional sections.
 /// When optional sections are null/empty, this fills them with freeform/generic defaults.
-/// Returns a new GameSystemDefinition instance — does not mutate the original.
+/// Returns a new GameSystemDefinition instance - does not mutate the original.
 /// </summary>
 public class GameSystemDefaultsApplicator : IGameSystemDefaultsApplicator
 {
@@ -55,13 +55,13 @@ public class GameSystemDefaultsApplicator : IGameSystemDefaultsApplicator
         result.IsBuiltIn = definition.IsBuiltIn;
         result.UpdatedAt = definition.UpdatedAt;
 
-        // ConditionSet: leave as empty list when null/empty — freeform conditions are allowed
+        // ConditionSet: leave as empty list when null/empty - freeform conditions are allowed
         result.ConditionSet = definition.ConditionSet;
 
         // ActionEconomy: apply freeform default when null
         result.ActionEconomy = definition.ActionEconomy ?? DefaultActionEconomy;
 
-        // EncounterBudget: leave as null when null — no automated balancing
+        // EncounterBudget: leave as null when null - no automated balancing
         result.EncounterBudget = definition.EncounterBudget;
 
         // AiGuidance: apply generic TTRPG guidance when null

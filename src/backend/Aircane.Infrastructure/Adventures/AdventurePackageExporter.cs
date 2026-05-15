@@ -36,7 +36,7 @@ public static class AdventurePackageExporter
 
         var package = new Dictionary<string, string>();
 
-        // adventure.json — metadata, pitch, and outline
+        // adventure.json - metadata, pitch, and outline
         var metadata = new AdventurePackageMetadata
         {
             Id = adventure.Id,
@@ -71,7 +71,7 @@ public static class AdventurePackageExporter
         if (adventure.Clues is not null)
             package["clues.json"] = JsonSerializer.Serialize(adventure.Clues, JsonOptions);
 
-        // session-notes.md — empty template for DM session notes
+        // session-notes.md - empty template for DM session notes
         package["session-notes.md"] = GenerateSessionNotesTemplate(adventure);
 
         return package;

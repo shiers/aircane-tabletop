@@ -39,7 +39,7 @@ Aircane Tabletop is a local-first web application with a host-run server. The ho
 │                                                         │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │  User's Filesystem (registered folder paths)     │   │
-│  │  PDFs, rulebooks, adventures — never copied      │   │
+│  │  PDFs, rulebooks, adventures - never copied      │   │
 │  └──────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
          ▲              ▲              ▲
@@ -61,11 +61,11 @@ src/backend/
 └── Aircane.Workers/          → Background document import/indexing jobs
 ```
 
-- **Domain** — pure entities and business rules, no external dependencies
-- **Application** — orchestrates use cases, defines service interfaces
-- **Infrastructure** — implements interfaces (database, AI, file system)
-- **API** — HTTP surface, SignalR hubs, authorization middleware
-- **Workers** — long-running background tasks (document import, embedding generation)
+- **Domain** - pure entities and business rules, no external dependencies
+- **Application** - orchestrates use cases, defines service interfaces
+- **Infrastructure** - implements interfaces (database, AI, file system)
+- **API** - HTTP surface, SignalR hubs, authorization middleware
+- **Workers** - long-running background tasks (document import, embedding generation)
 
 ## Frontend Architecture (Feature-Oriented)
 
@@ -110,9 +110,9 @@ src/frontend/aircane-web/src/
 
 ## Design Principles
 
-1. **Local-first** — no cloud account required, all data stays on the host machine
-2. **Server-authoritative** — the backend validates all state changes
-3. **AI proposes, humans approve** — AI never directly mutates state without validation
-4. **Source documents are never copied** — the app reads from registered folder paths
-5. **Provider abstraction** — AI and embedding providers are swappable
-6. **Append-only events** — campaign state changes are auditable and undoable
+1. **Local-first** - no cloud account required, all data stays on the host machine
+2. **Server-authoritative** - the backend validates all state changes
+3. **AI proposes, humans approve** - AI never directly mutates state without validation
+4. **Source documents are never copied** - the app reads from registered folder paths
+5. **Provider abstraction** - AI and embedding providers are swappable
+6. **Append-only events** - campaign state changes are auditable and undoable

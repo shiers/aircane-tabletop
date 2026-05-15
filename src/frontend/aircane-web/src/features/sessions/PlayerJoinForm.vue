@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * PlayerJoinForm — form for a player to join a session.
+ * PlayerJoinForm - form for a player to join a session.
  * Accepts a display name and invite code, then emits the join result.
  */
 import { ref, computed } from 'vue'

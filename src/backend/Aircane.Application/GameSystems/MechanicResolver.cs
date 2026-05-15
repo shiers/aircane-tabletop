@@ -301,7 +301,7 @@ public class MechanicResolver : IMechanicResolver
             };
         }
 
-        // Tie — apply tie-breaking rule
+        // Tie - apply tie-breaking rule
         return rule.TieBreaker?.ToLowerInvariant() switch
         {
             "attacker_wins" => new ResolutionOutcome

@@ -476,7 +476,7 @@ public class DiceExpressionParserTests
     [Fact]
     public void Parse_ErrorPosition_PointsToCorrectCharacter()
     {
-        // "2d6+x" — error should be at position 4 (the 'x')
+        // "2d6+x" - error should be at position 4 (the 'x')
         var result = DiceExpressionParser.Parse("2d6+x");
 
         Assert.False(result.IsSuccess);
@@ -559,7 +559,7 @@ public class DiceExpressionParserTests
     [Fact]
     public void Parse_StandardWithKeepDropAndModifier_NotSupported()
     {
-        // Keep/drop followed by modifier — the parser should handle this
+        // Keep/drop followed by modifier - the parser should handle this
         // "4d6kh3+2" means roll 4d6, keep highest 3, then add 2
         var result = DiceExpressionParser.Parse("4d6kh3+2");
 

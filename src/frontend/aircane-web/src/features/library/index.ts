@@ -1,2 +1,2 @@
-// Library feature — source document management
+// Library feature - source document management
 export { default } from './LibraryView.vue'

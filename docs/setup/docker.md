@@ -5,7 +5,7 @@ Aircane Tabletop uses Docker Compose for local development. The setup provides P
 ## Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine + Compose plugin on Linux)
-- Docker Compose v2 (`docker compose` — note: no hyphen)
+- Docker Compose v2 (`docker compose` - note: no hyphen)
 
 ---
 

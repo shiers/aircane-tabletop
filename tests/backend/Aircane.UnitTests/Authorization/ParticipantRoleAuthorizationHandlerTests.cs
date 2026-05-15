@@ -152,7 +152,7 @@ public sealed class ParticipantRoleAuthorizationHandlerTests
     [InlineData("Spectator")]
     public async Task Any_Authenticated_Role_Passes_When_No_Specific_Role_Required(string role)
     {
-        // Simulating the "Authenticated" policy — it uses RequireAuthenticatedUser()
+        // Simulating the "Authenticated" policy - it uses RequireAuthenticatedUser()
         // without a role requirement. But if we test with a broad requirement:
         var requirement = new ParticipantRoleRequirement("Player", "Host", "HumanDm", "Spectator");
         var user = CreatePrincipal(role);

@@ -61,7 +61,7 @@ public class SlidingWindowTextChunkerTests
     public void Chunk_LongText_ProducesMultipleChunks()
     {
         var chunker = new SlidingWindowTextChunker(maxChunkSize: 100, overlapSize: 20);
-        // 300 characters — should produce at least 2 chunks.
+        // 300 characters - should produce at least 2 chunks.
         var text = new string('x', 300);
 
         var chunks = chunker.Chunk(text, pageNumber: 2);

@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────
-# Aircane Web — development image
+# Aircane Web - development image
 # Build context: src/frontend/aircane-web
 # ─────────────────────────────────────────────
 FROM node:20-alpine AS dev

@@ -183,7 +183,7 @@ export async function importCharacterFromJson(
     const response = await apiClient.post<CharacterDto>('/api/characters/import', request)
     return { success: true, character: response.data, errors: [] }
   } catch (err: unknown) {
-    // 422 Unprocessable Entity — schema validation errors
+    // 422 Unprocessable Entity - schema validation errors
     if (
       err &&
       typeof err === 'object' &&
@@ -197,7 +197,7 @@ export async function importCharacterFromJson(
       const data = err.response.data as CharacterImportResult
       return { success: false, character: null, errors: data.errors ?? [] }
     }
-    // 400 Bad Request — malformed JSON or missing fields
+    // 400 Bad Request - malformed JSON or missing fields
     if (
       err &&
       typeof err === 'object' &&

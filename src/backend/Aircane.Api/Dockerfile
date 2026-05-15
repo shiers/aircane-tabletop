@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────
-# Aircane API — development image
+# Aircane API - development image
 # Build context: src/backend  (the solution root)
 # ─────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dev

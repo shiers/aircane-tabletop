@@ -47,7 +47,7 @@ public static partial class FileUploadValidator
         if (string.IsNullOrWhiteSpace(fileName))
             return "unnamed_file";
 
-        // Extract just the filename portion — strip any directory path components.
+        // Extract just the filename portion - strip any directory path components.
         var name = fileName;
         var lastSep = name.LastIndexOfAny(['/', '\\', ':']);
         if (lastSep >= 0)

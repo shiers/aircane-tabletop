@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Aircane Tabletop — Production Build Script
+# Aircane Tabletop - Production Build Script
 #
 # Builds both the ASP.NET Core backend and the Vue frontend into a dist/ folder
 # ready for packaging or deployment.
@@ -13,8 +13,8 @@
 #   ./build.sh
 #
 # Output:
-#   dist/backend/   — published ASP.NET Core app (self-contained optional)
-#   dist/frontend/  — static Vue/Vite build output
+#   dist/backend/   - published ASP.NET Core app (self-contained optional)
+#   dist/frontend/  - static Vue/Vite build output
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST_DIR="${SCRIPT_DIR}/dist"
 
 echo "═══════════════════════════════════════════════════════════════"
-echo " Aircane Tabletop — Production Build"
+echo " Aircane Tabletop - Production Build"
 echo "═══════════════════════════════════════════════════════════════"
 
 # Clean previous build output

@@ -369,7 +369,7 @@ public class ResolutionRulePropertyTests
     [Property(Arbitrary = new[] { typeof(ResolutionRulePropertyTests) }, MaxTest = 300)]
     public void OpposedRoll_SwappingTotals_SwapsOutcome_WhenNotTied(OpposedRollTestInput input)
     {
-        // Skip tied cases — swapping tied values doesn't change anything
+        // Skip tied cases - swapping tied values doesn't change anything
         if (input.AttackerTotal == input.DefenderTotal)
             return;
 

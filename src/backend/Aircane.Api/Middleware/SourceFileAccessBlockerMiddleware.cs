@@ -81,7 +81,7 @@ public static class SourceFileAccessBlockerMiddlewareExtensions
 {
     /// <summary>
     /// Adds middleware that blocks direct HTTP access to source document files (PDFs, etc.).
-    /// This is a defense-in-depth measure — the app never configures static file serving for
+    /// This is a defense-in-depth measure - the app never configures static file serving for
     /// user content directories, but this middleware ensures requests are rejected even if
     /// a misconfiguration occurs.
     /// </summary>

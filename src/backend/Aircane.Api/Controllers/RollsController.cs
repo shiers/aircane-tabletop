@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aircane.Api.Controllers;
 
 /// <summary>
-/// Dice rolls for a session — regular expression rolls, manual physical dice entry, and roll log.
+/// Dice rolls for a session - regular expression rolls, manual physical dice entry, and roll log.
 /// Supports system-aware resolution using the campaign's bound dice convention.
 /// </summary>
 [ApiController]
@@ -136,7 +136,7 @@ public sealed class RollsController : ControllerBase
             }
             catch (KeyNotFoundException)
             {
-                // No definition bound — fall through to standard result
+                // No definition bound - fall through to standard result
                 _logger.LogDebug("No game system definition bound for campaign {CampaignId}", body.CampaignId);
             }
             catch (Exception ex)
@@ -170,7 +170,7 @@ public sealed class RollsController : ControllerBase
 
     /// <summary>
     /// Records a manually entered physical dice roll.
-    /// The total is authoritative — no server-side re-roll is performed.
+    /// The total is authoritative - no server-side re-roll is performed.
     /// </summary>
     [HttpPost("manual-rolls")]
     [ProducesResponseType(typeof(RollDto), StatusCodes.Status201Created)]

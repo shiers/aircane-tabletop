@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Aircane Tabletop — Production Build Script (PowerShell)
+# Aircane Tabletop - Production Build Script (PowerShell)
 #
 # Builds both the ASP.NET Core backend and the Vue frontend into a dist/ folder
 # ready for packaging or deployment.
@@ -12,8 +12,8 @@
 #   ./build.ps1
 #
 # Output:
-#   dist/backend/   — published ASP.NET Core app
-#   dist/frontend/  — static Vue/Vite build output
+#   dist/backend/   - published ASP.NET Core app
+#   dist/frontend/  - static Vue/Vite build output
 # ─────────────────────────────────────────────────────────────────────────────
 $ErrorActionPreference = "Stop"
 
@@ -21,7 +21,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DistDir = Join-Path $ScriptDir "dist"
 
 Write-Host "═══════════════════════════════════════════════════════════════"
-Write-Host " Aircane Tabletop — Production Build"
+Write-Host " Aircane Tabletop - Production Build"
 Write-Host "═══════════════════════════════════════════════════════════════"
 
 # Clean previous build output

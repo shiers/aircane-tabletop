@@ -22,7 +22,7 @@ public static class StarterTemplates
     ];
 
     /// <summary>
-    /// d20 System template — classic d20 + modifier vs target number (D&D, Pathfinder).
+    /// d20 System template - classic d20 + modifier vs target number (D&D, Pathfinder).
     /// </summary>
     public static GameSystemTemplateDto D20System() => new(
         Id: "d20-system",
@@ -145,7 +145,7 @@ public static class StarterTemplates
         """);
 
     /// <summary>
-    /// Dice Pool template — roll multiple dice, count successes (Shadowrun, World of Darkness).
+    /// Dice Pool template - roll multiple dice, count successes (Shadowrun, World of Darkness).
     /// </summary>
     public static GameSystemTemplateDto DicePool() => new(
         Id: "dice-pool",
@@ -228,7 +228,7 @@ public static class StarterTemplates
         """);
 
     /// <summary>
-    /// PbtA template — 2d6 + stat with threshold bands (miss/weak hit/strong hit).
+    /// PbtA template - 2d6 + stat with threshold bands (miss/weak hit/strong hit).
     /// </summary>
     public static GameSystemTemplateDto PbtA() => new(
         Id: "pbta",
@@ -301,14 +301,14 @@ public static class StarterTemplates
                 "system_prompt_notes": "This is a Powered by the Apocalypse game. Players roll 2d6+stat. On 10+, strong hit. On 7-9, weak hit with complications. On 6-, miss and the MC makes a move.",
                 "tone_guidance": "Fiction-first, player-driven narrative",
                 "mechanical_notes": "2d6+stat. 10+ strong hit, 7-9 weak hit, 6- miss. Always follow the fiction.",
-                "common_mistakes": ["Do not use target numbers — this system uses fixed threshold bands.", "Do not track initiative — PbtA is conversation-based."],
+                "common_mistakes": ["Do not use target numbers - this system uses fixed threshold bands.", "Do not track initiative - PbtA is conversation-based."],
                 "roll_format_example": "2d6+{stat}"
             }
         }
         """);
 
     /// <summary>
-    /// Percentile template — roll d100 vs skill value (Call of Cthulhu, BRP).
+    /// Percentile template - roll d100 vs skill value (Call of Cthulhu, BRP).
     /// </summary>
     public static GameSystemTemplateDto Percentile() => new(
         Id: "percentile",
@@ -397,14 +397,14 @@ public static class StarterTemplates
                 "system_prompt_notes": "This is a percentile-based horror RPG. Players roll d100 and must roll equal to or under their skill value to succeed. Lower rolls are better.",
                 "tone_guidance": "Cosmic horror, investigation, dread",
                 "mechanical_notes": "Roll d100 <= skill value. Critical success on 01. Fumble on 100. Hard success = half skill value. Extreme success = one-fifth skill value.",
-                "common_mistakes": ["Do not use d20 mechanics — this is a d100 roll-under system.", "Do not forget sanity checks when encountering the unnatural."],
+                "common_mistakes": ["Do not use d20 mechanics - this is a d100 roll-under system.", "Do not forget sanity checks when encountering the unnatural."],
                 "roll_format_example": "1d100 vs {skill_value}"
             }
         }
         """);
 
     /// <summary>
-    /// Narrative/Freeform template — minimal mechanics, narrative-driven play.
+    /// Narrative/Freeform template - minimal mechanics, narrative-driven play.
     /// </summary>
     public static GameSystemTemplateDto Freeform() => new(
         Id: "freeform",

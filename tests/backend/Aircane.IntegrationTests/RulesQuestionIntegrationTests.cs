@@ -56,7 +56,7 @@ public class RulesQuestionIntegrationTests : IClassFixture<AircaneWebApplication
     [Fact]
     public async Task AskRulesQuestion_WithNoSources_IndicatesLackOfSupport()
     {
-        // Arrange — no documents have been imported, so retrieval should find nothing
+        // Arrange - no documents have been imported, so retrieval should find nothing
         var request = new RulesQuestionRequest(
             Question: "What is the range of a fireball spell?",
             GameSystem: "D&D 5e 2014");

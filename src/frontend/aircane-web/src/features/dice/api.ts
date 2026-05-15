@@ -62,7 +62,7 @@ export async function rollDice(sessionId: string, request: RollDiceRequest): Pro
 
 /**
  * Record a manually entered physical dice roll.
- * The total is treated as authoritative — no server-side re-roll is performed.
+ * The total is treated as authoritative - no server-side re-roll is performed.
  */
 export async function recordManualRoll(
   sessionId: string,

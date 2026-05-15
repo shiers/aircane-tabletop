@@ -138,7 +138,7 @@ async function handlePdfFileChange(event: Event): Promise<void> {
       return
     }
 
-    // All fields mapped — character was already persisted; refresh the list
+    // All fields mapped - character was already persisted; refresh the list
     if (props.campaignId) {
       await store.fetchCharacters(props.campaignId)
     }

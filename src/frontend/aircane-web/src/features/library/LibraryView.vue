@@ -152,7 +152,7 @@ onUnmounted(() => {
           <li v-for="doc in failedDocuments" :key="doc.id">
             {{ doc.title }}
             <span v-if="store.statusMap[doc.id]?.errorMessage">
-              — {{ store.statusMap[doc.id].errorMessage }}
+              - {{ store.statusMap[doc.id].errorMessage }}
             </span>
           </li>
         </ul>

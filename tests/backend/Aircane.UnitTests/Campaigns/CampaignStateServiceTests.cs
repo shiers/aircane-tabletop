@@ -385,7 +385,7 @@ public class CampaignStateServiceTests : IDisposable
         await _sut.ApplyCommandAsync(new ApplyCommandRequest(
             campaign.Id, "SetWorldFlag", """{"key":"quest_accepted","value":true}""", "Player"));
 
-        // Load state — should reflect both changes
+        // Load state - should reflect both changes
         var loaded = await _sut.LoadStateAsync(campaign.Id);
         var parsed = JsonSerializer.Deserialize<JsonElement>(loaded.StateJson);
         Assert.Equal("market", parsed.GetProperty("currentSceneId").GetString());

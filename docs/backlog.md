@@ -4,7 +4,7 @@ This document lists planned features and improvements beyond the Aircane Tableto
 
 ---
 
-## Priority 1 — High Impact / Frequently Requested
+## Priority 1 - High Impact / Frequently Requested
 
 ### Pathfinder 2e Adapter
 Add a ruleset adapter supporting three-action economy, degrees of success, encounter XP budgets, conditions, proficiency scaling, and creature elite/weak adjustments. The core domain model is already system-agnostic; this adds the game-specific validation and generation logic.
@@ -16,14 +16,14 @@ Integrate Tesseract (or equivalent) to process scanned/image-only PDFs that the 
 Allow players to connect over the internet without router port forwarding. Options include Cloudflare Tunnel, ngrok, or a custom relay service. Requires HTTPS, rate limiting, CSRF protection, and persistent token revocation.
 
 ### Desktop Wrapper
-Package the app as a Tauri (or Electron) desktop application that starts the ASP.NET Core server, opens the local UI, manages file paths, and displays the LAN URL and QR code — one-click launch for non-technical hosts.
+Package the app as a Tauri (or Electron) desktop application that starts the ASP.NET Core server, opens the local UI, manages file paths, and displays the LAN URL and QR code - one-click launch for non-technical hosts.
 
 ### Advanced Combat Automation
 Add initiative tracker, turn enforcement, condition duration tracking, automatic damage/healing application, death save management, and concentration checks. The MVP AI can request rolls and propose changes but does not enforce turn order.
 
 ---
 
-## Priority 2 — Significant Enhancements
+## Priority 2 - Significant Enhancements
 
 ### Map and Battlemap Support
 Add grid-based or theater-of-the-mind map rendering with token placement, fog of war, and distance measurement. Integrate with the AI DM for spatial awareness during encounters.
@@ -42,7 +42,7 @@ Allow single-user or desktop installations to run without Docker/PostgreSQL by u
 
 ---
 
-## Priority 3 — Quality of Life
+## Priority 3 - Quality of Life
 
 ### Streaming Narration (All Providers)
 Ensure token-by-token streaming works consistently across all AI providers and UI modes.
@@ -60,7 +60,7 @@ Handle multi-column layouts, tables, sidebars, and complex formatting for more a
 Import characters directly from D&D Beyond, Foundry VTT, or Roll20 via API or export formats.
 
 ### Multi-Turn AI Memory
-Persistent AI memory across sessions beyond what is stored in campaign state — long-term NPC relationship tracking, world knowledge graphs, and player preference learning.
+Persistent AI memory across sessions beyond what is stored in campaign state - long-term NPC relationship tracking, world knowledge graphs, and player preference learning.
 
 ### Rate Limiting and Abuse Protection
 Add request throttling and abuse detection for internet-hosted sessions.
@@ -73,7 +73,7 @@ Export full session logs, event history, and summaries in a portable format for 
 
 ---
 
-## Priority 4 — Exploratory / Long-Term
+## Priority 4 - Exploratory / Long-Term
 
 ### Reranking in RAG Pipeline
 Add a reranking step after initial vector retrieval to improve context relevance for AI prompts.

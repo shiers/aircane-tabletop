@@ -100,7 +100,7 @@ public static partial class FolderPathValidator
             if (string.Equals(canonicalPath, canonicalBlocked, StringComparison.OrdinalIgnoreCase))
                 return true;
 
-            // Also block immediate children of system directories? No — only the root system dirs themselves.
+            // Also block immediate children of system directories? No - only the root system dirs themselves.
         }
 
         return false;

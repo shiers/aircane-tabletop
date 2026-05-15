@@ -25,7 +25,7 @@ public record CharacterSchemaSection
     /// <summary>Fields within this section.</summary>
     public IReadOnlyList<CharacterSchemaField> Fields { get; init; } = [];
 
-    /// <summary>Conditional visibility rule — section only appears when condition is met.</summary>
+    /// <summary>Conditional visibility rule - section only appears when condition is met.</summary>
     public VisibilityCondition? VisibleWhen { get; init; }
 }
 

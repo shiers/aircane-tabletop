@@ -409,10 +409,10 @@ public static class DnD5e2014Seed
         MechanicalNotes = "Always ask for ability checks using d20+modifier vs DC. Attack rolls are d20+modifier vs AC. Natural 20 on attack rolls is always a critical hit (double damage dice). Natural 1 on attack rolls is always a miss. Saving throws are d20+modifier vs DC. Advantage means roll 2d20 take highest. Disadvantage means roll 2d20 take lowest.",
         CommonMistakes = new List<string>
         {
-            "Do not use degrees of success — this system uses binary pass/fail with critical hits only on natural 20.",
-            "Do not allow stacking of advantage/disadvantage — they cancel each other out regardless of how many sources.",
+            "Do not use degrees of success - this system uses binary pass/fail with critical hits only on natural 20.",
+            "Do not allow stacking of advantage/disadvantage - they cancel each other out regardless of how many sources.",
             "Do not forget concentration checks when a spellcaster takes damage.",
-            "Do not apply ability score modifiers directly — always use the modifier (floor((score-10)/2))."
+            "Do not apply ability score modifiers directly - always use the modifier (floor((score-10)/2))."
         },
         RollFormatExample = "1d20+{ability_modifier}+{proficiency_bonus}"
     };

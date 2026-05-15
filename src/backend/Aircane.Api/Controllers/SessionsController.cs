@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aircane.Api.Controllers;
 
 /// <summary>
-/// Session management — create sessions under a campaign and retrieve session state.
+/// Session management - create sessions under a campaign and retrieve session state.
 /// </summary>
 [ApiController]
 [Produces("application/json")]

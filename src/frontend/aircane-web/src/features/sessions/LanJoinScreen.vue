@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * LanJoinScreen — shown to the host after a LAN session is created.
+ * LanJoinScreen - shown to the host after a LAN session is created.
  * Displays the join URL, invite code, and a QR code so local players
  * can join from their own devices.
  */
@@ -62,7 +62,7 @@ async function copyToClipboard(text: string, flag: typeof urlCopied): Promise<vo
       flag.value = false
     }, 2000)
   } catch {
-    // Clipboard API not available — silently ignore
+    // Clipboard API not available - silently ignore
   }
 }
 

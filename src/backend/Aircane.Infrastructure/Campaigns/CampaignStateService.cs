@@ -43,7 +43,7 @@ public sealed class CampaignStateService : ICampaignStateService
             return ToDto(snapshot);
         }
 
-        // No snapshot exists yet — return a default empty state
+        // No snapshot exists yet - return a default empty state
         return new CampaignStateDto(
             CampaignId: campaignId,
             ActiveSessionId: null,

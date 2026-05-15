@@ -3,7 +3,7 @@ using Aircane.Application.DTOs.Ai;
 namespace Aircane.Application.Abstractions;
 
 /// <summary>
-/// Manages the AI action proposal queue — creating, listing, approving,
+/// Manages the AI action proposal queue - creating, listing, approving,
 /// and rejecting proposals. On approval, applies the action to campaign state.
 /// </summary>
 public interface IAiProposalService

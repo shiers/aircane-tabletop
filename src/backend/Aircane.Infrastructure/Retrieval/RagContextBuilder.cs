@@ -21,13 +21,13 @@ public sealed class RagContextBuilder : IRagContextBuilder
     /// </summary>
     private static readonly SourceType[] SourcePriorityOrder =
     [
-        SourceType.Homebrew,   // Campaign house rules — highest priority
+        SourceType.Homebrew,   // Campaign house rules - highest priority
         SourceType.Rules,      // Primary rules sources (PHB, DMG, etc.)
         SourceType.Adventure,  // Adventure-specific content
         SourceType.Solo,       // Solo adventure content
         SourceType.Generated,  // AI-generated content
         SourceType.Character,  // Character-related content
-        SourceType.Unknown     // Unclassified — lowest priority
+        SourceType.Unknown     // Unclassified - lowest priority
     ];
 
     public RagContextBuilder(
@@ -234,7 +234,7 @@ public sealed class RagContextBuilder : IRagContextBuilder
         // Add section/page reference if available
         if (!string.IsNullOrWhiteSpace(chunk.SectionTitle))
         {
-            sb.Append($"({chunk.SourceDocumentTitle} — {chunk.SectionTitle}");
+            sb.Append($"({chunk.SourceDocumentTitle} - {chunk.SectionTitle}");
             if (chunk.PageNumber.HasValue)
                 sb.Append($", p.{chunk.PageNumber}");
             sb.AppendLine(")");
@@ -280,9 +280,9 @@ public sealed class RagContextBuilder : IRagContextBuilder
     private static string FormatCitationLocation(RagCitation citation)
     {
         if (!string.IsNullOrWhiteSpace(citation.SectionTitle) && citation.PageNumber.HasValue)
-            return $" — {citation.SectionTitle}, p.{citation.PageNumber}";
+            return $" - {citation.SectionTitle}, p.{citation.PageNumber}";
         if (!string.IsNullOrWhiteSpace(citation.SectionTitle))
-            return $" — {citation.SectionTitle}";
+            return $" - {citation.SectionTitle}";
         if (citation.PageNumber.HasValue)
             return $", p.{citation.PageNumber}";
         return string.Empty;

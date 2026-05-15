@@ -48,7 +48,7 @@ public class EncounterBudgetEngine : IEncounterBudgetEngine
 
         if (budgetResult.TierBudgets.Count == 0)
         {
-            // No tiers defined — cannot validate, treat as valid
+            // No tiers defined - cannot validate, treat as valid
             return new EncounterValidationResult
             {
                 IsValid = true,

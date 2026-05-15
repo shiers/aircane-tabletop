@@ -273,7 +273,7 @@ public class RetrievalServiceTests : IDisposable
         var doc = await AddDocumentAsync();
         await AddChunkAsync(doc.Id, "Fireball hidden text.", visibility: ContentVisibility.Hidden);
 
-        // DM max visibility is DMOnly — Hidden is excluded
+        // DM max visibility is DMOnly - Hidden is excluded
         var request = new SearchRequest("fireball");
         var results = await _service.SearchByKeywordAsync(request, ContentVisibility.DMOnly);
 

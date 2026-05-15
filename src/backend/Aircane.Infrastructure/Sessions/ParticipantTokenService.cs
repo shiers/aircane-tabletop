@@ -10,11 +10,11 @@ namespace Aircane.Infrastructure.Sessions;
 
 /// <summary>
 /// Issues and validates HMAC-SHA256 signed participant tokens for MVP session authentication.
-/// The signing key is read from configuration (Jwt:SigningKey) — never hard-coded.
+/// The signing key is read from configuration (Jwt:SigningKey) - never hard-coded.
 /// </summary>
 public sealed class ParticipantTokenService : IParticipantTokenService
 {
-    // Claim type constants — kept short to minimise token size.
+    // Claim type constants - kept short to minimise token size.
     internal const string ClaimSessionId = "sid";
     internal const string ClaimParticipantId = "pid";
     internal const string ClaimDisplayName = "dname";
@@ -124,7 +124,7 @@ public sealed class ParticipantTokenService : IParticipantTokenService
                 return null;
             }
 
-            // Check the in-memory revocation list — session ended by host.
+            // Check the in-memory revocation list - session ended by host.
             if (_revocation.IsSessionRevoked(sessionId))
             {
                 _logger.LogInformation(

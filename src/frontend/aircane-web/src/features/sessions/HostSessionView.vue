@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * HostSessionView — the host/DM session control screen.
+ * HostSessionView - the host/DM session control screen.
  * Route: /sessions/:sessionId/host
  *
  * Shows session info, LAN join details, participant management,
@@ -49,7 +49,7 @@ const showLanJoin = computed(
 const joinUrl = computed(() => store.currentSession?.joinUrl ?? '')
 const inviteCode = computed(() => store.currentSession?.inviteCode ?? '')
 
-// Available characters — placeholder; a real implementation would fetch from the campaign
+// Available characters - placeholder; a real implementation would fetch from the campaign
 const availableCharacters = ref<{ id: string; name: string }[]>([])
 
 // ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ async function handleSendChat(text: string): Promise<void> {
   try {
     await hubConnection.value.invoke('SendChatMessage', sessionId, text)
   } catch {
-    // Silently ignore — the message will not appear in the log
+    // Silently ignore - the message will not appear in the log
   }
 }
 

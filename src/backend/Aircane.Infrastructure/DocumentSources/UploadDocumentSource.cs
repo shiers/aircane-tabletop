@@ -14,7 +14,7 @@ namespace Aircane.Infrastructure.DocumentSources;
 public sealed class UploadDocumentSource : IDocumentSource
 {
     /// <inheritdoc />
-    /// <exception cref="NotImplementedException">Always thrown — upload mode is not yet implemented.</exception>
+    /// <exception cref="NotImplementedException">Always thrown - upload mode is not yet implemented.</exception>
     public Task<IReadOnlyList<DocumentSourceFile>> ListFilesAsync(
         string folderPath,
         CancellationToken ct = default)
@@ -23,7 +23,7 @@ public sealed class UploadDocumentSource : IDocumentSource
             "Implement this method when adding upload-based document sourcing.");
 
     /// <inheritdoc />
-    /// <exception cref="NotImplementedException">Always thrown — upload mode is not yet implemented.</exception>
+    /// <exception cref="NotImplementedException">Always thrown - upload mode is not yet implemented.</exception>
     public Task<Stream> OpenStreamAsync(
         string sourcePath,
         CancellationToken ct = default)
@@ -32,7 +32,7 @@ public sealed class UploadDocumentSource : IDocumentSource
             "Implement this method when adding upload-based document sourcing.");
 
     /// <inheritdoc />
-    /// <exception cref="NotImplementedException">Always thrown — upload mode is not yet implemented.</exception>
+    /// <exception cref="NotImplementedException">Always thrown - upload mode is not yet implemented.</exception>
     public Task<bool> FileExistsAsync(
         string sourcePath,
         CancellationToken ct = default)

@@ -90,7 +90,8 @@ else
 }
 
 // Register participant-based authorization policies (HostOnly, DmOrHost, Authenticated).
-builder.Services.AddParticipantAuthorization();
+// In Development, policies are permissive to allow local UI testing without tokens.
+builder.Services.AddParticipantAuthorization(isDevelopment: builder.Environment.IsDevelopment());
 
 // Configure EF Core with PostgreSQL
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")

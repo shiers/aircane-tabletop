@@ -4,52 +4,69 @@ test.describe('App Navigation', () => {
   test('sidebar contains all main navigation links', async ({ page }) => {
     await page.goto('/')
 
-    // Check sidebar navigation items
-    await expect(page.getByRole('link', { name: /dashboard/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /campaigns/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /library/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /characters/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /rules lookup/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /ai dm/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /adventure/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /dice/i })).toBeVisible()
+    const nav = page.locator('nav[aria-label="Main navigation"]')
+    await expect(nav).toBeVisible()
+
+    // Check all sidebar navigation items by their text
+    await expect(nav.getByText('Dashboard')).toBeVisible()
+    await expect(nav.getByText('Campaigns')).toBeVisible()
+    await expect(nav.getByText('Library')).toBeVisible()
+    await expect(nav.getByText('Characters')).toBeVisible()
+    await expect(nav.getByText('Rules Lookup')).toBeVisible()
+    await expect(nav.getByText('AI DM')).toBeVisible()
+    await expect(nav.getByText('Adventure Forge')).toBeVisible()
+    await expect(nav.getByText('Dice Roller')).toBeVisible()
   })
 
   test('clicking Library navigates to /library', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: /library/i }).click()
+    const nav = page.locator('nav[aria-label="Main navigation"]')
+    await nav.getByText('Library').click()
     await expect(page).toHaveURL('/library')
   })
 
   test('clicking Campaigns navigates to /campaigns', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: /campaigns/i }).click()
+    const nav = page.locator('nav[aria-label="Main navigation"]')
+    await nav.getByText('Campaigns').click()
     await expect(page).toHaveURL('/campaigns')
   })
 
   test('clicking Characters navigates to /characters', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: /characters/i }).click()
+    const nav = page.locator('nav[aria-label="Main navigation"]')
+    await nav.getByText('Characters').click()
     await expect(page).toHaveURL('/characters')
   })
 
-  test('clicking Rules Lookup navigates correctly', async ({ page }) => {
+  test('clicking Rules Lookup navigates to /rules-lookup', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: /rules lookup/i }).click()
-    await expect(page).toHaveURL(/rules/)
+    const nav = page.locator('nav[aria-label="Main navigation"]')
+    await nav.getByText('Rules Lookup').click()
+    await expect(page).toHaveURL('/rules-lookup')
+  })
+
+  test('clicking Adventure Forge navigates to /adventures/generate', async ({ page }) => {
+    await page.goto('/')
+    const nav = page.locator('nav[aria-label="Main navigation"]')
+    await nav.getByText('Adventure Forge').click()
+    await expect(page).toHaveURL('/adventures/generate')
   })
 
   test('all pages load without JavaScript errors', async ({ page }) => {
-    const routes = ['/', '/library', '/campaigns', '/characters', '/sessions']
+    const routes = ['/', '/library', '/campaigns', '/characters', '/sessions', '/rules-lookup', '/settings/ai', '/adventures/generate']
     const errors: { route: string; error: string }[] = []
 
     for (const route of routes) {
-      page.on('pageerror', (err) => {
+      const pageErrorHandler = (err: Error) => {
         errors.push({ route, error: err.message })
-      })
+      }
+      page.on('pageerror', pageErrorHandler)
 
       await page.goto(route)
       await page.waitForTimeout(1_000)
+
+      page.off('pageerror', pageErrorHandler)
     }
 
     if (errors.length > 0) {

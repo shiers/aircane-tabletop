@@ -7,37 +7,22 @@ test.describe('Characters Page', () => {
 
   test('renders the characters page with heading', async ({ page }) => {
     await expect(
-      page.locator('h1', { hasText: /character/i }),
+      page.locator('h1', { hasText: /characters/i }),
     ).toBeVisible()
   })
 
-  test('shows empty state or character list', async ({ page }) => {
-    // Wait for API response
-    await page.waitForResponse(
-      (resp) => resp.url().includes('/api/characters') && resp.ok(),
-      { timeout: 10_000 },
-    )
-    await page.waitForTimeout(500)
-
-    // Should show either empty state or character cards
-    const emptyState = page.getByText(/no characters/i)
-    const characterCards = page.locator('[aria-label*="character" i]')
-    const createButton = page.getByRole('button', { name: /create|add|new/i })
-
-    const isEmpty = await emptyState.isVisible().catch(() => false)
-    const hasChars = (await characterCards.count()) > 0
-    const hasCreate = await createButton.isVisible().catch(() => false)
-
-    // At least one of these should be true
-    expect(isEmpty || hasChars || hasCreate).toBe(true)
+  test('action buttons are visible (New Character, Import PDF, Import JSON)', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /new character/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /import pdf/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /import json/i })).toBeVisible()
   })
 
-  test('create character button or link is available', async ({ page }) => {
-    // Look for any create/add/new character action
-    const createAction = page.getByRole('button', { name: /create|add|new/i })
-      .or(page.getByRole('link', { name: /create|add|new/i }))
+  test('clicking New Character shows the character form', async ({ page }) => {
+    await page.getByRole('button', { name: /new character/i }).click()
 
-    await expect(createAction.first()).toBeVisible({ timeout: 5_000 })
+    await expect(
+      page.getByRole('heading', { name: /new character/i }),
+    ).toBeVisible()
   })
 
   test('no unhandled errors on page load', async ({ page }) => {

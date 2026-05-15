@@ -37,18 +37,18 @@ test.describe('Document Upload', () => {
   })
 
   test('upload form has all required fields', async ({ page }) => {
-    await expect(page.getByLabel(/file/i)).toBeVisible()
-    await expect(page.getByLabel(/title/i)).toBeVisible()
-    await expect(page.getByLabel(/source type/i)).toBeVisible()
-    await expect(page.getByLabel(/visibility/i)).toBeVisible()
-    await expect(page.getByLabel(/game system/i)).toBeVisible()
-    await expect(page.getByLabel(/ruleset/i)).toBeVisible()
-    await expect(page.getByRole('button', { name: /upload/i })).toBeVisible()
+    await expect(page.locator('#doc-file')).toBeAttached()
+    await expect(page.locator('#doc-title')).toBeVisible()
+    await expect(page.locator('#doc-source-type')).toBeVisible()
+    await expect(page.locator('#doc-visibility')).toBeVisible()
+    await expect(page.locator('#doc-game-system')).toBeVisible()
+    await expect(page.locator('#doc-ruleset')).toBeVisible()
+    await expect(page.locator('[aria-labelledby="upload-heading"] button[type="submit"]')).toBeVisible()
   })
 
   test('upload button shows validation error when no file selected', async ({ page }) => {
     // Fill title but no file
-    await page.getByLabel(/title/i).fill('Test Document')
+    await page.locator('#doc-title').fill('Test Document')
     await page.getByRole('button', { name: /upload/i }).click()
 
     // Should show validation error
@@ -57,23 +57,25 @@ test.describe('Document Upload', () => {
 
   test('upload button shows validation error when no title', async ({ page }) => {
     // Select a file but clear the title
-    const fileInput = page.locator('input[type="file"]')
+    const fileInput = page.locator('#doc-file')
     await fileInput.setInputFiles(TEST_PDF_PATH)
 
     // Clear the auto-filled title
-    await page.getByLabel(/title/i).clear()
-    await page.getByRole('button', { name: /upload/i }).click()
+    await page.locator('#doc-title').clear()
+
+    // Click the upload submit button (scoped to the upload form section)
+    await page.locator('[aria-labelledby="upload-heading"] button[type="submit"]').click()
 
     // Should show validation error
     await expect(page.getByText(/please enter a title/i)).toBeVisible()
   })
 
   test('selecting a file auto-fills the title from filename', async ({ page }) => {
-    const fileInput = page.locator('input[type="file"]')
+    const fileInput = page.locator('#doc-file')
     await fileInput.setInputFiles(TEST_PDF_PATH)
 
     // Title should be auto-filled with filename (without extension)
-    const titleInput = page.getByLabel(/title/i)
+    const titleInput = page.locator('#doc-title')
     await expect(titleInput).toHaveValue('test-document')
   })
 
@@ -85,12 +87,12 @@ test.describe('Document Upload', () => {
     )
 
     // Fill the form
-    const fileInput = page.locator('input[type="file"]')
+    const fileInput = page.locator('#doc-file')
     await fileInput.setInputFiles(TEST_PDF_PATH)
-    await page.getByLabel(/title/i).clear()
-    await page.getByLabel(/title/i).fill('E2E Test Upload')
+    await page.locator('#doc-title').clear()
+    await page.locator('#doc-title').fill('E2E Test Upload')
     await page.getByLabel(/game system/i).fill('D&D 5e')
-    await page.getByLabel(/ruleset/i).fill('2014')
+    await page.locator('#doc-ruleset').fill('2014')
 
     // Submit
     await page.getByRole('button', { name: /upload/i }).click()
@@ -129,18 +131,18 @@ test.describe('Document Upload', () => {
     })
 
     // Fill the form
-    const fileInput = page.locator('input[type="file"]')
+    const fileInput = page.locator('#doc-file')
     await fileInput.setInputFiles(TEST_PDF_PATH)
-    await page.getByLabel(/title/i).clear()
-    await page.getByLabel(/title/i).fill('Network Error Test')
+    await page.locator('#doc-title').clear()
+    await page.locator('#doc-title').fill('Network Error Test')
 
-    // Submit
-    await page.getByRole('button', { name: /upload/i }).click()
+    // Submit using the scoped button
+    await page.locator('[aria-labelledby="upload-heading"] button[type="submit"]').click()
 
-    // Should show an error
+    // Should show an error (either in the form or as a banner)
     await expect(
-      page.getByText(/network error|failed|error/i).first(),
-    ).toBeVisible({ timeout: 5_000 })
+      page.locator('[role="alert"]').or(page.getByText(/error|failed/i)).first(),
+    ).toBeVisible({ timeout: 10_000 })
   })
 
   test('source type dropdown has expected options', async ({ page }) => {

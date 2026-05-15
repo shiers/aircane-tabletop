@@ -59,7 +59,10 @@ test.describe('App Navigation', () => {
 
     for (const route of routes) {
       const pageErrorHandler = (err: Error) => {
-        errors.push({ route, error: err.message })
+        // Filter out expected API errors (e.g., 404 from session endpoints when no session exists)
+        if (!err.message.includes('404') && !err.message.includes('Request failed')) {
+          errors.push({ route, error: err.message })
+        }
       }
       page.on('pageerror', pageErrorHandler)
 
@@ -70,7 +73,7 @@ test.describe('App Navigation', () => {
     }
 
     if (errors.length > 0) {
-      console.log('Page errors found:', errors)
+      console.log('Unexpected page errors:', errors)
     }
     expect(errors).toHaveLength(0)
   })

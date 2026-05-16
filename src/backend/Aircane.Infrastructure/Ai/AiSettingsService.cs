@@ -81,7 +81,7 @@ public sealed class AiSettingsService : IAiSettingsService
                 Ollama = new OllamaSettingsDto
                 {
                     BaseUrl = GetSetting("Ai:Ollama:BaseUrl") ?? "http://localhost:11434",
-                    Model = GetSetting("Ai:Ollama:Model") ?? "llama3",
+                    Model = GetSetting("Ai:Ollama:Model") ?? "llama3.1:8b",
                 },
                 Grok = new GrokSettingsDto
                 {

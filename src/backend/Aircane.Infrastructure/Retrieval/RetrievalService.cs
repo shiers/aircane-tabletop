@@ -33,14 +33,14 @@ public sealed class RetrievalService : IRetrievalService
             return [];
 
         var allowedVisibilities = GetAllowedVisibilities(maxVisibility);
-        var lowerQuery = request.Query.ToLower();
+        var pattern = $"%{request.Query}%";
 
         var query = BuildFilteredQuery(request, allowedVisibilities);
 
         var results = await query
             .Where(c =>
-                c.Chunk.Text.ToLower().Contains(lowerQuery) ||
-                (c.Chunk.SectionTitle != null && c.Chunk.SectionTitle.ToLower().Contains(lowerQuery)))
+                EF.Functions.ILike(c.Chunk.Text, pattern) ||
+                (c.Chunk.SectionTitle != null && EF.Functions.ILike(c.Chunk.SectionTitle, pattern)))
             .Take(request.TopK)
             .Select(c => new ChunkResultDto(
                 c.Chunk.Id,

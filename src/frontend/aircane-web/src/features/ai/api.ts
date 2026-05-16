@@ -121,6 +121,8 @@ export interface RulesQuestionResponse {
 }
 
 export async function askRulesQuestion(request: RulesQuestionRequest): Promise<RulesQuestionResponse> {
-  const response = await apiClient.post<RulesQuestionResponse>('/api/ai/rules-question', request)
+  const response = await apiClient.post<RulesQuestionResponse>('/api/ai/rules-question', request, {
+    timeout: 120_000, // RAG retrieval + AI generation can take a while with large libraries
+  })
   return response.data
 }

@@ -14,9 +14,14 @@ public interface IAiSettingsService
     AiProviderConfigDto GetCurrentConfig();
 
     /// <summary>
+    /// Gets a raw (unmasked) setting value by key. Used internally by the DI factory
+    /// to pass credentials to provider instances.
+    /// </summary>
+    string? GetRawSetting(string key);
+
+    /// <summary>
     /// Updates the active AI provider and its configuration.
-    /// Keys are stored in-memory for the current process lifetime.
-    /// For persistence across restarts, the host should set environment variables or user secrets.
+    /// Settings are persisted to a local file so they survive restarts.
     /// </summary>
     void UpdateConfig(UpdateAiProviderRequest request);
 

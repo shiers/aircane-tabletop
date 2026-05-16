@@ -120,31 +120,35 @@ public static class DependencyInjection
         IServiceCollection services,
         IConfiguration configuration)
     {
-        var providerName = configuration["Ai:Provider"] ?? "Fake";
+        // Register named HttpClients for providers that need them
+        services.AddHttpClient("OpenAI");
 
-        switch (providerName.Trim().ToLowerInvariant())
+        // Use a scoped factory that resolves the correct provider based on the
+        // current AiSettingsService state. This allows the user to switch providers
+        // at runtime via the UI without restarting the backend.
+        services.AddScoped<IAiProvider>(sp =>
         {
-            case "openai":
-                // Register a named HttpClient for OpenAI via IHttpClientFactory.
-                // The API key is applied at construction time inside OpenAiProvider
-                // and is never logged or stored in the client factory configuration.
-                services.AddHttpClient("OpenAI");
-                services.AddScoped<IAiProvider>(sp =>
+            var settingsService = sp.GetRequiredService<IAiSettingsService>();
+            var currentConfig = settingsService.GetCurrentConfig();
+
+            switch (currentConfig.ActiveProvider)
+            {
+                case Application.DTOs.AiSettings.AiProviderType.OpenAi:
                 {
                     var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
                     var httpClient = httpClientFactory.CreateClient("OpenAI");
-                    var config = sp.GetRequiredService<IConfiguration>();
                     var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<OpenAiProvider>>();
-                    return new OpenAiProvider(httpClient, config, logger);
-                });
-                break;
+                    var apiKey = settingsService.GetRawSetting("Ai:OpenAi:ApiKey");
+                    var model = settingsService.GetRawSetting("Ai:OpenAi:Model");
+                    return new OpenAiProvider(httpClient, apiKey, model, logger);
+                }
 
-            // Azure OpenAI, Ollama, and AWS Bedrock will be added in future tasks.
+                // Azure OpenAI, Ollama, Grok, and AWS Bedrock will be added in future tasks.
 
-            default:
-                services.AddSingleton<IAiProvider, FakeAiProvider>();
-                break;
-        }
+                default:
+                    return new FakeAiProvider();
+            }
+        });
     }
 
     private static void RegisterEmbeddingProvider(

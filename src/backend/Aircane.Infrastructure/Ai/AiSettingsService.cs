@@ -11,9 +11,10 @@ namespace Aircane.Infrastructure.Ai;
 /// <summary>
 /// Manages AI provider configuration at runtime.
 /// <para>
-/// Keys are stored in-memory for the current process lifetime and read from
-/// environment variables / user secrets on startup. They are never persisted
-/// to the database or exposed to the frontend unmasked.
+/// Settings are persisted to a local JSON file (ai-settings.json) in the data directory
+/// so they survive process restarts. API keys are stored in plaintext in this file —
+/// the host is responsible for filesystem-level access control.
+/// Keys are never exposed to the frontend unmasked.
 /// </para>
 /// </summary>
 public sealed class AiSettingsService : IAiSettingsService
@@ -21,11 +22,12 @@ public sealed class AiSettingsService : IAiSettingsService
     private readonly IConfiguration _configuration;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AiSettingsService> _logger;
+    private readonly string _settingsFilePath;
     private readonly object _lock = new();
 
     // In-memory runtime overrides (survive until process restart)
     private AiProviderType _activeProvider;
-    private Dictionary<string, string> _runtimeSettings = new();
+    private readonly Dictionary<string, string> _runtimeSettings = new();
 
     public AiSettingsService(
         IConfiguration configuration,
@@ -36,9 +38,17 @@ public sealed class AiSettingsService : IAiSettingsService
         _httpClientFactory = httpClientFactory;
         _logger = logger;
 
-        // Initialize from configuration
+        // Determine settings file path (next to the documents storage directory)
+        var dataPath = configuration["Storage:DocumentsPath"] ?? "./data/documents";
+        var dataDir = Path.GetDirectoryName(Path.GetFullPath(dataPath)) ?? "./data";
+        _settingsFilePath = Path.Combine(dataDir, "ai-settings.json");
+
+        // Initialize from configuration sources
         _activeProvider = ParseProviderFromConfig(configuration["Ai:Provider"] ?? "Fake");
         LoadSettingsFromConfig();
+
+        // Override with persisted file settings (takes precedence over appsettings)
+        LoadSettingsFromFile();
     }
 
     /// <inheritdoc />
@@ -143,6 +153,9 @@ public sealed class AiSettingsService : IAiSettingsService
 
             // Update the Ai:Provider key so DI can pick it up on next resolution
             SetSetting("Ai:Provider", ProviderTypeToConfigName(request.ActiveProvider));
+
+            // Persist to file so settings survive restarts
+            SaveSettingsToFile();
 
             _logger.LogInformation(
                 "AI provider configuration updated. ActiveProvider={Provider}",
@@ -402,11 +415,104 @@ public sealed class AiSettingsService : IAiSettingsService
         }
     }
 
+    /// <summary>
+    /// Loads persisted settings from the local ai-settings.json file.
+    /// Values from the file override those from appsettings/env vars.
+    /// </summary>
+    private void LoadSettingsFromFile()
+    {
+        try
+        {
+            if (!File.Exists(_settingsFilePath))
+                return;
+
+            var json = File.ReadAllText(_settingsFilePath);
+            var persisted = JsonSerializer.Deserialize<PersistedAiSettings>(json, PersistedJsonOptions);
+            if (persisted is null)
+                return;
+
+            if (!string.IsNullOrEmpty(persisted.ActiveProvider))
+            {
+                _activeProvider = ParseProviderFromConfig(persisted.ActiveProvider);
+            }
+
+            if (persisted.Settings is not null)
+            {
+                foreach (var (key, value) in persisted.Settings)
+                {
+                    if (!string.IsNullOrEmpty(value))
+                    {
+                        _runtimeSettings[key] = value;
+                    }
+                }
+            }
+
+            _logger.LogInformation(
+                "Loaded AI settings from {Path}. ActiveProvider={Provider}",
+                _settingsFilePath, _activeProvider);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load AI settings from {Path}. Using defaults.", _settingsFilePath);
+        }
+    }
+
+    /// <summary>
+    /// Persists the current runtime settings to the local ai-settings.json file.
+    /// </summary>
+    private void SaveSettingsToFile()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(_settingsFilePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            var persisted = new PersistedAiSettings
+            {
+                ActiveProvider = ProviderTypeToConfigName(_activeProvider),
+                Settings = new Dictionary<string, string>(_runtimeSettings),
+            };
+
+            var json = JsonSerializer.Serialize(persisted, PersistedJsonOptions);
+            File.WriteAllText(_settingsFilePath, json);
+
+            _logger.LogDebug("AI settings persisted to {Path}", _settingsFilePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist AI settings to {Path}", _settingsFilePath);
+        }
+    }
+
+    private static readonly JsonSerializerOptions PersistedJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    private sealed class PersistedAiSettings
+    {
+        public string? ActiveProvider { get; set; }
+        public Dictionary<string, string>? Settings { get; set; }
+    }
+
     private string? GetSetting(string key)
     {
         if (_runtimeSettings.TryGetValue(key, out var value))
             return value;
         return _configuration[key];
+    }
+
+    /// <inheritdoc />
+    public string? GetRawSetting(string key)
+    {
+        lock (_lock)
+        {
+            return GetSetting(key);
+        }
     }
 
     private void SetSetting(string key, string? value)

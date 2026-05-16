@@ -57,6 +57,7 @@ pnpm-debug.log*
 *.key
 *.p12
 *.pfx
+ai-settings.json
 
 # ============================================================
 # OS files

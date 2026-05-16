@@ -48,16 +48,28 @@ public sealed class OpenAiProvider : IAiProvider, IDisposable
         HttpClient httpClient,
         IConfiguration configuration,
         ILogger<OpenAiProvider> logger)
+        : this(httpClient, configuration["Ai:OpenAi:ApiKey"], configuration["Ai:OpenAi:Model"], logger)
+    {
+    }
+
+    /// <summary>
+    /// Initialises the provider with explicit API key and model values.
+    /// Used by the DI factory when settings come from the AiSettingsService rather than IConfiguration.
+    /// </summary>
+    public OpenAiProvider(
+        HttpClient httpClient,
+        string? apiKey,
+        string? model,
+        ILogger<OpenAiProvider> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
-        _model = configuration["Ai:OpenAi:Model"] ?? "gpt-4o-mini";
+        _model = model ?? "gpt-4o-mini";
 
-        var apiKey = configuration["Ai:OpenAi:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException(
                 "OpenAI API key is not configured. " +
-                "Set Ai:OpenAi:ApiKey via environment variables or ASP.NET Core user secrets.");
+                "Set the API key via AI Provider Settings or environment variables.");
 
         // Set the Authorization header once on the shared client.
         // The key is never written to logs.

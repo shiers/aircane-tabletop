@@ -16,8 +16,21 @@ public class AiSettingsServiceTests
     private static AiSettingsService CreateService(
         Dictionary<string, string?>? configValues = null)
     {
+        // Use a unique temp path so tests don't read/write the real ai-settings.json
+        var tempDir = Path.Combine(Path.GetTempPath(), $"aircane-test-{Guid.NewGuid():N}");
+        var defaults = new Dictionary<string, string?>
+        {
+            ["Storage:DocumentsPath"] = Path.Combine(tempDir, "documents"),
+        };
+
+        if (configValues is not null)
+        {
+            foreach (var (key, value) in configValues)
+                defaults[key] = value;
+        }
+
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(configValues ?? new Dictionary<string, string?>())
+            .AddInMemoryCollection(defaults)
             .Build();
 
         var services = new ServiceCollection();

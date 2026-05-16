@@ -91,6 +91,7 @@ coverage/
 *.coveragexml
 playwright-report/
 test-results/
+test-fixtures/
 
 # ============================================================
 # Docker

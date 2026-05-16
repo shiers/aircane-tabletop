@@ -222,6 +222,8 @@ export async function deleteFolder(id: string): Promise<void> {
 export async function scanFolder(id: string): Promise<FolderScanResultDto> {
   const response = await apiClient.post<FolderScanResultDto>(
     `/api/library/folders/${id}/scan`,
+    undefined,
+    { timeout: 0 }, // No timeout — scans can take minutes for large folders
   )
   return response.data
 }

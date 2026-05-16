@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/shared/stores/app'
 
 const appStore = useAppStore()
 
-onMounted(async () => {
-  await appStore.fetchHealth()
+onMounted(() => {
+  appStore.startHealthPolling()
+})
+
+onUnmounted(() => {
+  appStore.stopHealthPolling()
 })
 </script>
 

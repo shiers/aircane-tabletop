@@ -132,11 +132,23 @@ app.MapHub<LibraryHub>("/hubs/library");
 app.MapHub<SessionHub>("/hubs/session");
 
 // Health endpoint - reports API, database, vector search, and AI provider status
-app.MapGet("/health", async (HealthCheckService healthService, CancellationToken ct) =>
+app.MapGet("/health", async (HttpContext httpContext, CancellationToken ct) =>
 {
-    var result = await healthService.CheckAllAsync(ct);
-    var statusCode = result.Status == "unhealthy" ? 503 : 200;
-    return Results.Json(result, statusCode: statusCode);
+    try
+    {
+        var healthService = httpContext.RequestServices.GetRequiredService<HealthCheckService>();
+        var result = await healthService.CheckAllAsync(ct);
+        var statusCode = result.Status == "unhealthy" ? 503 : 200;
+        return Results.Json(result, statusCode: statusCode);
+    }
+    catch (Exception ex)
+    {
+        // If the health service itself can't be resolved or throws, still return a valid response
+        // so the frontend knows the backend is reachable (just degraded).
+        var logger = httpContext.RequestServices.GetService<ILogger<Program>>();
+        logger?.LogWarning(ex, "Health check failed with exception");
+        return Results.Json(new { status = "degraded", message = ex.Message }, statusCode: 200);
+    }
 })
 .WithName("Health")
 .WithTags("Health")

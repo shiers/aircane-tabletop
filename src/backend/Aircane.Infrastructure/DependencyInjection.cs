@@ -135,10 +135,16 @@ public static class DependencyInjection
             {
                 case Application.DTOs.AiSettings.AiProviderType.OpenAi:
                 {
+                    var apiKey = settingsService.GetRawSetting("Ai:OpenAi:ApiKey");
+                    if (string.IsNullOrWhiteSpace(apiKey))
+                    {
+                        // No API key configured yet — fall back to Fake so the app doesn't crash
+                        return new FakeAiProvider();
+                    }
+
                     var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
                     var httpClient = httpClientFactory.CreateClient("OpenAI");
                     var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<OpenAiProvider>>();
-                    var apiKey = settingsService.GetRawSetting("Ai:OpenAi:ApiKey");
                     var model = settingsService.GetRawSetting("Ai:OpenAi:Model");
                     return new OpenAiProvider(httpClient, apiKey, model, logger);
                 }

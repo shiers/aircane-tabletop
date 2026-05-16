@@ -89,6 +89,15 @@ export async function getProviders(): Promise<ProviderInfo[]> {
   return response.data
 }
 
+export interface ModelsResponse {
+  models: string[]
+}
+
+export async function getAvailableModels(): Promise<string[]> {
+  const response = await apiClient.get<ModelsResponse>('/api/ai/settings/models')
+  return response.data.models
+}
+
 // --- Rules Question API ---
 
 export interface RulesQuestionRequest {

@@ -110,13 +110,10 @@ public sealed class RetrievalService : IRetrievalService
         if (string.IsNullOrWhiteSpace(request.Query))
             return [];
 
-        var keywordTask = SearchByKeywordAsync(request, maxVisibility, cancellationToken);
-        var vectorTask = SearchByVectorAsync(request, maxVisibility, cancellationToken);
-
-        await Task.WhenAll(keywordTask, vectorTask);
-
-        var keywordResults = await keywordTask;
-        var vectorResults = await vectorTask;
+        // Run searches sequentially — DbContext is not thread-safe and cannot
+        // handle concurrent operations on the same instance.
+        var keywordResults = await SearchByKeywordAsync(request, maxVisibility, cancellationToken);
+        var vectorResults = await SearchByVectorAsync(request, maxVisibility, cancellationToken);
 
         // Merge and deduplicate by ChunkId, preferring the higher score
         var merged = new Dictionary<Guid, ChunkResultDto>();

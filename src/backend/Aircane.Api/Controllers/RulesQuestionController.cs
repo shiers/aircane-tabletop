@@ -43,13 +43,18 @@ public class RulesQuestionController : ControllerBase
             var response = await _rulesQuestionService.AskAsync(request, cancellationToken);
             return Ok(response);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("API key"))
+        catch (InvalidOperationException ex)
         {
-            return StatusCode(503, new { error = "AI provider is not configured. Please set up your API key in AI Provider Settings." });
+            // AI provider configuration or response errors (missing key, bad response, rate limit, etc.)
+            return StatusCode(503, new { error = ex.Message });
         }
         catch (HttpRequestException ex)
         {
             return StatusCode(502, new { error = $"AI provider request failed: {ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = $"An unexpected error occurred: {ex.Message}" });
         }
     }
 }

@@ -88,6 +88,125 @@ public class AiSettingsController : ControllerBase
         return Ok(providers);
     }
 
+    /// <summary>
+    /// Lists available models for the currently configured provider.
+    /// For OpenAI/Grok, fetches from the API using the stored key.
+    /// Returns a curated list of chat-capable models.
+    /// </summary>
+    [HttpGet("models")]
+    public async Task<IActionResult> ListModels(CancellationToken ct)
+    {
+        var config = _settingsService.GetCurrentConfig();
+
+        switch (config.ActiveProvider)
+        {
+            case AiProviderType.OpenAi:
+            {
+                var apiKey = _settingsService.GetRawSetting("Ai:OpenAi:ApiKey");
+                if (string.IsNullOrWhiteSpace(apiKey))
+                    return Ok(new { models = GetDefaultOpenAiModels() });
+
+                try
+                {
+                    var models = await FetchOpenAiModelsAsync(apiKey, ct);
+                    return Ok(new { models });
+                }
+                catch
+                {
+                    return Ok(new { models = GetDefaultOpenAiModels() });
+                }
+            }
+
+            case AiProviderType.Ollama:
+            {
+                var baseUrl = _settingsService.GetRawSetting("Ai:Ollama:BaseUrl") ?? "http://localhost:11434";
+                try
+                {
+                    var models = await FetchOllamaModelsAsync(baseUrl, ct);
+                    return Ok(new { models });
+                }
+                catch
+                {
+                    return Ok(new { models = Array.Empty<string>() });
+                }
+            }
+
+            case AiProviderType.Grok:
+            {
+                return Ok(new { models = new[] { "grok-3-mini", "grok-3", "grok-2" } });
+            }
+
+            default:
+                return Ok(new { models = Array.Empty<string>() });
+        }
+    }
+
+    private static string[] GetDefaultOpenAiModels() =>
+    [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4-turbo",
+        "gpt-4",
+        "gpt-3.5-turbo",
+    ];
+
+    private static async Task<string[]> FetchOpenAiModelsAsync(string apiKey, CancellationToken ct)
+    {
+        using var client = new HttpClient();
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+        var response = await client.GetAsync("https://api.openai.com/v1/models", ct);
+        if (!response.IsSuccessStatusCode)
+            return GetDefaultOpenAiModels();
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var data = doc.RootElement.GetProperty("data");
+
+        // Exclude non-chat models (audio, image, realtime, transcribe, tts, instruct, search, embed)
+        var excludePatterns = new[] { "audio", "image", "realtime", "transcribe", "tts", "instruct", "search", "embed", "whisper", "translate", "codex", "nano", "deep-research", "diarize" };
+
+        var chatModels = new List<string>();
+        foreach (var model in data.EnumerateArray())
+        {
+            var id = model.GetProperty("id").GetString();
+            if (id is null) continue;
+            if (!(id.StartsWith("gpt-") || id.StartsWith("o1") || id.StartsWith("o3") || id.StartsWith("o4")))
+                continue;
+            if (excludePatterns.Any(p => id.Contains(p, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            chatModels.Add(id);
+        }
+
+        chatModels.Sort();
+        return chatModels.Count > 0 ? chatModels.ToArray() : GetDefaultOpenAiModels();
+    }
+
+    private static async Task<string[]> FetchOllamaModelsAsync(string baseUrl, CancellationToken ct)
+    {
+        using var client = new HttpClient();
+        var response = await client.GetAsync($"{baseUrl.TrimEnd('/')}/api/tags", ct);
+        if (!response.IsSuccessStatusCode)
+            return [];
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+
+        if (!doc.RootElement.TryGetProperty("models", out var models))
+            return [];
+
+        var modelNames = new List<string>();
+        foreach (var model in models.EnumerateArray())
+        {
+            var name = model.GetProperty("name").GetString();
+            if (name is not null)
+                modelNames.Add(name);
+        }
+
+        return modelNames.ToArray();
+    }
+
     // ── Validation ────────────────────────────────────────────────────────────
 
     private static string? ValidateRequest(UpdateAiProviderRequest request)

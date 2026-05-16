@@ -5,7 +5,7 @@ import { checkHealth } from '@/shared/api/health'
 export type HealthStatus = 'unknown' | 'healthy' | 'unreachable'
 
 /** How often to re-check backend health (ms). */
-const HEALTH_POLL_INTERVAL = 15_000
+const HEALTH_POLL_INTERVAL = 60_000
 
 export const useAppStore = defineStore('app', () => {
   const healthStatus = ref<HealthStatus>('unknown')

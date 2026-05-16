@@ -21,7 +21,7 @@ describe('checkHealth', () => {
 
     const result = await checkHealth()
 
-    expect(mockedGet).toHaveBeenCalledWith('/health')
+    expect(mockedGet).toHaveBeenCalledWith('/health', { timeout: 5_000 })
     expect(result).toEqual({ status: 'healthy' })
   })
 
@@ -29,7 +29,7 @@ describe('checkHealth', () => {
     mockedGet.mockRejectedValueOnce(new Error('Network Error'))
 
     await expect(checkHealth()).rejects.toThrow('Network Error')
-    expect(mockedGet).toHaveBeenCalledWith('/health')
+    expect(mockedGet).toHaveBeenCalledWith('/health', { timeout: 5_000 })
   })
 
   it('returns whatever status string the backend sends', async () => {

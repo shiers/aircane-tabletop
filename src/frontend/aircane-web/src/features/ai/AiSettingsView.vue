@@ -6,6 +6,7 @@ import {
   updateAiConfig,
   testAiConnection,
   getProviders,
+  getAvailableModels,
   type UpdateAiProviderRequest,
   type TestConnectionResult,
   type ProviderInfo,
@@ -18,7 +19,8 @@ const error = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
 const testResult = ref<TestConnectionResult | null>(null)
 const providers = ref<ProviderInfo[]>([])
-
+const availableModels = ref<string[]>([])
+const loadingModels = ref(false)
 // Form state
 const activeProvider = ref<AiProviderType>(AiProviderType.Fake)
 
@@ -54,6 +56,7 @@ const providerLabel = computed(() => {
 onMounted(async () => {
   await loadConfig()
   await loadProviders()
+  await fetchModels()
 })
 
 async function loadProviders() {
@@ -69,6 +72,17 @@ async function loadProviders() {
       { id: AiProviderType.Ollama, name: 'Ollama', description: 'Local models via Ollama (fully offline)' },
       { id: AiProviderType.Grok, name: 'Grok (xAI)', description: 'Grok models via xAI API' },
     ]
+  }
+}
+
+async function fetchModels() {
+  loadingModels.value = true
+  try {
+    availableModels.value = await getAvailableModels()
+  } catch {
+    availableModels.value = []
+  } finally {
+    loadingModels.value = false
   }
 }
 
@@ -167,6 +181,7 @@ async function saveConfig() {
     await updateAiConfig(request)
     successMessage.value = `AI provider updated to ${providerLabel.value}.`
     await loadConfig()
+    await fetchModels()
   } catch (e: any) {
     error.value = e?.response?.data?.error ?? e?.message ?? 'Failed to save AI settings'
   } finally {
@@ -292,13 +307,25 @@ function isKeyMasked(value: string): boolean {
 
         <div>
           <label for="openai-model" class="block text-sm font-medium text-gray-300 mb-1">Model</label>
+          <select
+            v-if="availableModels.length > 0"
+            id="openai-model"
+            v-model="openAiModel"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
+          >
+            <option v-for="model in availableModels" :key="model" :value="model">
+              {{ model }}
+            </option>
+          </select>
           <input
+            v-else
             id="openai-model"
             v-model="openAiModel"
             type="text"
             placeholder="gpt-4o-mini"
             class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
+          <p v-if="loadingModels" class="text-xs text-gray-500 mt-1">Loading available models...</p>
         </div>
       </fieldset>
 

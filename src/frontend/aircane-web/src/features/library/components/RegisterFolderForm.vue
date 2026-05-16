@@ -2,10 +2,12 @@
 import { ref, reactive } from 'vue'
 import { useLibraryStore } from '../store'
 import { SourceType } from '../api'
+import FolderBrowser from './FolderBrowser.vue'
 
 const store = useLibraryStore()
 
 const showForm = ref(false)
+const showBrowser = ref(false)
 const localError = ref<string | null>(null)
 const submitting = ref(false)
 
@@ -126,18 +128,38 @@ async function handleSubmit(): Promise<void> {
           <label for="folder-path" class="mb-1 block text-sm font-medium text-gray-300">
             Folder Path <span aria-hidden="true" class="text-red-400">*</span>
           </label>
-          <input
-            id="folder-path"
-            v-model="form.absolutePath"
-            type="text"
-            required
-            aria-required="true"
-            placeholder="e.g. /home/user/rpg-books or C:\RPG Books"
-            class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
-          />
+          <div class="flex gap-2">
+            <input
+              id="folder-path"
+              v-model="form.absolutePath"
+              type="text"
+              required
+              aria-required="true"
+              placeholder="e.g. /home/user/rpg-books or C:\RPG Books"
+              class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+            />
+            <button
+              type="button"
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-medium text-gray-200 hover:border-aircane-500 hover:text-aircane-400 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+              title="Browse folders"
+              @click="showBrowser = !showBrowser"
+            >
+              <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M3.75 3A1.75 1.75 0 002 4.75v3.26a3.235 3.235 0 011.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0016.25 5h-4.836a.25.25 0 01-.177-.073L9.823 3.513A1.75 1.75 0 008.586 3H3.75zM3.75 9A1.75 1.75 0 002 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0018 15.25v-4.5A1.75 1.75 0 0016.25 9H3.75z" />
+              </svg>
+              Browse
+            </button>
+          </div>
           <p class="mt-1 text-xs text-gray-500">
-            Enter the absolute path to the folder on the server's filesystem.
+            Enter the absolute path or use Browse to navigate the server's filesystem.
           </p>
+          <!-- Folder browser -->
+          <FolderBrowser
+            v-if="showBrowser"
+            v-model="form.absolutePath"
+            class="mt-2"
+            @close="showBrowser = false"
+          />
         </div>
 
         <!-- Default source type -->

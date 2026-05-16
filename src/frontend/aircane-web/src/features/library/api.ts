@@ -225,3 +225,26 @@ export async function scanFolder(id: string): Promise<FolderScanResultDto> {
   )
   return response.data
 }
+
+// ---------------------------------------------------------------------------
+// Folder Browse API
+// ---------------------------------------------------------------------------
+
+export interface BrowseDirectoryEntry {
+  name: string
+  fullPath: string
+}
+
+export interface BrowseFoldersResponse {
+  currentPath: string | null
+  parentPath: string | null
+  directories: BrowseDirectoryEntry[]
+}
+
+/** Browse server filesystem directories. Pass null/undefined to get root drives. */
+export async function browseFolders(path?: string): Promise<BrowseFoldersResponse> {
+  const response = await apiClient.get<BrowseFoldersResponse>('/api/library/folders/browse', {
+    params: path ? { path } : undefined,
+  })
+  return response.data
+}

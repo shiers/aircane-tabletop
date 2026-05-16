@@ -171,7 +171,118 @@ public sealed class LibraryFoldersController : ControllerBase
             return NotFound();
         }
     }
+
+    /// <summary>
+    /// Browses the server filesystem and returns subdirectories of the given path.
+    /// Used by the frontend folder picker to let the host navigate to a folder
+    /// without manually typing the full path.
+    /// </summary>
+    /// <remarks>
+    /// Only directories are returned (no files). System directories are excluded.
+    /// If no path is provided, returns filesystem roots (drive letters on Windows, "/" on Linux/macOS).
+    /// </remarks>
+    [HttpGet("browse")]
+    [ProducesResponseType(typeof(BrowseFoldersResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public IActionResult BrowseFolders([FromQuery] string? path)
+    {
+        // If no path provided, return filesystem roots
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            var roots = Directory.GetLogicalDrives()
+                .Select(d => new BrowseDirectoryEntry(
+                    Name: d.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    FullPath: d))
+                .ToList();
+
+            return Ok(new BrowseFoldersResponse(
+                CurrentPath: null,
+                ParentPath: null,
+                Directories: roots));
+        }
+
+        // Validate the path
+        if (!FolderPathValidator.IsAbsolutePath(path))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid path",
+                Detail = "Path must be absolute.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+
+        if (FolderPathValidator.ContainsTraversalSequence(path))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid path",
+                Detail = "Path must not contain traversal sequences (..).",
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+
+        if (!Directory.Exists(path))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Path not found",
+                Detail = "The specified directory does not exist or is not accessible.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+
+        try
+        {
+            var canonicalPath = Path.GetFullPath(path);
+            var parentPath = Directory.GetParent(canonicalPath)?.FullName;
+
+            var directories = Directory.GetDirectories(canonicalPath)
+                .Select(d => new DirectoryInfo(d))
+                .Where(d => !d.Attributes.HasFlag(FileAttributes.Hidden))
+                .Where(d => !FolderPathValidator.IsSystemDirectory(d.FullName))
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(d => new BrowseDirectoryEntry(Name: d.Name, FullPath: d.FullName))
+                .ToList();
+
+            return Ok(new BrowseFoldersResponse(
+                CurrentPath: canonicalPath,
+                ParentPath: parentPath,
+                Directories: directories));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Access denied",
+                Detail = "The server process does not have permission to read this directory.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+        catch (IOException ex)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "IO error",
+                Detail = ex.Message,
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+    }
 }
+
+/// <summary>
+/// Response model for the folder browse endpoint.
+/// </summary>
+public sealed record BrowseFoldersResponse(
+    string? CurrentPath,
+    string? ParentPath,
+    IReadOnlyList<BrowseDirectoryEntry> Directories);
+
+/// <summary>
+/// A single directory entry returned by the browse endpoint.
+/// </summary>
+public sealed record BrowseDirectoryEntry(string Name, string FullPath);
 
 /// <summary>
 /// Request body for POST /api/library/folders.

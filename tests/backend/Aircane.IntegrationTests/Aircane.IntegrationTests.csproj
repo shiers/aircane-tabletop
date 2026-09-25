@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\backend\Aircane.Api\Aircane.Api.csproj" />
+    <ProjectReference Include="..\..\..\src\backend\Aircane.Workers\Aircane.Workers.csproj" />
   </ItemGroup>
 
 </Project>

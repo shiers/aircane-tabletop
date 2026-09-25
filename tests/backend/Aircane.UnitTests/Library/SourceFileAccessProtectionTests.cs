@@ -57,6 +57,11 @@ public class SourceFileAccessProtectionTests
             "CreatedAt",
             "UpdatedAt",
             "Tags",
+            // Built-in rules content metadata (Phase 10) — all safe, non-file-path fields.
+            "IsBuiltIn",
+            "IsDisabled",
+            "LicenseKey",
+            "LicenseDisplayName",
         };
 
         Assert.Equal(expectedFields, propertyNames);

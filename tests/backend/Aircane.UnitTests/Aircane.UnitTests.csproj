@@ -35,6 +35,7 @@
     <ProjectReference Include="..\..\..\src\backend\Aircane.Application\Aircane.Application.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Aircane.Infrastructure\Aircane.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Aircane.Api\Aircane.Api.csproj" />
+    <ProjectReference Include="..\..\..\src\backend\Aircane.Workers\Aircane.Workers.csproj" />
   </ItemGroup>
 
 </Project>

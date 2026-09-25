@@ -84,6 +84,9 @@ Move the in-memory token revocation list to a durable store (Redis or database) 
 ### Session Export and Replay
 Export full session logs, event history, and summaries in a portable format for archival or sharing.
 
+### Fix RetrievalService keyword tests under EF InMemory
+`RetrievalService.SearchByKeywordAsync` uses `EF.Functions.ILike`, which the EF Core InMemory provider cannot translate — it switches to client evaluation and throws. As a result the `RetrievalServiceTests` keyword/visibility unit tests currently fail (this is a test-infrastructure limitation, not a production bug; Npgsql translates `ILike` correctly at runtime). Fix by either running these tests against real PostgreSQL via Testcontainers, or making the keyword match provider-agnostic (e.g. `EF.Functions.Like` / `ToLower().Contains(...)` fallback) so the same assertions run under InMemory. Until then, built-in-content retrieval filtering is regression-covered by document-filter invariant tests (`BuiltInContentTests`) and verified end-to-end against real PostgreSQL.
+
 ---
 
 ## Priority 4 - Exploratory / Long-Term

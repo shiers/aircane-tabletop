@@ -165,6 +165,63 @@ public class RulesQuestionServiceTests
     }
 
     [Fact]
+    public async Task RulesCitation_IncludesLicenseKey_WhenSourceIsBuiltIn()
+    {
+        // Arrange: a built-in document with license metadata in the database.
+        var doc = new Aircane.Domain.Entities.SourceDocument(
+            title: "D&D 5e Systems Reference Document (2014)",
+            originalFileName: "dnd5e-srd-2014",
+            sourceType: Aircane.Domain.Enums.SourceType.Rules,
+            sourceMode: Aircane.Domain.Enums.SourceMode.Embedded,
+            gameSystem: "D&D 5e",
+            ruleset: "2014",
+            sourcePath: "Aircane.Workers.Resources.builtin.dnd5e_srd.manifest.json",
+            visibility: Aircane.Domain.Enums.ContentVisibility.Public,
+            importStatus: Aircane.Domain.Enums.ImportStatus.Completed)
+        {
+            IsBuiltIn = true,
+            LicenseKey = "cc-by-4.0",
+            LicenseDisplayName = "Creative Commons Attribution 4.0 International",
+            AttributionText = "Includes material from the SRD 5.1 under CC BY 4.0.",
+        };
+        _db.SourceDocuments.Add(doc);
+        await _db.SaveChangesAsync();
+
+        _fakeRag.SetResult(new RagContextResult(
+            ContextText: "[1] (SRD - Combat)\nGrapple rules.",
+            Citations: [new RagCitation(Guid.NewGuid(), doc.Id, doc.Title, 1, "Combat")],
+            TotalChunksRetrieved: 1,
+            ChunksIncluded: 1));
+
+        // Act
+        var response = await _service.AskAsync(new RulesQuestionRequest(Question: "grapple?"));
+
+        // Assert: the citation carries the built-in document's license metadata.
+        var citation = Assert.Single(response.Citations);
+        Assert.Equal("cc-by-4.0", citation.LicenseKey);
+        Assert.Equal("Creative Commons Attribution 4.0 International", citation.LicenseDisplayName);
+        Assert.False(string.IsNullOrWhiteSpace(citation.AttributionText));
+    }
+
+    [Fact]
+    public async Task RulesCitation_LicenseFieldsNull_WhenSourceIsNotBuiltIn()
+    {
+        // A citation whose source document is not in the DB (or not built-in) has null license fields.
+        _fakeRag.SetResult(new RagContextResult(
+            ContextText: "[1] (Homebrew)\nCustom rule.",
+            Citations: [new RagCitation(Guid.NewGuid(), Guid.NewGuid(), "My Homebrew", null, null)],
+            TotalChunksRetrieved: 1,
+            ChunksIncluded: 1));
+
+        var response = await _service.AskAsync(new RulesQuestionRequest(Question: "custom?"));
+
+        var citation = Assert.Single(response.Citations);
+        Assert.Null(citation.LicenseKey);
+        Assert.Null(citation.LicenseDisplayName);
+        Assert.Null(citation.AttributionText);
+    }
+
+    [Fact]
     public async Task AskAsync_MultipleCitations_AllMappedCorrectly()
     {
         var chunkId1 = Guid.NewGuid();

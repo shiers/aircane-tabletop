@@ -383,6 +383,7 @@ public class DocumentImportJobTests
     {
         public int Dimensions => 768;
         public string ProviderName => "Throwing";
+        public string ModelName => "throwing-model";
 
         public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default)
             => throw new InvalidOperationException("Simulated embedding failure.");

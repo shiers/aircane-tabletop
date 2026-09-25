@@ -1,9 +1,12 @@
 using Aircane.Application.Abstractions;
+using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Retrieval;
 using Aircane.Domain.Entities;
 using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pgvector.EntityFrameworkCore;
 
 namespace Aircane.Infrastructure.Retrieval;
@@ -16,11 +19,16 @@ public sealed class RetrievalService : IRetrievalService
 {
     private readonly AircaneDbContext _db;
     private readonly IEmbeddingProvider _embeddingProvider;
+    private readonly ILogger<RetrievalService> _logger;
 
-    public RetrievalService(AircaneDbContext db, IEmbeddingProvider embeddingProvider)
+    public RetrievalService(
+        AircaneDbContext db,
+        IEmbeddingProvider embeddingProvider,
+        ILogger<RetrievalService>? logger = null)
     {
         _db = db;
         _embeddingProvider = embeddingProvider;
+        _logger = logger ?? NullLogger<RetrievalService>.Instance;
     }
 
     /// <inheritdoc />
@@ -33,14 +41,20 @@ public sealed class RetrievalService : IRetrievalService
             return [];
 
         var allowedVisibilities = GetAllowedVisibilities(maxVisibility);
-        var pattern = $"%{request.Query}%";
+
+        // Case-insensitive substring match. Using ToLower().Contains(...) instead of
+        // EF.Functions.ILike keeps the query provider-agnostic: Npgsql translates it to a
+        // server-side lower(...) LIKE '%term%', and the EF Core InMemory provider (used by tests)
+        // can evaluate it as well. Contains also treats % and _ as literals, avoiding accidental
+        // LIKE-wildcard behavior from user queries.
+        var term = request.Query.ToLower();
 
         var query = BuildFilteredQuery(request, allowedVisibilities);
 
         var results = await query
             .Where(c =>
-                EF.Functions.ILike(c.Chunk.Text, pattern) ||
-                (c.Chunk.SectionTitle != null && EF.Functions.ILike(c.Chunk.SectionTitle, pattern)))
+                c.Chunk.Text.ToLower().Contains(term) ||
+                (c.Chunk.SectionTitle != null && c.Chunk.SectionTitle.ToLower().Contains(term)))
             .Take(request.TopK)
             .Select(c => new ChunkResultDto(
                 c.Chunk.Id,
@@ -78,9 +92,43 @@ public sealed class RetrievalService : IRetrievalService
         var allowedVisibilities = GetAllowedVisibilities(maxVisibility);
         var query = BuildFilteredQuery(request, allowedVisibilities);
 
+        var activeProvider = _embeddingProvider.ProviderName;
+        var activeModel = _embeddingProvider.ModelName;
+        var activeDimensions = _embeddingProvider.Dimensions;
+
+        // Embeddings are only comparable when produced by the same provider + model + dimension
+        // as the active query embedding. Mixing embedding spaces yields meaningless cosine
+        // distances, so restrict vector search to chunks whose recorded provenance matches the
+        // active provider. Chunks with NULL provenance predate provenance tracking and are treated
+        // as compatible (they were embedded by whatever provider was active at the time).
+
+        // Diagnostic: warn (do not silently ignore) when embedded chunks are excluded because
+        // their provenance does not match the active provider — this is the "re-index required"
+        // signal that prevents silently-wrong retrieval after a provider/model change.
+        var mismatchedCount = await query
+            .Where(c => c.Chunk.Embedding != null
+                && c.Chunk.EmbeddingProvider != null
+                && (c.Chunk.EmbeddingProvider != activeProvider
+                    || c.Chunk.EmbeddingModel != activeModel
+                    || c.Chunk.EmbeddingDimensions != activeDimensions))
+            .CountAsync(cancellationToken);
+
+        if (mismatchedCount > 0)
+        {
+            _logger.LogWarning(
+                "Vector search skipped {Count} embedded chunk(s) whose embedding provenance does not " +
+                "match the active provider ({Provider}/{Model}, {Dimensions}d). Re-index those documents " +
+                "to make them searchable with the current embedding provider.",
+                mismatchedCount, activeProvider, activeModel, activeDimensions);
+        }
+
         // Cosine distance via pgvector: lower distance = more similar
         var results = await query
-            .Where(c => c.Chunk.Embedding != null)
+            .Where(c => c.Chunk.Embedding != null
+                && (c.Chunk.EmbeddingProvider == null
+                    || (c.Chunk.EmbeddingProvider == activeProvider
+                        && c.Chunk.EmbeddingModel == activeModel
+                        && c.Chunk.EmbeddingDimensions == activeDimensions)))
             .OrderBy(c => c.Chunk.Embedding!.CosineDistance(vector))
             .Take(request.TopK)
             .Select(c => new ChunkResultDto(

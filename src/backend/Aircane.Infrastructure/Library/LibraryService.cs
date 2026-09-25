@@ -16,15 +16,18 @@ public sealed class LibraryService : ILibraryService
 {
     private readonly AircaneDbContext _db;
     private readonly IFileStorageService _fileStorage;
+    private readonly IEmbeddingProvider _embeddingProvider;
     private readonly ILogger<LibraryService> _logger;
 
     public LibraryService(
         AircaneDbContext db,
         IFileStorageService fileStorage,
+        IEmbeddingProvider embeddingProvider,
         ILogger<LibraryService> logger)
     {
         _db = db;
         _fileStorage = fileStorage;
+        _embeddingProvider = embeddingProvider;
         _logger = logger;
     }
 
@@ -395,6 +398,70 @@ public sealed class LibraryService : ILibraryService
             "Restored {Count} built-in document(s) to enabled state.", disabledBuiltIns.Count);
 
         return disabledBuiltIns.Count;
+    }
+
+    /// <inheritdoc />
+    public async Task<int> ReEmbedDocumentAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        var exists = await _db.SourceDocuments.AnyAsync(d => d.Id == documentId, cancellationToken);
+        if (!exists)
+            throw new KeyNotFoundException($"Document {documentId} not found.");
+
+        var chunks = await _db.DocumentChunks
+            .Where(c => c.SourceDocumentId == documentId)
+            .ToListAsync(cancellationToken);
+
+        var count = await ReEmbedChunksAsync(chunks, cancellationToken);
+
+        _logger.LogInformation(
+            "Re-embedded {Count} chunk(s) for document {DocumentId} using provider {Provider}/{Model}.",
+            count, documentId, _embeddingProvider.ProviderName, _embeddingProvider.ModelName);
+
+        return count;
+    }
+
+    /// <inheritdoc />
+    public async Task<int> ReEmbedAllAsync(CancellationToken cancellationToken = default)
+    {
+        var chunks = await _db.DocumentChunks.ToListAsync(cancellationToken);
+
+        var count = await ReEmbedChunksAsync(chunks, cancellationToken);
+
+        _logger.LogInformation(
+            "Re-embedded {Count} chunk(s) across the library using provider {Provider}/{Model}.",
+            count, _embeddingProvider.ProviderName, _embeddingProvider.ModelName);
+
+        return count;
+    }
+
+    /// <summary>
+    /// Regenerates embeddings for the given chunks with the active provider and records provenance.
+    /// Chunks with empty text are skipped. Persists in a single SaveChanges.
+    /// </summary>
+    private async Task<int> ReEmbedChunksAsync(
+        List<DocumentChunk> chunks,
+        CancellationToken cancellationToken)
+    {
+        var reembedded = 0;
+        foreach (var chunk in chunks)
+        {
+            if (string.IsNullOrWhiteSpace(chunk.Text))
+                continue;
+
+            var embedding = await _embeddingProvider.GenerateEmbeddingAsync(chunk.Text, cancellationToken);
+            chunk.Embedding = new Pgvector.Vector(embedding);
+            chunk.EmbeddingProvider = _embeddingProvider.ProviderName;
+            chunk.EmbeddingModel = _embeddingProvider.ModelName;
+            chunk.EmbeddingDimensions = embedding.Length;
+            reembedded++;
+        }
+
+        if (reembedded > 0)
+            await _db.SaveChangesAsync(cancellationToken);
+
+        return reembedded;
     }
 
     /// <inheritdoc />

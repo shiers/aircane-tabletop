@@ -406,6 +406,7 @@ public sealed class AdventureIndexingServiceTests : IDisposable
     {
         public int Dimensions => 768;
         public string ProviderName => "Fake";
+        public string ModelName => "fake-deterministic";
         public int CallCount { get; private set; }
 
         public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default)

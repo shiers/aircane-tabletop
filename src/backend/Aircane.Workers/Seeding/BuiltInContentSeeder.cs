@@ -194,6 +194,9 @@ public sealed class BuiltInContentSeeder
 
                 var embedding = await _embeddingProvider.GenerateEmbeddingAsync(tc.Text, ct);
                 chunk.Embedding = new Pgvector.Vector(embedding);
+                chunk.EmbeddingProvider = _embeddingProvider.ProviderName;
+                chunk.EmbeddingModel = _embeddingProvider.ModelName;
+                chunk.EmbeddingDimensions = embedding.Length;
 
                 _db.DocumentChunks.Add(chunk);
                 chunkCount++;

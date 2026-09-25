@@ -209,6 +209,12 @@ public class AircaneDbContext : DbContext
             if (!_isInMemory) entity.Property(e => e.MetadataJson).HasColumnType("text").IsRequired();
             entity.Property(e => e.CreatedAt).IsRequired();
 
+            // Embedding provenance: which provider/model/dimension produced the stored vector.
+            // Null for chunks embedded before provenance tracking (treated as compatible).
+            entity.Property(e => e.EmbeddingProvider).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.EmbeddingModel).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.EmbeddingDimensions).IsRequired(false);
+
             // Embedding: native Vector type via Pgvector.EntityFrameworkCore; HNSW index for cosine similarity
             if (!_isInMemory)
             {

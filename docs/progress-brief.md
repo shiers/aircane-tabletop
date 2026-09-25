@@ -158,9 +158,16 @@ before `CREATE EXTENSION vector` ran, so embedding writes failed — `Program.cs
   scoping, and the license endpoints.
 
 **Known gaps / follow-ups:**
-- **PF2e content is a stub** (2 chunks). The Obsidian TTRPG Community repo is under Paizo's
-  Community Use Policy (not bundleable); real ORC text must be extracted from the Foundry VTT
-  PF2e system's LevelDB packs — deferred. Seeder handles the partial bundle gracefully.
+- **PF2e content is a stub** (2 chunks), pending properly-licensed ORC source text. Two sources
+  were evaluated and are **not** usable: the Obsidian TTRPG Community repo (Paizo Community Use
+  Policy, not bundleable) and the Foundry VTT PF2e system data — the Foundry system's Pathfinder
+  content is used under a private Paizo↔Foundry partnership agreement and Paizo's Community Use
+  Policy, **not** the ORC License, so extracting its packs and shipping them as ORC content in
+  Aircane would misrepresent the license and likely breach Community Use. Real PF2e Remaster text
+  must be sourced from an actual ORC-licensed release (the same content-sourcing step used for the
+  D&D SRD and PF1e PRD), then dropped into the existing `pf2e_remaster` bundle. No code is needed —
+  the bundle structure, ORC license file, manifest, and seeder already work and the seeder handles
+  the partial bundle gracefully.
 - **Dev RAG now uses real embeddings (local dev only).** `appsettings.Development.json` was
   switched from the Fake embedding provider to **Ollama `nomic-embed-text`** (768-dim), and the
   dev DB was re-seeded so all ~922 chunks carry real vectors. Verified end-to-end: the "grapple"

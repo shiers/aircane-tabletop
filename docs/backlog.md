@@ -9,6 +9,9 @@ This document lists planned features and improvements beyond the Aircane Tableto
 ### Pathfinder 2e Adapter
 Add a ruleset adapter supporting three-action economy, degrees of success, encounter XP budgets, conditions, proficiency scaling, and creature elite/weak adjustments. The core domain model is already system-agnostic; this adds the game-specific validation and generation logic.
 
+### Pathfinder 2e Remaster Built-in Content (real ORC text)
+The `pf2e_remaster` built-in bundle currently ships a small placeholder (2 chunks) so the app runs; the seeder handles the partial bundle gracefully. To complete it, source the real PF2e Remaster rules text **from a genuine ORC-licensed release** and drop the Markdown files into `src/backend/Aircane.Workers/Resources/builtin/pf2e_remaster/` (adding entries to its `manifest.json`). No code changes needed — the bundle structure, `LICENSE-ORC.txt`, manifest, and seeder already work. **Licensing caution:** do NOT extract content from the Foundry VTT PF2e system data or the Obsidian TTRPG Community repo — that material is distributed under a private Paizo↔Foundry partnership agreement and Paizo's Community Use Policy, not the ORC License, and cannot be bundled as ORC content here. Use only text that is actually released under ORC.
+
 ### OCR Pipeline
 Integrate Tesseract (or equivalent) to process scanned/image-only PDFs that the MVP marks as "OCR required." Enables hosts with older or scan-only rulebooks to index their full library.
 
@@ -22,17 +25,18 @@ Package the app as a Tauri (or Electron) desktop application that starts the ASP
 Add initiative tracker, turn enforcement, condition duration tracking, automatic damage/healing application, death save management, and concentration checks. The MVP AI can request rolls and propose changes but does not enforce turn order.
 
 ### Embedding Provider Portability (Embed-on-First-Run + Provider Metadata)
-Make stored embeddings robust to provider/model changes. Today the seeder generates embeddings with whatever embedding provider is configured at seed time and persists them; retrieval only works if queries are embedded with the *same* provider and model, and nothing records which produced a given vector. This creates silent-failure and lock-in risks (see [Known Limitations → AI/Retrieval](known-limitations.md)).
+Make stored embeddings robust to provider/model changes.
 
-Scope:
-- **Ship text, not vectors.** Built-in bundles already ship as Markdown text; keep embeddings as derived data generated on the user's machine, never pre-computed and shipped.
-- **Record provenance.** Store `EmbeddingProvider`, `EmbeddingModel`, and `Dimensions` alongside each embedding (or per document/batch), so the app knows what produced every vector.
-- **Mismatch guard.** At query time, detect when the active embedding provider/model/dimension differs from what the stored chunks were embedded with, and refuse to silently return meaningless results. Surface a clear, actionable state instead (e.g. "re-index required").
-- **Re-embed path.** Provide a first-class re-index/re-embed operation (per document and library-wide) triggered when the provider changes, the model is upgraded, or Ollama is added/removed. Report progress and let it run as a background job.
-- **Dimension flexibility.** The `DocumentChunk.Embedding` column is currently hardwired to `vector(768)` (Ollama `nomic-embed-text` / Fake). Supporting providers with different dimensions (e.g. OpenAI `text-embedding-3-small` at 1536) requires either a configurable/migrated column dimension or a strategy for multiple embedding spaces.
-- **OpenAI (and other) embedding providers.** Only Ollama and Fake embedding providers exist today. Add cloud embedding providers behind the existing `IEmbeddingProvider` abstraction, gated by the provenance/dimension work above.
+**Delivered (core):**
+- **Provenance recording.** Each `DocumentChunk` records `EmbeddingProvider`, `EmbeddingModel`, and `EmbeddingDimensions` when its embedding is generated (seeder + import job + re-embed).
+- **Mismatch guard.** Vector search excludes chunks whose provenance does not match the active embedding provider and logs a "re-index required" warning, so a provider/model change no longer silently returns meaningless results. Null provenance (pre-tracking) is treated as compatible.
+- **Re-embed path.** `POST /api/library/documents/reembed-all` and `.../{id}/reembed` regenerate embeddings with the current provider and refresh provenance.
 
-This is the durable fix for the embedding-provider coupling risk; until it lands, changing or removing the embedding provider requires a full manual re-seed.
+**Still outstanding:**
+- **Ship text, not pre-computed vectors.** Built-in bundles already ship as Markdown text and are embedded on first run, which is the desired model; formalize/guarantee this and document it as the contract.
+- **Dimension flexibility.** The `DocumentChunk.Embedding` column is hardwired to `vector(768)` (Ollama `nomic-embed-text` / Fake). Supporting a provider with a different dimension (e.g. OpenAI `text-embedding-3-small` at 1536) requires either a configurable/migrated column dimension, a second column, or a per-dimension strategy — deferred to a future release. Path when needed: change the column dimension, add a migration, and run a full re-embed.
+- **OpenAI (and other cloud) embedding providers.** Only Ollama and Fake exist today. Add cloud embedding providers behind the existing `IEmbeddingProvider` abstraction, gated by the dimension work above.
+- **Background re-embed.** The re-embed endpoints run synchronously; for large libraries, move them to a background job with progress reporting.
 
 ---
 
@@ -83,9 +87,6 @@ Move the in-memory token revocation list to a durable store (Redis or database) 
 
 ### Session Export and Replay
 Export full session logs, event history, and summaries in a portable format for archival or sharing.
-
-### Fix RetrievalService keyword tests under EF InMemory
-`RetrievalService.SearchByKeywordAsync` uses `EF.Functions.ILike`, which the EF Core InMemory provider cannot translate — it switches to client evaluation and throws. As a result the `RetrievalServiceTests` keyword/visibility unit tests currently fail (this is a test-infrastructure limitation, not a production bug; Npgsql translates `ILike` correctly at runtime). Fix by either running these tests against real PostgreSQL via Testcontainers, or making the keyword match provider-agnostic (e.g. `EF.Functions.Like` / `ToLower().Contains(...)` fallback) so the same assertions run under InMemory. Until then, built-in-content retrieval filtering is regression-covered by document-filter invariant tests (`BuiltInContentTests`) and verified end-to-end against real PostgreSQL.
 
 ---
 

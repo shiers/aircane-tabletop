@@ -25,6 +25,24 @@ public class DocumentChunk : EntityBase
     /// </summary>
     public Vector? Embedding { get; set; }
 
+    /// <summary>
+    /// Provenance: the embedding provider that produced <see cref="Embedding"/> (e.g. "Ollama").
+    /// Null when no embedding has been generated, or for embeddings created before provenance
+    /// tracking was introduced (treated as compatible with the active provider).
+    /// </summary>
+    public string? EmbeddingProvider { get; set; }
+
+    /// <summary>
+    /// Provenance: the embedding model that produced <see cref="Embedding"/> (e.g. "nomic-embed-text").
+    /// </summary>
+    public string? EmbeddingModel { get; set; }
+
+    /// <summary>
+    /// Provenance: the dimensionality of <see cref="Embedding"/> (e.g. 768). Null when no
+    /// embedding has been generated or provenance is unknown.
+    /// </summary>
+    public int? EmbeddingDimensions { get; set; }
+
     public DocumentChunk(
         Guid sourceDocumentId,
         int chunkIndex,

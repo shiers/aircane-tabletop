@@ -29,7 +29,11 @@ public class FolderDocumentInheritanceTests : IDisposable
 
         // IFileStorageService is not exercised by CreateDocumentFromFolderAsync,
         // so we pass a no-op stub.
-        _sut = new LibraryService(_db, new NoOpFileStorageService(), NullLogger<LibraryService>.Instance);
+        _sut = new LibraryService(
+            _db,
+            new NoOpFileStorageService(),
+            new Aircane.Infrastructure.Embeddings.FakeEmbeddingProvider(),
+            NullLogger<LibraryService>.Instance);
     }
 
     public void Dispose() => _db.Dispose();

@@ -12,6 +12,12 @@ public interface IEmbeddingProvider
     /// <summary>Human-readable provider name used for logging and diagnostics (e.g. "Fake", "Ollama").</summary>
     string ProviderName { get; }
 
+    /// <summary>
+    /// The embedding model identifier (e.g. "nomic-embed-text"). Recorded alongside stored
+    /// embeddings so a provider/model change can be detected and a re-index prompted.
+    /// </summary>
+    string ModelName { get; }
+
     /// <summary>Generates an embedding vector for a single piece of text.</summary>
     Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default);
 

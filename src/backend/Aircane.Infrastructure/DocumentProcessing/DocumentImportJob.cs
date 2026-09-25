@@ -252,6 +252,9 @@ public sealed class DocumentImportJob : IDocumentImportJob
             for (int i = 0; i < chunks.Count; i++)
             {
                 chunks[i].Embedding = new Vector(embeddings[i]);
+                chunks[i].EmbeddingProvider = _embeddingProvider.ProviderName;
+                chunks[i].EmbeddingModel = _embeddingProvider.ModelName;
+                chunks[i].EmbeddingDimensions = embeddings[i].Length;
             }
 
             _logger.LogDebug(

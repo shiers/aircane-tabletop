@@ -263,6 +263,40 @@ public sealed class LibraryController : ControllerBase
     }
 
     /// <summary>
+    /// Regenerates embeddings for a single document using the currently configured embedding
+    /// provider, updating each chunk's provenance. Run this after changing the embedding provider
+    /// or model so the document becomes searchable again.
+    /// </summary>
+    [HttpPost("{id:guid}/reembed")]
+    [ProducesResponseType(typeof(ReEmbedResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReEmbedDocument(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var count = await _libraryService.ReEmbedDocumentAsync(id, cancellationToken);
+            return Ok(new ReEmbedResult(count));
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
+    /// <summary>
+    /// Regenerates embeddings for every document in the library using the currently configured
+    /// embedding provider. Intended as a maintenance operation after an embedding provider/model
+    /// change. May take a while for large libraries.
+    /// </summary>
+    [HttpPost("reembed-all")]
+    [ProducesResponseType(typeof(ReEmbedResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ReEmbedAll(CancellationToken cancellationToken)
+    {
+        var count = await _libraryService.ReEmbedAllAsync(cancellationToken);
+        return Ok(new ReEmbedResult(count));
+    }
+
+    /// <summary>
     /// Updates the classification metadata of an existing document.
     /// Only the fields provided in the request body are applied; omitted fields are left unchanged.
     /// </summary>
@@ -360,3 +394,7 @@ public sealed class SetDisabledBody
 /// <summary>Result of the restore-defaults operation.</summary>
 /// <param name="RestoredCount">Number of built-in documents that were re-enabled.</param>
 public sealed record RestoreDefaultsResult(int RestoredCount);
+
+/// <summary>Result of a re-embed operation.</summary>
+/// <param name="ReEmbeddedCount">Number of chunks that were re-embedded.</param>
+public sealed record ReEmbedResult(int ReEmbeddedCount);

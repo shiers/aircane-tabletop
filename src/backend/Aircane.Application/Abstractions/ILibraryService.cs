@@ -109,6 +109,24 @@ public interface ILibraryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Regenerates embeddings for a single document's chunks using the currently configured
+    /// embedding provider, updating each chunk's embedding-provenance. Use after changing the
+    /// embedding provider or model so the document becomes searchable again.
+    /// Returns the number of chunks re-embedded.
+    /// </summary>
+    Task<int> ReEmbedDocumentAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Regenerates embeddings for every chunk in the library using the currently configured
+    /// embedding provider. Returns the number of chunks re-embedded. Intended to be run as a
+    /// maintenance operation after an embedding provider/model change.
+    /// </summary>
+    Task<int> ReEmbedAllAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Updates the classification metadata (title, source type, game system, ruleset, tags)
     /// of an existing document. Only non-null fields in the request are applied.
     /// </summary>

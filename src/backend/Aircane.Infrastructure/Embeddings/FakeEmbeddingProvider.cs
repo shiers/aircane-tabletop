@@ -20,6 +20,9 @@ public sealed class FakeEmbeddingProvider : IEmbeddingProvider
     public string ProviderName => "Fake";
 
     /// <inheritdoc />
+    public string ModelName => "fake-deterministic";
+
+    /// <inheritdoc />
     public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken ct = default)
         => Task.FromResult(GenerateDeterministicEmbedding(text));
 

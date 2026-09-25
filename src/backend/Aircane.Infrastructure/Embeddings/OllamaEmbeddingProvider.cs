@@ -35,6 +35,9 @@ public sealed class OllamaEmbeddingProvider : IEmbeddingProvider, IDisposable
     /// <inheritdoc />
     public string ProviderName => "Ollama";
 
+    /// <inheritdoc />
+    public string ModelName => _model;
+
     public OllamaEmbeddingProvider(
         IConfiguration configuration,
         ILogger<OllamaEmbeddingProvider> logger)

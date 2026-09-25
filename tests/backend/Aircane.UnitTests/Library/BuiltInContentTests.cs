@@ -48,7 +48,7 @@ public class BuiltInContentTests : IDisposable
             NullLogger<Aircane.Infrastructure.DocumentSources.EmbeddedResourceDocumentSource>.Instance);
 
     private LibraryService CreateLibraryService() =>
-        new(_db, new NoopFileStorage(), NullLogger<LibraryService>.Instance);
+        new(_db, new NoopFileStorage(), new FakeEmbeddingProvider(), NullLogger<LibraryService>.Instance);
 
     /// <summary>
     /// Mirrors the retrieval-eligibility filter used by <c>RetrievalService.BuildFilteredQuery</c>:
@@ -111,6 +111,76 @@ public class BuiltInContentTests : IDisposable
         var docs = await _db.SourceDocuments.ToListAsync();
         Assert.NotEmpty(docs);
         Assert.All(docs, d => Assert.True(d.IsBuiltIn));
+    }
+
+    [Fact]
+    public async Task BuiltInContentSeeder_RecordsEmbeddingProvenance_OnChunks()
+    {
+        await CreateSeeder().SeedAsync();
+
+        var chunks = await _db.DocumentChunks.ToListAsync();
+        Assert.NotEmpty(chunks);
+        // The seeder uses FakeEmbeddingProvider here, so every chunk records its provenance.
+        Assert.All(chunks, c =>
+        {
+            Assert.Equal("Fake", c.EmbeddingProvider);
+            Assert.Equal("fake-deterministic", c.EmbeddingModel);
+            Assert.Equal(768, c.EmbeddingDimensions);
+        });
+    }
+
+    [Fact]
+    public async Task ReEmbedDocument_UpdatesEmbeddingProvenance()
+    {
+        await CreateSeeder().SeedAsync();
+        var library = CreateLibraryService();
+        var dnd = await _db.SourceDocuments.FirstAsync(d => d.GameSystem == "D&D 5e");
+
+        // Simulate chunks embedded by a different provider (stale provenance).
+        var chunks = await _db.DocumentChunks
+            .Where(c => c.SourceDocumentId == dnd.Id)
+            .ToListAsync();
+        foreach (var c in chunks)
+        {
+            c.EmbeddingProvider = "SomeOldProvider";
+            c.EmbeddingModel = "old-model";
+            c.EmbeddingDimensions = 1536;
+        }
+        await _db.SaveChangesAsync();
+
+        var count = await library.ReEmbedDocumentAsync(dnd.Id);
+
+        Assert.Equal(chunks.Count, count);
+        var refreshed = await _db.DocumentChunks
+            .Where(c => c.SourceDocumentId == dnd.Id)
+            .ToListAsync();
+        Assert.All(refreshed, c =>
+        {
+            Assert.Equal("Fake", c.EmbeddingProvider);
+            Assert.Equal("fake-deterministic", c.EmbeddingModel);
+            Assert.Equal(768, c.EmbeddingDimensions);
+        });
+    }
+
+    [Fact]
+    public async Task ReEmbedDocument_UnknownDocument_Throws()
+    {
+        var library = CreateLibraryService();
+        await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => library.ReEmbedDocumentAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task ReEmbedAll_ReEmbedsEveryChunk()
+    {
+        await CreateSeeder().SeedAsync();
+        var library = CreateLibraryService();
+
+        var totalChunks = await _db.DocumentChunks.CountAsync();
+        var count = await library.ReEmbedAllAsync();
+
+        Assert.Equal(totalChunks, count);
+        Assert.False(await _db.DocumentChunks.AnyAsync(c => c.EmbeddingProvider != "Fake"));
     }
 
     [Fact]

@@ -165,6 +165,19 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.CreatedAt).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
 
+            // Built-in rules content bundle (Phase 10)
+            entity.Property(e => e.IsBuiltIn).IsRequired().HasDefaultValue(false)
+                .HasComment("Marks a built-in rules text document (SRD, ORC, OGL content). Distinct from GameSystemDefinitions.IsBuiltIn which marks a built-in mechanic definition.");
+            entity.Property(e => e.IsDisabled).IsRequired().HasDefaultValue(false);
+            entity.Property(e => e.LicenseKey).HasMaxLength(50).IsRequired(false);
+            entity.Property(e => e.LicenseDisplayName).HasMaxLength(200).IsRequired(false);
+            if (!_isInMemory) entity.Property(e => e.AttributionText).HasColumnType("text").IsRequired(false);
+            entity.Property(e => e.AttributionUrl).HasMaxLength(500).IsRequired(false);
+
+            // Supports idempotency checks in the built-in content seeder.
+            entity.HasIndex(e => new { e.IsBuiltIn, e.GameSystem })
+                .HasDatabaseName("IX_SourceDocuments_IsBuiltIn_GameSystem");
+
             // Tags: stored as jsonb in PostgreSQL; plain string conversion for in-memory testing
             var tagsProperty = entity.Property(e => e.Tags)
                 .HasConversion(

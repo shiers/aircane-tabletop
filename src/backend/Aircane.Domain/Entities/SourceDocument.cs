@@ -51,6 +51,34 @@ public class SourceDocument : EntityBase
     public DateTimeOffset UpdatedAt { get; set; }
 
     /// <summary>
+    /// True when this is a built-in rules text document (SRD, ORC, or OGL content) shipped with the app.
+    /// Built-in documents cannot be deleted; they can only be disabled.
+    /// Distinct from GameSystemDefinitions.IsBuiltIn which marks a built-in mechanic definition.
+    /// </summary>
+    public bool IsBuiltIn { get; set; }
+
+    /// <summary>
+    /// True when the host has disabled this document. Disabled documents' chunks are excluded
+    /// from all retrieval/RAG queries but the document and its chunks are retained.
+    /// </summary>
+    public bool IsDisabled { get; set; }
+
+    /// <summary>
+    /// Machine-readable open-content license key (e.g. "cc-by-4.0", "orc", "ogl-1.0a").
+    /// Null for user-imported documents.
+    /// </summary>
+    public string? LicenseKey { get; set; }
+
+    /// <summary>Human-readable license name for UI display. Null for user-imported documents.</summary>
+    public string? LicenseDisplayName { get; set; }
+
+    /// <summary>Full attribution notice text required by the license. Null for user-imported documents.</summary>
+    public string? AttributionText { get; set; }
+
+    /// <summary>Canonical source URL for attribution. Null for user-imported documents.</summary>
+    public string? AttributionUrl { get; set; }
+
+    /// <summary>
     /// Ruleset tags for this document (e.g. "D&amp;D 5e 2014", "Pathfinder 2e").
     /// Stored as a JSON array in the database.
     /// </summary>

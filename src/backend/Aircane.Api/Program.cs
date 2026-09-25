@@ -112,7 +112,65 @@ builder.Services.AddHealthChecks();
 // Register the enhanced health check service for development diagnostics
 builder.Services.AddScoped<HealthCheckService>();
 
+// Register the built-in open-content rules seeder (Phase 10). Runs after migrations on startup.
+builder.Services.AddScoped<Aircane.Workers.Seeding.BuiltInContentSeeder>();
+
+// The built-in license/attribution text (OGL-1.0a.txt, SECTION-15.txt) ships as embedded
+// resources in the Aircane.Workers assembly. Bind the reader to that assembly here, where the
+// Workers reference is available, so Infrastructure need not depend on Workers.
+builder.Services.AddScoped<Aircane.Application.Abstractions.IBuiltInLicenseTextReader>(sp =>
+    new Aircane.Infrastructure.DocumentSources.BuiltInLicenseTextReader(
+        typeof(Aircane.Workers.Seeding.BuiltInContentSeeder).Assembly,
+        sp.GetRequiredService<ILogger<Aircane.Infrastructure.DocumentSources.EmbeddedResourceDocumentSource>>()));
+
 var app = builder.Build();
+
+// Apply EF Core migrations automatically in Development so the schema (and the
+// pgvector extension created by the migrations) is present on first run.
+// Production deployments should apply migrations explicitly as a deploy step.
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AircaneDbContext>();
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        startupLogger.LogInformation("Applying database migrations...");
+        await db.Database.MigrateAsync();
+        startupLogger.LogInformation("Database migrations applied successfully.");
+
+        // The migrations run `CREATE EXTENSION vector`. If the extension did not exist
+        // when Npgsql first loaded this database's type catalog (e.g. a first-run or a
+        // freshly reset database), the data source won't know the `vector` type yet and
+        // any write of a Pgvector.Vector value fails with "Cannot resolve 'vector' to a
+        // fully qualified datatype name". Reload the type cache now that the extension
+        // is guaranteed to exist, so embedding writes (e.g. the content seeder) succeed.
+        var connection = (Npgsql.NpgsqlConnection)db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            await connection.OpenAsync();
+        await connection.ReloadTypesAsync();
+        startupLogger.LogInformation("Npgsql type cache reloaded (pgvector types registered).");
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogError(ex, "Failed to apply database migrations on startup.");
+        throw;
+    }
+
+    // Seed built-in open-content rules bundles (Phase 10). Idempotent: already-seeded
+    // bundles are skipped. A seeding failure must not prevent the app from starting.
+    try
+    {
+        startupLogger.LogInformation("Seeding built-in content bundles...");
+        var seeder = scope.ServiceProvider.GetRequiredService<Aircane.Workers.Seeding.BuiltInContentSeeder>();
+        await seeder.SeedAsync();
+        startupLogger.LogInformation("Built-in content seeding complete.");
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogError(ex, "Failed to seed built-in content on startup.");
+    }
+}
 
 // Middleware pipeline
 
@@ -131,8 +189,9 @@ app.MapControllers();
 app.MapHub<LibraryHub>("/hubs/library");
 app.MapHub<SessionHub>("/hubs/session");
 
-// Health endpoint - reports API, database, vector search, and AI provider status
-app.MapGet("/health", async (HttpContext httpContext, CancellationToken ct) =>
+// Health endpoint - reports API, database, vector search, and AI provider status.
+// Routed under /api to match every other backend endpoint and ride the shared /api proxy.
+app.MapGet("/api/health", async (HttpContext httpContext, CancellationToken ct) =>
 {
     try
     {
@@ -154,7 +213,7 @@ app.MapGet("/health", async (HttpContext httpContext, CancellationToken ct) =>
 .WithTags("Health")
 .AllowAnonymous();
 
-app.Run();
+await app.RunAsync();
 
 // Make Program accessible for integration tests
 public partial class Program { }

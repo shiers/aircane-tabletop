@@ -172,7 +172,9 @@ public sealed class RetrievalService : IRetrievalService
                 chunk => chunk.SourceDocumentId,
                 doc => doc.Id,
                 (chunk, doc) => new ChunkWithDoc { Chunk = chunk, Doc = doc })
-            .Where(c => allowedVisibilities.Contains(c.Chunk.Visibility));
+            .Where(c => allowedVisibilities.Contains(c.Chunk.Visibility))
+            // Exclude chunks belonging to disabled documents (e.g. host-disabled built-in content).
+            .Where(c => !c.Doc.IsDisabled);
 
         if (request.SourceType.HasValue)
             query = query.Where(c => c.Doc.SourceType == request.SourceType.Value);

@@ -14,10 +14,13 @@ namespace Aircane.UnitTests.Ai;
 public class AiSettingsServiceTests
 {
     private static AiSettingsService CreateService(
-        Dictionary<string, string?>? configValues = null)
+        Dictionary<string, string?>? configValues = null,
+        string? dataRoot = null)
     {
-        // Use a unique temp path so tests don't read/write the real ai-settings.json
-        var tempDir = Path.Combine(Path.GetTempPath(), $"aircane-test-{Guid.NewGuid():N}");
+        // Use a unique temp path so tests don't read/write the real ai-settings.json.
+        // Passing an explicit dataRoot lets a second instance reuse the same on-disk
+        // settings file, which simulates restarting the backend process.
+        var tempDir = dataRoot ?? Path.Combine(Path.GetTempPath(), $"aircane-test-{Guid.NewGuid():N}");
         var defaults = new Dictionary<string, string?>
         {
             ["Storage:DocumentsPath"] = Path.Combine(tempDir, "documents"),
@@ -219,6 +222,88 @@ public class AiSettingsServiceTests
         // Original key should still be there (masked)
         Assert.NotNull(config.OpenAi?.ApiKey);
         Assert.EndsWith("7890", config.OpenAi.ApiKey!);
+    }
+
+    // ── Cross-restart persistence ─────────────────────────────────────────────
+    // These lock in the requirement: a user enters a key once, saves, and never
+    // has to re-enter it after the backend restarts.
+
+    [Fact]
+    public void ApiKey_PersistsAcrossRestart()
+    {
+        var dataRoot = Path.Combine(Path.GetTempPath(), $"aircane-test-{Guid.NewGuid():N}");
+        try
+        {
+            // First run: user enters an OpenAI key in the UI and saves.
+            var first = CreateService(dataRoot: dataRoot);
+            first.UpdateConfig(new UpdateAiProviderRequest
+            {
+                ActiveProvider = AiProviderType.OpenAi,
+                OpenAi = new OpenAiSettingsDto
+                {
+                    ApiKey = "sk-persist-me-1234567890",
+                    Model = "gpt-4o-mini",
+                },
+            });
+
+            // Second run: a brand-new service instance reading the same data
+            // directory, simulating a backend process restart.
+            var second = CreateService(dataRoot: dataRoot);
+
+            // The active provider survives.
+            Assert.Equal(AiProviderType.OpenAi, second.GetCurrentConfig().ActiveProvider);
+
+            // The raw key is fully intact (not masked, not lost) so the provider works.
+            Assert.Equal("sk-persist-me-1234567890", second.GetRawSetting("Ai:OpenAi:ApiKey"));
+        }
+        finally
+        {
+            if (Directory.Exists(dataRoot))
+                Directory.Delete(dataRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApiKey_SurvivesLaterSaveThatOmitsTheKey()
+    {
+        var dataRoot = Path.Combine(Path.GetTempPath(), $"aircane-test-{Guid.NewGuid():N}");
+        try
+        {
+            // First run: user saves a key.
+            var first = CreateService(dataRoot: dataRoot);
+            first.UpdateConfig(new UpdateAiProviderRequest
+            {
+                ActiveProvider = AiProviderType.OpenAi,
+                OpenAi = new OpenAiSettingsDto
+                {
+                    ApiKey = "sk-persist-me-1234567890",
+                    Model = "gpt-4o-mini",
+                },
+            });
+
+            // Restart, then the user edits only the model. The frontend sends the
+            // masked key back as null, so the stored key must be preserved on disk.
+            var second = CreateService(dataRoot: dataRoot);
+            second.UpdateConfig(new UpdateAiProviderRequest
+            {
+                ActiveProvider = AiProviderType.OpenAi,
+                OpenAi = new OpenAiSettingsDto
+                {
+                    ApiKey = null,
+                    Model = "gpt-4o",
+                },
+            });
+
+            // Restart again: the key is still there and the model change stuck.
+            var third = CreateService(dataRoot: dataRoot);
+            Assert.Equal("sk-persist-me-1234567890", third.GetRawSetting("Ai:OpenAi:ApiKey"));
+            Assert.Equal("gpt-4o", third.GetRawSetting("Ai:OpenAi:Model"));
+        }
+        finally
+        {
+            if (Directory.Exists(dataRoot))
+                Directory.Delete(dataRoot, recursive: true);
+        }
     }
 
     [Fact]

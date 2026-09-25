@@ -70,14 +70,24 @@ public sealed class HealthCheckService
     {
         try
         {
-            // Check if pgvector extension is available
-            var result = await _db.Database.ExecuteSqlRawAsync(
-                "SELECT 1 FROM pg_extension WHERE extname = 'vector'", ct);
+            // Check if the pgvector extension is installed. Use a scalar query via ADO.NET:
+            // ExecuteSqlRawAsync returns rows *affected*, which is always -1/0 for a SELECT and
+            // would incorrectly report the extension as missing.
+            await using var connection = _db.Database.GetDbConnection();
+            if (connection.State != System.Data.ConnectionState.Open)
+            {
+                await connection.OpenAsync(ct);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 1 FROM pg_extension WHERE extname = 'vector'";
+            var scalar = await command.ExecuteScalarAsync(ct);
+            var extensionInstalled = scalar is not null;
 
             var embeddingStatus = _embeddingProvider.ProviderName;
             var isFake = string.Equals(embeddingStatus, "Fake", StringComparison.OrdinalIgnoreCase);
 
-            return result > 0
+            return extensionInstalled
                 ? new ComponentHealth(
                     isFake ? "degraded" : "healthy",
                     $"pgvector extension available, embedding provider: {embeddingStatus}")

@@ -6,7 +6,7 @@ This checklist verifies release readiness for the Aircane Tabletop MVP. Run thro
 
 - [ ] Application is running (backend API responds at health endpoint)
 - [ ] PostgreSQL with pgvector is accessible
-- [ ] At least one AI provider is configured (API key set via environment or user secrets)
+- [ ] At least one AI provider is configured (key entered in Settings → AI Provider, or set via environment variable / user secrets)
 - [ ] A folder containing at least one text-readable PDF (rules or adventure) is available on the host filesystem
 
 ---

@@ -91,7 +91,7 @@ public class SourceFileAccessProtectionTests
     [Theory]
     [InlineData("/api/library/documents")]
     [InlineData("/api/library/documents/123")]
-    [InlineData("/health")]
+    [InlineData("/api/health")]
     [InlineData("/hubs/session")]
     [InlineData("/api/campaigns")]
     [InlineData("/api/characters/import")]

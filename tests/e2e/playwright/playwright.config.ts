@@ -35,7 +35,7 @@ export default defineConfig({
     {
       command: 'dotnet run --no-build',
       cwd: '../../../src/backend/Aircane.Api',
-      url: 'http://localhost:5000/health',
+      url: 'http://localhost:5000/api/health',
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },

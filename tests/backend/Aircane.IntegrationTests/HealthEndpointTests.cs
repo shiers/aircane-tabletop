@@ -20,7 +20,7 @@ public class HealthEndpointTests : IClassFixture<AircaneWebApplicationFactory>
     [Fact]
     public async Task GetHealth_ReturnsResponse()
     {
-        var response = await _client.GetAsync("/health");
+        var response = await _client.GetAsync("/api/health");
 
         // With InMemory database, the health check may report degraded (503) because
         // relational-specific checks (raw SQL) don't work with InMemory provider.
@@ -34,7 +34,7 @@ public class HealthEndpointTests : IClassFixture<AircaneWebApplicationFactory>
     [Fact]
     public async Task GetHealth_ReturnsStatusField()
     {
-        var response = await _client.GetAsync("/health");
+        var response = await _client.GetAsync("/api/health");
         var body = await response.Content.ReadFromJsonAsync<HealthResponse>();
 
         Assert.NotNull(body);

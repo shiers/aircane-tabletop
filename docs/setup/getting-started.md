@@ -50,7 +50,7 @@ On first run, EF Core migrations apply automatically in Development mode. The AP
 Check the health endpoint:
 
 ```
-GET http://localhost:5000/health
+GET http://localhost:5000/api/health
 ```
 
 ## 4. Run the Frontend

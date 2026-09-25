@@ -8,6 +8,21 @@ const store = useLibraryStore()
 
 const deletingId = ref<string | null>(null)
 const reindexingId = ref<string | null>(null)
+const togglingId = ref<string | null>(null)
+
+/** Tailwind classes for a license badge by license key. */
+function licenseBadgeClasses(licenseKey: string | null): string {
+  switch (licenseKey) {
+    case 'cc-by-4.0':
+      return 'bg-teal-900 text-teal-300'
+    case 'orc':
+      return 'bg-purple-900 text-purple-300'
+    case 'ogl-1.0a':
+      return 'bg-amber-900 text-amber-300'
+    default:
+      return 'bg-gray-800 text-gray-300'
+  }
+}
 
 const sourceTypeLabel: Record<SourceType, string> = {
   [SourceType.Unknown]: 'Unknown',
@@ -63,6 +78,15 @@ async function handleReindex(doc: SourceDocumentDto): Promise<void> {
     reindexingId.value = null
   }
 }
+
+async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
+  togglingId.value = doc.id
+  try {
+    await store.setDocumentDisabled(doc.id, !doc.isDisabled)
+  } finally {
+    togglingId.value = null
+  }
+}
 </script>
 
 <template>
@@ -110,6 +134,31 @@ async function handleReindex(doc: SourceDocumentDto): Promise<void> {
               <td class="px-4 py-3">
                 <div class="flex flex-wrap items-center gap-2">
                   <p class="font-medium text-white">{{ doc.title }}</p>
+                  <!-- Built-in badge -->
+                  <span
+                    v-if="doc.isBuiltIn"
+                    class="inline-flex items-center rounded-full bg-aircane-900 px-2 py-0.5 text-xs font-medium text-aircane-300"
+                    title="Built-in content shipped with Aircane. Cannot be deleted; disable to exclude from retrieval."
+                  >
+                    Built-in
+                  </span>
+                  <!-- License badge -->
+                  <span
+                    v-if="doc.licenseKey"
+                    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                    :class="licenseBadgeClasses(doc.licenseKey)"
+                    :title="doc.licenseDisplayName ?? doc.licenseKey"
+                  >
+                    {{ doc.licenseDisplayName ?? doc.licenseKey }}
+                  </span>
+                  <!-- Disabled badge -->
+                  <span
+                    v-if="doc.isDisabled"
+                    class="inline-flex items-center rounded-full bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-300"
+                    title="This document is disabled and excluded from retrieval."
+                  >
+                    Disabled
+                  </span>
                   <!-- Source unavailable warning badge -->
                   <span
                     v-if="!doc.isSourceAvailable"
@@ -178,8 +227,24 @@ async function handleReindex(doc: SourceDocumentDto): Promise<void> {
                     <span v-else>Re-index</span>
                   </button>
 
-                  <!-- Delete button -->
+                  <!-- Built-in: Disable/Enable toggle (built-in content cannot be deleted) -->
                   <button
+                    v-if="doc.isBuiltIn"
+                    :disabled="togglingId === doc.id"
+                    :aria-label="`${doc.isDisabled ? 'Enable' : 'Disable'} ${doc.title}`"
+                    :title="doc.isDisabled
+                      ? 'Enable this built-in content so it is included in retrieval.'
+                      : 'Built-in content cannot be deleted. Disable to exclude from retrieval.'"
+                    class="rounded px-2 py-1 text-xs font-medium text-amber-400 hover:bg-gray-800 hover:text-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+                    @click="handleToggleDisabled(doc)"
+                  >
+                    <span v-if="togglingId === doc.id">Updating…</span>
+                    <span v-else>{{ doc.isDisabled ? 'Enable' : 'Disable' }}</span>
+                  </button>
+
+                  <!-- Non-built-in: Delete button -->
+                  <button
+                    v-else
                     :disabled="deletingId === doc.id"
                     :aria-label="`Delete ${doc.title}`"
                     class="rounded px-2 py-1 text-xs font-medium text-red-400 hover:bg-gray-800 hover:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"

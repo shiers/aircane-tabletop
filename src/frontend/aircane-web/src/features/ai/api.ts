@@ -112,6 +112,12 @@ export interface RulesQuestionCitation {
   pageNumber: number | null
   sectionTitle: string | null
   chunkId: string
+  /** Machine-readable license key of the cited source, when it is built-in content. */
+  licenseKey: string | null
+  /** Human-readable license name of the cited source, when it is built-in content. */
+  licenseDisplayName: string | null
+  /** Short-form attribution notice for the cited source, when built-in. */
+  attributionText: string | null
 }
 
 export interface RulesQuestionResponse {

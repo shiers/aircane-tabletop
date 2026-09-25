@@ -5,6 +5,23 @@ import {
   type RulesQuestionRequest,
   type RulesQuestionResponse,
 } from './api'
+import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
+
+const licensesModalOpen = ref(false)
+
+/** Tailwind classes for a citation license badge by license key. */
+function licenseBadgeClasses(licenseKey: string): string {
+  switch (licenseKey) {
+    case 'cc-by-4.0':
+      return 'bg-teal-900 text-teal-300'
+    case 'orc':
+      return 'bg-purple-900 text-purple-300'
+    case 'ogl-1.0a':
+      return 'bg-amber-900 text-amber-300'
+    default:
+      return 'bg-gray-800 text-gray-300'
+  }
+}
 
 const question = ref('')
 const gameSystem = ref('')
@@ -192,10 +209,21 @@ async function submitQuestion() {
               <span class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-xs font-medium text-gray-300">
                 {{ idx + 1 }}
               </span>
-              <span>
+              <span class="flex flex-wrap items-center gap-1.5">
                 <span class="font-medium text-gray-200">{{ citation.sourceTitle }}</span>
                 <span v-if="citation.pageNumber"> - p. {{ citation.pageNumber }}</span>
                 <span v-if="citation.sectionTitle"> · {{ citation.sectionTitle }}</span>
+                <!-- License badge (built-in sources only); opens the attribution modal -->
+                <button
+                  v-if="citation.licenseKey"
+                  type="button"
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+                  :class="licenseBadgeClasses(citation.licenseKey)"
+                  :title="`${citation.licenseDisplayName ?? citation.licenseKey} — view attribution`"
+                  @click="licensesModalOpen = true"
+                >
+                  {{ citation.licenseDisplayName ?? citation.licenseKey }}
+                </button>
               </span>
             </li>
           </ul>
@@ -210,5 +238,8 @@ async function submitQuestion() {
         </p>
       </div>
     </div>
+
+    <!-- Open-content license attribution modal -->
+    <LicenseAttributionModal :open="licensesModalOpen" @close="licensesModalOpen = false" />
   </div>
 </template>

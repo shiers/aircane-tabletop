@@ -1,12 +1,36 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useLibraryStore } from './store'
 import { ImportStatus } from './api'
 import DocumentUploadForm from './components/DocumentUploadForm.vue'
 import DocumentList from './components/DocumentList.vue'
 import WatchedFolderSection from './components/WatchedFolderSection.vue'
+import LicenseAttributionModal from './components/LicenseAttributionModal.vue'
 
 const store = useLibraryStore()
+
+const licensesModalOpen = ref(false)
+const restoringDefaults = ref(false)
+const restoreMessage = ref<string | null>(null)
+
+/** True when at least one built-in document is currently disabled. */
+const hasDisabledBuiltIns = computed(() =>
+  store.documents.some((d) => d.isBuiltIn && d.isDisabled),
+)
+
+async function handleRestoreDefaults(): Promise<void> {
+  restoringDefaults.value = true
+  restoreMessage.value = null
+  try {
+    const count = await store.restoreBuiltInDefaults()
+    restoreMessage.value =
+      count > 0
+        ? `Re-enabled ${count} built-in document${count === 1 ? '' : 's'}.`
+        : 'All built-in documents are already enabled.'
+  } finally {
+    restoringDefaults.value = false
+  }
+}
 
 /** True when at least one document needs OCR processing. */
 const hasOcrRequired = computed(() =>
@@ -38,7 +62,29 @@ onUnmounted(() => {
     <!-- Page header -->
     <div class="flex items-center justify-between">
       <h1 class="text-2xl font-bold text-white">Document Library</h1>
+      <div class="flex items-center gap-3">
+        <button
+          v-if="hasDisabledBuiltIns"
+          :disabled="restoringDefaults"
+          class="rounded-md border border-surface-700 px-3 py-1.5 text-sm font-medium text-gray-300 hover:bg-surface-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-aircane-500 disabled:opacity-50"
+          @click="handleRestoreDefaults"
+        >
+          <span v-if="restoringDefaults">Restoring…</span>
+          <span v-else>Restore defaults</span>
+        </button>
+        <button
+          class="text-sm font-medium text-aircane-400 hover:text-aircane-300 hover:underline"
+          @click="licensesModalOpen = true"
+        >
+          Open Content Licenses
+        </button>
+      </div>
     </div>
+
+    <!-- Restore-defaults confirmation message -->
+    <p v-if="restoreMessage" class="text-sm text-aircane-400" role="status">
+      {{ restoreMessage }}
+    </p>
 
     <!-- Global store error banner -->
     <div
@@ -160,5 +206,8 @@ onUnmounted(() => {
 
     <!-- Document list -->
     <DocumentList />
+
+    <!-- Open-content license attribution modal -->
+    <LicenseAttributionModal :open="licensesModalOpen" @close="licensesModalOpen = false" />
   </div>
 </template>

@@ -82,6 +82,16 @@ export interface SourceDocumentDto {
   watchedFolderId: string | null
   createdAt: string
   updatedAt: string
+  /** Ruleset tags applied to this document. */
+  tags?: string[]
+  /** True for built-in rules content shipped with the app (cannot be deleted, only disabled). */
+  isBuiltIn: boolean
+  /** True when the host has disabled this document (excluded from retrieval, retained). */
+  isDisabled: boolean
+  /** Machine-readable open-content license key (e.g. "cc-by-4.0"). Null for user documents. */
+  licenseKey: string | null
+  /** Human-readable license name. Null for user documents. */
+  licenseDisplayName: string | null
 }
 
 export interface ImportStatusDto {
@@ -160,9 +170,33 @@ export async function getDocument(id: string): Promise<SourceDocumentDto> {
   return response.data
 }
 
-/** Delete a document by ID. */
+/** Delete a document by ID. Built-in documents cannot be deleted (server returns 409). */
 export async function deleteDocument(id: string): Promise<void> {
   await apiClient.delete(`/api/library/documents/${id}`)
+}
+
+/** Enable or disable a document. Disabled documents are excluded from retrieval but retained. */
+export async function setDocumentDisabled(
+  id: string,
+  disabled: boolean,
+): Promise<SourceDocumentDto> {
+  const response = await apiClient.patch<SourceDocumentDto>(
+    `/api/library/documents/${id}/disabled`,
+    { disabled },
+  )
+  return response.data
+}
+
+export interface RestoreDefaultsResult {
+  restoredCount: number
+}
+
+/** Re-enable all disabled built-in documents ("restore defaults"). */
+export async function restoreBuiltInDefaults(): Promise<RestoreDefaultsResult> {
+  const response = await apiClient.post<RestoreDefaultsResult>(
+    '/api/library/documents/restore-defaults',
+  )
+  return response.data
 }
 
 /** Get the import status for a document. */

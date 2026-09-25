@@ -11,7 +11,9 @@ import {
   type TestConnectionResult,
   type ProviderInfo,
 } from './api'
+import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
 
+const licensesModalOpen = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
@@ -227,7 +229,16 @@ function isKeyMasked(value: string): boolean {
           API keys are stored server-side only and never sent to the browser.
         </p>
       </div>
+      <button
+        class="text-sm font-medium text-aircane-400 hover:text-aircane-300 hover:underline"
+        @click="licensesModalOpen = true"
+      >
+        Open Content Licenses
+      </button>
     </div>
+
+    <!-- Open-content license attribution modal -->
+    <LicenseAttributionModal :open="licensesModalOpen" @close="licensesModalOpen = false" />
 
     <!-- Loading state -->
     <div v-if="loading" class="text-gray-400">Loading configuration...</div>

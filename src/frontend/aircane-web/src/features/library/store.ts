@@ -6,6 +6,8 @@ import {
   uploadDocument,
   deleteDocument,
   reindexDocument,
+  setDocumentDisabled,
+  restoreBuiltInDefaults,
   getImportStatus,
   getFolders,
   registerFolder,
@@ -226,6 +228,37 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
+  /** Enable or disable a document (used for built-in content that cannot be deleted). */
+  async function setDocumentDisabledAction(id: string, disabled: boolean): Promise<void> {
+    error.value = null
+    try {
+      const updated = await setDocumentDisabled(id, disabled)
+      const doc = documents.value.find((d) => d.id === id)
+      if (doc) doc.isDisabled = updated.isDisabled
+    } catch (err) {
+      error.value = extractMessage(err)
+      throw err
+    }
+  }
+
+  /** Re-enable all disabled built-in documents, then refresh the list. */
+  async function restoreBuiltInDefaultsAction(): Promise<number> {
+    error.value = null
+    try {
+      const result = await restoreBuiltInDefaults()
+      if (result.restoredCount > 0) {
+        // Reflect the change locally without a full refetch.
+        for (const doc of documents.value) {
+          if (doc.isBuiltIn && doc.isDisabled) doc.isDisabled = false
+        }
+      }
+      return result.restoredCount
+    } catch (err) {
+      error.value = extractMessage(err)
+      throw err
+    }
+  }
+
   /** Poll the import status for a single document once (fallback when SignalR is unavailable). */
   async function pollImportStatus(id: string): Promise<void> {
     try {
@@ -362,6 +395,8 @@ export const useLibraryStore = defineStore('library', () => {
     uploadDocument: uploadDocumentAction,
     deleteDocument: deleteDocumentAction,
     reindexDocument: reindexDocumentAction,
+    setDocumentDisabled: setDocumentDisabledAction,
+    restoreBuiltInDefaults: restoreBuiltInDefaultsAction,
     pollImportStatus,
     stopAllPolling,
     cleanup,

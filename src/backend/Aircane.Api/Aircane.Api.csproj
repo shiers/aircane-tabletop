@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Aircane.Api</RootNamespace>
     <AssemblyName>Aircane.Api</AssemblyName>
+    <UserSecretsId>3736f50c-50b9-4cf2-9740-fa5e3e54eacf</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Aircane.Application\Aircane.Application.csproj" />
     <ProjectReference Include="..\Aircane.Infrastructure\Aircane.Infrastructure.csproj" />
+    <ProjectReference Include="..\Aircane.Workers\Aircane.Workers.csproj" />
   </ItemGroup>
 
 </Project>

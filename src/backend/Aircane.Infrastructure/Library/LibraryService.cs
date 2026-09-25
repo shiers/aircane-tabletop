@@ -329,6 +329,13 @@ public sealed class LibraryService : ILibraryService
             .FirstOrDefaultAsync(d => d.Id == documentId, cancellationToken)
             ?? throw new KeyNotFoundException($"Document {documentId} not found.");
 
+        // Built-in rules content cannot be deleted; it can only be disabled.
+        if (document.IsBuiltIn)
+        {
+            throw new InvalidOperationException(
+                "Built-in content cannot be deleted. Disable it instead to exclude it from retrieval.");
+        }
+
         var storagePath = document.SourcePath;
 
         _db.SourceDocuments.Remove(document);
@@ -345,6 +352,49 @@ public sealed class LibraryService : ILibraryService
         }
 
         _logger.LogInformation("Document {DocumentId} deleted.", documentId);
+    }
+
+    /// <inheritdoc />
+    public async Task<SourceDocumentDto> SetDocumentDisabledAsync(
+        Guid documentId,
+        bool disabled,
+        CancellationToken cancellationToken = default)
+    {
+        var document = await _db.SourceDocuments
+            .FirstOrDefaultAsync(d => d.Id == documentId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Document {documentId} not found.");
+
+        document.IsDisabled = disabled;
+        document.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Document {DocumentId} {State}.", documentId, disabled ? "disabled" : "enabled");
+
+        return MapToDto(document);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> RestoreBuiltInDefaultsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var disabledBuiltIns = await _db.SourceDocuments
+            .Where(d => d.IsBuiltIn && d.IsDisabled)
+            .ToListAsync(cancellationToken);
+
+        foreach (var doc in disabledBuiltIns)
+        {
+            doc.IsDisabled = false;
+            doc.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        if (disabledBuiltIns.Count > 0)
+            await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Restored {Count} built-in document(s) to enabled state.", disabledBuiltIns.Count);
+
+        return disabledBuiltIns.Count;
     }
 
     /// <inheritdoc />
@@ -454,5 +504,9 @@ public sealed class LibraryService : ILibraryService
             WatchedFolderId: doc.WatchedFolderId,
             CreatedAt: doc.CreatedAt,
             UpdatedAt: doc.UpdatedAt,
-            Tags: doc.Tags.AsReadOnly());
+            Tags: doc.Tags.AsReadOnly(),
+            IsBuiltIn: doc.IsBuiltIn,
+            IsDisabled: doc.IsDisabled,
+            LicenseKey: doc.LicenseKey,
+            LicenseDisplayName: doc.LicenseDisplayName);
 }

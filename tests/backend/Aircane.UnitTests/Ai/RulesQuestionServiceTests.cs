@@ -2,6 +2,8 @@ using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Ai;
 using Aircane.Application.DTOs.Retrieval;
 using Aircane.Infrastructure.Ai;
+using Aircane.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -12,14 +14,22 @@ public class RulesQuestionServiceTests
     private readonly RulesQuestionService _service;
     private readonly FakeRagContextBuilder _fakeRag;
     private readonly FakeAiProvider _fakeAi;
+    private readonly AircaneDbContext _db;
 
     public RulesQuestionServiceTests()
     {
         _fakeRag = new FakeRagContextBuilder();
         _fakeAi = new FakeAiProvider();
+
+        var options = new DbContextOptionsBuilder<AircaneDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        _db = new AircaneDbContext(options);
+
         _service = new RulesQuestionService(
             _fakeRag,
             _fakeAi,
+            _db,
             NullLogger<RulesQuestionService>.Instance);
     }
 

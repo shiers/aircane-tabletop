@@ -193,7 +193,11 @@ public class ClassificationUpdateTests
             WatchedFolderId: null,
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow,
-            Tags: ["D&D 5e 2014"]);
+            Tags: ["D&D 5e 2014"],
+            IsBuiltIn: false,
+            IsDisabled: false,
+            LicenseKey: null,
+            LicenseDisplayName: null);
 
         Assert.Single(dto.Tags);
         Assert.Equal("D&D 5e 2014", dto.Tags[0]);
@@ -216,7 +220,11 @@ public class ClassificationUpdateTests
             WatchedFolderId: null,
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow,
-            Tags: []);
+            Tags: [],
+            IsBuiltIn: false,
+            IsDisabled: false,
+            LicenseKey: null,
+            LicenseDisplayName: null);
 
         Assert.Empty(dto.Tags);
     }

@@ -36,12 +36,21 @@ public static class DependencyInjection
         // Register IHttpClientFactory for AI provider connectivity tests and general HTTP usage.
         services.AddHttpClient();
 
-        // IDocumentSource: FolderWatchDocumentSource is the active implementation for local/desktop mode.
-        // UploadDocumentSource is reserved for future cloud/upload mode and is not registered here.
+        // IDocumentSource: FolderWatchDocumentSource is the active/default implementation for local/desktop mode.
+        // Keyed registrations allow selecting a source by SourceMode:
+        //   "folder"   → FolderWatchDocumentSource (local filesystem)
+        //   "upload"   → UploadDocumentSource       (reserved for future cloud/upload mode)
+        //   "embedded" → EmbeddedResourceDocumentSource (built-in content compiled into an assembly)
         services.AddScoped<IDocumentSource, FolderWatchDocumentSource>();
+        services.AddKeyedScoped<IDocumentSource, FolderWatchDocumentSource>("folder");
+        services.AddKeyedScoped<IDocumentSource, UploadDocumentSource>("upload");
+        // The "embedded" source is bound to the assembly that carries the built-in resource bundle.
+        // That assembly (Aircane.Workers) is supplied by the seeder rather than referenced here,
+        // to keep Infrastructure from depending on Workers. See BuiltInContentSeeder.
 
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<ILibraryService, LibraryService>();
+        services.AddScoped<ILicenseService, LicenseService>();
         services.AddScoped<ICampaignService, CampaignService>();
         services.AddScoped<ICampaignStateService, CampaignStateService>();
         services.AddScoped<ICharacterService, CharacterService>();

@@ -218,6 +218,48 @@ public sealed class LibraryController : ControllerBase
         {
             return NotFound();
         }
+        catch (InvalidOperationException ex)
+        {
+            // Built-in content cannot be deleted (only disabled). Return a 409 with the domain
+            // message rather than surfacing a 500.
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Enables or disables a document. Disabled documents are retained but their chunks are
+    /// excluded from all retrieval/RAG queries. Used to toggle built-in content on and off
+    /// (built-in content cannot be deleted, only disabled).
+    /// </summary>
+    [HttpPatch("{id:guid}/disabled")]
+    [ProducesResponseType(typeof(SourceDocumentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetDocumentDisabled(
+        Guid id,
+        [FromBody] SetDisabledBody body,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var dto = await _libraryService.SetDocumentDisabledAsync(id, body.Disabled, cancellationToken);
+            return Ok(dto);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
+    /// <summary>
+    /// Re-enables all disabled built-in documents ("restore defaults").
+    /// Returns the number of documents that were re-enabled.
+    /// </summary>
+    [HttpPost("restore-defaults")]
+    [ProducesResponseType(typeof(RestoreDefaultsResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RestoreBuiltInDefaults(CancellationToken cancellationToken)
+    {
+        var count = await _libraryService.RestoreBuiltInDefaultsAsync(cancellationToken);
+        return Ok(new RestoreDefaultsResult(count));
     }
 
     /// <summary>
@@ -307,3 +349,14 @@ public sealed class UpdateClassificationBody
     /// <summary>Ruleset tags (e.g. ["D&amp;D 5e 2014", "Pathfinder 2e"]).</summary>
     public IReadOnlyList<string>? Tags { get; set; }
 }
+
+/// <summary>Request body for the PATCH disabled endpoint.</summary>
+public sealed class SetDisabledBody
+{
+    /// <summary>True to disable the document (exclude from retrieval); false to enable it.</summary>
+    public bool Disabled { get; set; }
+}
+
+/// <summary>Result of the restore-defaults operation.</summary>
+/// <param name="RestoredCount">Number of built-in documents that were re-enabled.</param>
+public sealed record RestoreDefaultsResult(int RestoredCount);

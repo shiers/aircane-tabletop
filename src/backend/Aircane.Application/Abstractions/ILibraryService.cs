@@ -87,9 +87,25 @@ public interface ILibraryService
 
     /// <summary>
     /// Deletes a document record, its stored file, and all indexed chunks.
+    /// Throws <see cref="InvalidOperationException"/> if the document is built-in.
     /// </summary>
     Task DeleteDocumentAsync(
         Guid documentId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enables or disables a document. Disabled documents' chunks are excluded from retrieval.
+    /// </summary>
+    Task<SourceDocumentDto> SetDocumentDisabledAsync(
+        Guid documentId,
+        bool disabled,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-enables all disabled built-in documents ("restore defaults").
+    /// Returns the number of documents re-enabled.
+    /// </summary>
+    Task<int> RestoreBuiltInDefaultsAsync(
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -30,4 +30,18 @@ public sealed record RulesQuestionCitation(
     string? SectionTitle,
 
     /// <summary>The chunk ID for traceability.</summary>
-    Guid ChunkId);
+    Guid ChunkId,
+
+    /// <summary>
+    /// Machine-readable license key of the cited source (e.g. "cc-by-4.0"), when the chunk
+    /// belongs to a built-in document. Null for user-imported sources.
+    /// </summary>
+    string? LicenseKey = null,
+
+    /// <summary>Human-readable license name of the cited source, when built-in. Null otherwise.</summary>
+    string? LicenseDisplayName = null,
+
+    /// <summary>
+    /// Short-form attribution notice for the cited source, when built-in. Null otherwise.
+    /// </summary>
+    string? AttributionText = null);

@@ -3,6 +3,8 @@ using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Ai;
 using Aircane.Application.DTOs.Retrieval;
 using Aircane.Domain.Enums;
+using Aircane.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Aircane.Infrastructure.Ai;
@@ -16,15 +18,18 @@ public sealed class RulesQuestionService : IRulesQuestionService
 {
     private readonly IRagContextBuilder _ragContextBuilder;
     private readonly IAiProvider _aiProvider;
+    private readonly AircaneDbContext _db;
     private readonly ILogger<RulesQuestionService> _logger;
 
     public RulesQuestionService(
         IRagContextBuilder ragContextBuilder,
         IAiProvider aiProvider,
+        AircaneDbContext db,
         ILogger<RulesQuestionService> logger)
     {
         _ragContextBuilder = ragContextBuilder;
         _aiProvider = aiProvider;
+        _db = db;
         _logger = logger;
     }
 
@@ -64,13 +69,40 @@ public sealed class RulesQuestionService : IRulesQuestionService
             "Rules question answered with {CitationCount} citations, hasSourceSupport={HasSourceSupport}",
             ragResult.Citations.Count, hasSourceSupport);
 
-        // Map citations from RAG result
+        // Look up license metadata for any cited built-in documents so the citations can carry
+        // machine-readable license info (Phase 10.6). Only built-in docs have license fields;
+        // user-imported docs leave these null.
+        var citedDocIds = ragResult.Citations
+            .Select(c => c.SourceDocumentId)
+            .Distinct()
+            .ToList();
+
+        var licenseByDocId = await _db.SourceDocuments
+            .AsNoTracking()
+            .Where(d => citedDocIds.Contains(d.Id) && d.IsBuiltIn)
+            .Select(d => new
+            {
+                d.Id,
+                d.LicenseKey,
+                d.LicenseDisplayName,
+                d.AttributionText,
+            })
+            .ToDictionaryAsync(d => d.Id, cancellationToken);
+
+        // Map citations from RAG result, enriching built-in sources with license metadata.
         var citations = ragResult.Citations
-            .Select(c => new RulesQuestionCitation(
-                SourceTitle: c.SourceDocumentTitle,
-                PageNumber: c.PageNumber,
-                SectionTitle: c.SectionTitle,
-                ChunkId: c.ChunkId))
+            .Select(c =>
+            {
+                licenseByDocId.TryGetValue(c.SourceDocumentId, out var lic);
+                return new RulesQuestionCitation(
+                    SourceTitle: c.SourceDocumentTitle,
+                    PageNumber: c.PageNumber,
+                    SectionTitle: c.SectionTitle,
+                    ChunkId: c.ChunkId,
+                    LicenseKey: lic?.LicenseKey,
+                    LicenseDisplayName: lic?.LicenseDisplayName,
+                    AttributionText: lic?.AttributionText);
+            })
             .ToList();
 
         return new RulesQuestionResponse(

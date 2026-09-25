@@ -20,4 +20,8 @@ public sealed record SourceDocumentDto(
     Guid? WatchedFolderId,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    bool IsBuiltIn,
+    bool IsDisabled,
+    string? LicenseKey,
+    string? LicenseDisplayName);

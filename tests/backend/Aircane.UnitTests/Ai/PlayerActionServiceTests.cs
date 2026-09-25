@@ -72,6 +72,7 @@ public class PlayerActionServiceTests : IDisposable
             _aiProvider,
             outputParser,
             _commandExecutor,
+            _db,
             NullLogger<PlayerActionService>.Instance);
     }
 
@@ -380,6 +381,55 @@ public class PlayerActionServiceTests : IDisposable
         Assert.Equal(177, response.Citations[0].PageNumber);
         Assert.Equal("Stealth", response.Citations[0].SectionTitle);
         Assert.Equal(chunkId, response.Citations[0].ChunkId);
+    }
+
+    [Fact]
+    public async Task ProcessActionAsync_Citation_IncludesLicense_WhenSourceIsBuiltIn()
+    {
+        var (campaign, session) = await SeedCampaignAndSessionAsync();
+
+        // A built-in source document with license metadata.
+        var doc = new SourceDocument(
+            title: "D&D 5e Systems Reference Document (2014)",
+            originalFileName: "dnd5e-srd-2014",
+            sourceType: SourceType.Rules,
+            sourceMode: SourceMode.Embedded,
+            gameSystem: "D&D 5e",
+            ruleset: "2014",
+            sourcePath: "Aircane.Workers.Resources.builtin.dnd5e_srd.manifest.json",
+            visibility: ContentVisibility.Public,
+            importStatus: ImportStatus.Completed)
+        {
+            IsBuiltIn = true,
+            LicenseKey = "cc-by-4.0",
+            LicenseDisplayName = "Creative Commons Attribution 4.0 International",
+            AttributionText = "Includes material from the SRD 5.1 under CC BY 4.0.",
+        };
+        _db.SourceDocuments.Add(doc);
+        await _db.SaveChangesAsync();
+
+        _ragContextBuilder.NextResult = new RagContextResult(
+            ContextText: "Grapple rules: ...",
+            Citations: [new RagCitation(Guid.NewGuid(), doc.Id, doc.Title, 1, "Combat")],
+            TotalChunksRetrieved: 1,
+            ChunksIncluded: 1);
+
+        _aiProvider.NextOutput = new AiStructuredOutput
+        {
+            Narration = "You grab the goblin.",
+            ProposedActions = [],
+        };
+
+        var response = await _sut.ProcessActionAsync(new PlayerActionRequest(
+            SessionId: session.Id,
+            CampaignId: campaign.Id,
+            CharacterId: Guid.NewGuid(),
+            ActionText: "I grapple the goblin"));
+
+        var citation = Assert.Single(response.Citations);
+        Assert.Equal("cc-by-4.0", citation.LicenseKey);
+        Assert.Equal("Creative Commons Attribution 4.0 International", citation.LicenseDisplayName);
+        Assert.False(string.IsNullOrWhiteSpace(citation.AttributionText));
     }
 
     // ── Prompt Building Tests ─────────────────────────────────────────────────

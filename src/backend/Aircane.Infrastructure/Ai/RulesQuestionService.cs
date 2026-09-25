@@ -72,22 +72,8 @@ public sealed class RulesQuestionService : IRulesQuestionService
         // Look up license metadata for any cited built-in documents so the citations can carry
         // machine-readable license info (Phase 10.6). Only built-in docs have license fields;
         // user-imported docs leave these null.
-        var citedDocIds = ragResult.Citations
-            .Select(c => c.SourceDocumentId)
-            .Distinct()
-            .ToList();
-
-        var licenseByDocId = await _db.SourceDocuments
-            .AsNoTracking()
-            .Where(d => citedDocIds.Contains(d.Id) && d.IsBuiltIn)
-            .Select(d => new
-            {
-                d.Id,
-                d.LicenseKey,
-                d.LicenseDisplayName,
-                d.AttributionText,
-            })
-            .ToDictionaryAsync(d => d.Id, cancellationToken);
+        var licenseByDocId = await CitationLicenseEnricher.BuildLicenseMapAsync(
+            _db, ragResult.Citations.Select(c => c.SourceDocumentId), cancellationToken);
 
         // Map citations from RAG result, enriching built-in sources with license metadata.
         var citations = ragResult.Citations
@@ -99,9 +85,9 @@ public sealed class RulesQuestionService : IRulesQuestionService
                     PageNumber: c.PageNumber,
                     SectionTitle: c.SectionTitle,
                     ChunkId: c.ChunkId,
-                    LicenseKey: lic?.LicenseKey,
-                    LicenseDisplayName: lic?.LicenseDisplayName,
-                    AttributionText: lic?.AttributionText);
+                    LicenseKey: lic.LicenseKey,
+                    LicenseDisplayName: lic.LicenseDisplayName,
+                    AttributionText: lic.AttributionText);
             })
             .ToList();
 

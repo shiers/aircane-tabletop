@@ -4,6 +4,7 @@ using Aircane.Application.AiRuntime;
 using Aircane.Application.DTOs.Ai;
 using Aircane.Application.DTOs.Retrieval;
 using Aircane.Domain.Enums;
+using Aircane.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging;
 
 namespace Aircane.Infrastructure.Ai;
@@ -26,6 +27,7 @@ public sealed class PlayerActionService : IPlayerActionService
     private readonly IAiProvider _aiProvider;
     private readonly AiOutputParser _outputParser;
     private readonly IStateCommandExecutor _stateCommandExecutor;
+    private readonly AircaneDbContext _db;
     private readonly ILogger<PlayerActionService> _logger;
 
     public PlayerActionService(
@@ -35,6 +37,7 @@ public sealed class PlayerActionService : IPlayerActionService
         IAiProvider aiProvider,
         AiOutputParser outputParser,
         IStateCommandExecutor stateCommandExecutor,
+        AircaneDbContext db,
         ILogger<PlayerActionService> logger)
     {
         _campaignService = campaignService;
@@ -43,6 +46,7 @@ public sealed class PlayerActionService : IPlayerActionService
         _aiProvider = aiProvider;
         _outputParser = outputParser;
         _stateCommandExecutor = stateCommandExecutor;
+        _db = db;
         _logger = logger;
     }
 
@@ -106,13 +110,23 @@ public sealed class PlayerActionService : IPlayerActionService
                 ProposalId: result.ProposalId));
         }
 
-        // 7. Map citations
+        // 7. Map citations, enriching built-in sources with license metadata (Phase 10.6).
+        var licenseByDocId = await CitationLicenseEnricher.BuildLicenseMapAsync(
+            _db, ragResult.Citations.Select(c => c.SourceDocumentId), cancellationToken);
+
         var citations = ragResult.Citations
-            .Select(c => new PlayerActionCitation(
-                SourceTitle: c.SourceDocumentTitle,
-                PageNumber: c.PageNumber,
-                SectionTitle: c.SectionTitle,
-                ChunkId: c.ChunkId))
+            .Select(c =>
+            {
+                licenseByDocId.TryGetValue(c.SourceDocumentId, out var lic);
+                return new PlayerActionCitation(
+                    SourceTitle: c.SourceDocumentTitle,
+                    PageNumber: c.PageNumber,
+                    SectionTitle: c.SectionTitle,
+                    ChunkId: c.ChunkId,
+                    LicenseKey: lic.LicenseKey,
+                    LicenseDisplayName: lic.LicenseDisplayName,
+                    AttributionText: lic.AttributionText);
+            })
             .ToList();
 
         _logger.LogInformation(

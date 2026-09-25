@@ -22,8 +22,15 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 
 ## AI
 
-- **Only OpenAI is implemented as a chat provider.** Azure OpenAI, AWS Bedrock, Ollama (chat), and Grok are planned but not yet wired up. Configuring an unimplemented provider will silently fall back to the Fake provider.
-- **AI quality depends on the provider and model.** Smaller local models (via Ollama, once implemented) will produce lower-quality narration and rules answers than cloud models like GPT-4o.
+- **OpenAI and Ollama are implemented as chat providers.** Azure OpenAI, AWS Bedrock, and Grok are planned but not yet wired up. Configuring an unimplemented provider will silently fall back to the Fake provider.
+- **The default provider is Fake.** Out of the box the app returns deterministic placeholder responses so it runs with no setup. Switch to OpenAI or Ollama in Settings → AI Provider for real AI.
+- **AI quality depends on the provider and model.** Smaller local models (via Ollama) will produce lower-quality narration and rules answers than cloud models like GPT-4o.
+- **Embeddings are tied to the provider and model that generated them.** Retrieval (RAG) only works when queries are embedded with the *same* embedding provider and model that embedded the stored chunks. Embeddings from different providers/models are not comparable, so mixing them produces silently wrong or empty results rather than an error. Consequences to be aware of:
+  - **Only Ollama produces usable built-in RAG today.** The embedding providers are Ollama (`nomic-embed-text`, 768-dim) and a deterministic Fake provider used for tests. There is no cloud (e.g. OpenAI) embedding provider yet. An AI *chat* API key does not enable real embeddings — the chat provider and the embedding provider are configured separately.
+  - **Seeding with Ollama makes Ollama a de facto dependency for retrieval.** If you seed the built-in content with Ollama and later remove Ollama (or change the embedding model), the stored vectors become unqueryable and retrieval will return nothing useful until you re-index.
+  - **Switching embedding provider or model requires a full re-index/re-seed.** There is currently no automatic detection of a provider mismatch and no built-in re-embed command; re-seeding is a manual step (reset + re-run).
+  - **The embedding column dimension is fixed at 768.** The database stores `vector(768)`, matching Ollama/Fake. Providers with other dimensions (e.g. OpenAI at 1536) are not supported without a schema change.
+  - The durable fix (embed-on-first-run, recorded provider/model/dimension, a mismatch guard, and a re-embed path) is tracked in the [backlog](backlog.md#embedding-provider-portability-embed-on-first-run--provider-metadata).
 - **No streaming narration in all modes.** Some AI responses may appear all at once rather than streaming token-by-token, depending on the provider.
 - **Context window limits.** Very long sessions or large document libraries may exceed the AI's context window. The RAG pipeline mitigates this but cannot eliminate it.
 - **No multi-turn memory beyond session events.** The AI does not have persistent memory across sessions beyond what is stored in campaign state.

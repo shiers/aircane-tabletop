@@ -21,6 +21,19 @@ Package the app as a Tauri (or Electron) desktop application that starts the ASP
 ### Advanced Combat Automation
 Add initiative tracker, turn enforcement, condition duration tracking, automatic damage/healing application, death save management, and concentration checks. The MVP AI can request rolls and propose changes but does not enforce turn order.
 
+### Embedding Provider Portability (Embed-on-First-Run + Provider Metadata)
+Make stored embeddings robust to provider/model changes. Today the seeder generates embeddings with whatever embedding provider is configured at seed time and persists them; retrieval only works if queries are embedded with the *same* provider and model, and nothing records which produced a given vector. This creates silent-failure and lock-in risks (see [Known Limitations → AI/Retrieval](known-limitations.md)).
+
+Scope:
+- **Ship text, not vectors.** Built-in bundles already ship as Markdown text; keep embeddings as derived data generated on the user's machine, never pre-computed and shipped.
+- **Record provenance.** Store `EmbeddingProvider`, `EmbeddingModel`, and `Dimensions` alongside each embedding (or per document/batch), so the app knows what produced every vector.
+- **Mismatch guard.** At query time, detect when the active embedding provider/model/dimension differs from what the stored chunks were embedded with, and refuse to silently return meaningless results. Surface a clear, actionable state instead (e.g. "re-index required").
+- **Re-embed path.** Provide a first-class re-index/re-embed operation (per document and library-wide) triggered when the provider changes, the model is upgraded, or Ollama is added/removed. Report progress and let it run as a background job.
+- **Dimension flexibility.** The `DocumentChunk.Embedding` column is currently hardwired to `vector(768)` (Ollama `nomic-embed-text` / Fake). Supporting providers with different dimensions (e.g. OpenAI `text-embedding-3-small` at 1536) requires either a configurable/migrated column dimension or a strategy for multiple embedding spaces.
+- **OpenAI (and other) embedding providers.** Only Ollama and Fake embedding providers exist today. Add cloud embedding providers behind the existing `IEmbeddingProvider` abstraction, gated by the provenance/dimension work above.
+
+This is the durable fix for the embedding-provider coupling risk; until it lands, changing or removing the embedding provider requires a full manual re-seed.
+
 ---
 
 ## Priority 2 - Significant Enhancements

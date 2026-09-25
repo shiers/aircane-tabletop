@@ -10,6 +10,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Aircane.Application\Aircane.Application.csproj" />
+    <ProjectReference Include="..\Aircane.Domain\Aircane.Domain.csproj" />
+    <ProjectReference Include="..\Aircane.Infrastructure\Aircane.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Built-in rules content bundles (Phase 10). Each subfolder is a bundle with a manifest.json.
+         Embed every file under the bundle tree (manifests, markdown content, license texts) so new
+         content files are picked up automatically without editing this project file. -->
+    <EmbeddedResource Include="Resources\builtin\**\*" />
   </ItemGroup>
 
 </Project>

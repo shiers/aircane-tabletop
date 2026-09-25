@@ -1,0 +1,26 @@
+{
+  "id": "dnd5e-srd-2014",
+  "displayName": "D&D 5e Systems Reference Document (2014)",
+  "version": "5.1",
+  "gameSystem": "D&D 5e",
+  "ruleset": "2014",
+  "sourceType": "Rules",
+  "licenseKey": "cc-by-4.0",
+  "licenseDisplayName": "Creative Commons Attribution 4.0 International",
+  "attributionText": "This work includes material from the System Reference Document 5.1 (\"SRD 5.1\") by Wizards of the Coast LLC, available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.",
+  "attributionUrl": "https://dnd.wizards.com/resources/systems-reference-document",
+  "files": [
+    { "file": "races.md",            "chunkType": "rules", "section": "Races" },
+    { "file": "classes.md",          "chunkType": "rules", "section": "Classes" },
+    { "file": "characterization.md", "chunkType": "rules", "section": "Backgrounds and Characterization" },
+    { "file": "equipment.md",        "chunkType": "rules", "section": "Equipment" },
+    { "file": "feats.md",            "chunkType": "rules", "section": "Feats" },
+    { "file": "gameplay.md",         "chunkType": "rules", "section": "Gameplay Rules" },
+    { "file": "combat.md",           "chunkType": "rules", "section": "Combat" },
+    { "file": "conditions.md",       "chunkType": "condition", "section": "Conditions" },
+    { "file": "spells.md",           "chunkType": "rules", "section": "Spells" },
+    { "file": "gamemastering.md",    "chunkType": "rules", "section": "Gamemastering" },
+    { "file": "magic-items.md",      "chunkType": "rules", "section": "Magic Items" },
+    { "file": "monsters.md",         "chunkType": "rules", "section": "Monsters" }
+  ]
+}

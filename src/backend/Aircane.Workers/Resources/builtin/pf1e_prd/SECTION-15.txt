@@ -1,0 +1,27 @@
+OPEN GAME LICENSE Version 1.0a — Section 15 (COPYRIGHT NOTICE)
+
+The following is the attribution chain required by Section 15 of the Open
+Game License v1.0a for the Open Game Content reproduced in this bundle. The
+full text of the license is provided in the accompanying file OGL-1.0a.txt.
+
+Open Game License v 1.0a Copyright 2000, Wizards of the Coast, Inc.
+
+System Reference Document. Copyright 2000, Wizards of the Coast, Inc.;
+Authors Jonathan Tweet, Monte Cook, Skip Williams, based on original material
+by E. Gary Gygax and Dave Arneson.
+
+Pathfinder Roleplaying Game Reference Document. Copyright 2011, Paizo
+Publishing, LLC; Author: Paizo Publishing, LLC.
+
+Pathfinder Roleplaying Game Core Rulebook. Copyright 2009, Paizo Publishing,
+LLC; Author: Jason Bulmahn.
+
+END OF SECTION 15
+
+Note: This bundle reproduces only Open Game Content. Product Identity (as
+defined in Section 1(e) of the OGL and enumerated in this bundle's
+manifest, e.g. Golarion, Pathfinder Society, named deities and iconic
+characters, Paizo trademarks and logos) is not reproduced. If real
+open-content corpora replace the placeholder excerpts in this bundle, this
+Section 15 chain must be reviewed and extended to include the Section 15
+notices of every additional source used.

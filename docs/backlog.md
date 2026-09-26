@@ -36,10 +36,13 @@ Make stored embeddings robust to provider/model changes.
 - **Re-embed path.** `POST /api/library/documents/reembed-all` and `.../{id}/reembed` regenerate embeddings with the current provider and refresh provenance.
 
 **Still outstanding:**
-- **Ship text, not pre-computed vectors.** Built-in bundles already ship as Markdown text and are embedded on first run, which is the desired model; formalize/guarantee this and document it as the contract.
 - **Dimension flexibility.** The `DocumentChunk.Embedding` column is hardwired to `vector(768)` (Ollama `nomic-embed-text` / Fake). Supporting a provider with a different dimension (e.g. OpenAI `text-embedding-3-small` at 1536) requires either a configurable/migrated column dimension, a second column, or a per-dimension strategy — deferred to a future release. Path when needed: change the column dimension, add a migration, and run a full re-embed.
 - **OpenAI (and other cloud) embedding providers.** Only Ollama and Fake exist today. Add cloud embedding providers behind the existing `IEmbeddingProvider` abstraction, gated by the dimension work above.
-- **Background re-embed.** The re-embed endpoints run synchronously; for large libraries, move them to a background job with progress reporting.
+
+The "ship text, embed on first run" contract is delivered and documented in `docs/architecture/overview.md`. Making re-embed (and import/reindex/folder-scan) asynchronous depends on the shared background-job infrastructure below.
+
+### Background Job Infrastructure
+The app has no real background-job runner yet: `DocumentImportJob`, `FolderScanJob`, reindex, and the re-embed endpoints all execute **synchronously** on the request thread, and `IDocumentImportService` (enqueue/status) is defined but unimplemented. Introduce a single background-job mechanism — either Hangfire/Quartz (per the tech steering) or a lightweight in-process hosted-service + channel queue for local-first mode — and route document import, folder scan, reindex, and re-embed through it with a shared job-status/progress surface. This is a cross-cutting foundation; several features (large-library import, `reembed-all`, folder rescans) want it, so build it once rather than per-feature.
 
 ---
 

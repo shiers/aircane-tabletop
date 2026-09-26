@@ -95,6 +95,25 @@ src/frontend/aircane-web/src/
 4. Chunks stored in PostgreSQL with pgvector embeddings
 5. Documents become searchable via semantic + keyword search
 
+### Embeddings Are Derived Data (Ship Text, Embed on First Run)
+Embeddings are **never shipped pre-computed**; they are derived on the host machine from text.
+This is a deliberate contract:
+
+- **Built-in rules bundles ship as Markdown text**, not vectors (see `Aircane.Workers/Resources/builtin/`).
+  The `BuiltInContentSeeder` generates embeddings on first run using the host's configured embedding
+  provider. User-imported documents follow the same path via the import job.
+- **Why:** embeddings are only comparable within the same provider + model + dimension. Shipping
+  vectors would hard-code one provider and silently break retrieval for anyone using a different
+  one. Generating them locally keeps each install internally consistent.
+- **Provenance is recorded** per chunk (`EmbeddingProvider`, `EmbeddingModel`, `EmbeddingDimensions`),
+  and vector search skips chunks whose provenance does not match the active provider (logging a
+  "re-index required" warning) so a provider/model change degrades honestly instead of returning
+  meaningless results.
+- **Changing the embedding provider/model requires a re-embed** (`POST /api/library/documents/reembed-all`
+  or `.../{id}/reembed`), which regenerates vectors with the current provider and refreshes provenance.
+
+See `docs/known-limitations.md` (AI/Retrieval) and the backlog for the deferred multi-dimension work.
+
 ### AI DM Loop
 1. Player submits an action
 2. Backend loads campaign state + retrieves relevant rules/adventure chunks (RAG)

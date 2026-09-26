@@ -83,12 +83,14 @@ These are the concrete gaps to close for full compliance (tracked here so they a
 
 1. **Decide and state the application code license** — `README.md` says "License TBD". Pick a
    software license (or proprietary) and state it, keeping it distinct from the content licenses.
-2. **About / Credits UI panel** — add an in-app panel that prominently displays the ORC Notice and
-   the CC BY / OGL attributions. Today attribution is reachable via the library "Open Content
-   Licenses" modal and the public `/api/library/licenses` endpoints; a dedicated About/Credits
-   surface would more clearly satisfy the "prominent" requirement.
-3. **Downstream declaration** — add an explicit ORC Content vs. Reserved Material statement to the
-   ORC Notice / About panel.
+   *(Still open — this is a maintainer decision. The About/Credits page points users to the README
+   for it.)*
+2. ~~**About / Credits UI panel**~~ — ✅ **Done.** An in-app About & Credits page
+   (`features/about/AboutView.vue`, route `/about`, sidebar link) prominently displays the ORC
+   Notice / attributions (CC BY, OGL, ORC) sourced from the public `/api/library/licenses` API,
+   alongside the library "Open Content Licenses" modal.
+3. ~~**Downstream declaration**~~ — ✅ **Done.** The About/Credits page includes an explicit ORC
+   Content vs. Reserved Material declaration.
 4. **PF2e content** — source real ORC-licensed PF2e Remaster text (NOT the Foundry VTT data, which
    is Paizo Community Use / partnership, not ORC — see the backlog item), add
    `productIdentityExclusions` to the `pf2e_remaster` manifest, and copy the exact Paizo product

@@ -79,6 +79,9 @@ Handle multi-column layouts, tables, sidebars, and complex formatting for more a
 ### D&D Beyond / VTT Integration
 Import characters directly from D&D Beyond, Foundry VTT, or Roll20 via API or export formats.
 
+### Pathbuilder 2e Character Import
+Import Pathfinder 2e characters built in [Pathbuilder 2e](https://pathbuilder2e.com/app.html?v=110a). Pathbuilder exports a character as JSON (its "Export to JSON" feature), so this maps to the existing JSON character import path: add a Pathbuilder-2e-to-canonical field mapping/adapter and expose it as a source in the import flow. Respect the licensing/Product Identity rules in `docs/licensing/open-content-compliance.md` — import only the user's own character data, not bundled rules content.
+
 ### Multi-Turn AI Memory
 Persistent AI memory across sessions beyond what is stored in campaign state - long-term NPC relationship tracking, world knowledge graphs, and player preference learning.
 

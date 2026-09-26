@@ -50,6 +50,11 @@ const router = createRouter({
       component: () => import('@/features/ai/RulesLookupView.vue'),
     },
     {
+      path: '/about',
+      name: 'about',
+      component: () => import('@/features/about/AboutView.vue'),
+    },
+    {
       path: '/sessions',
       name: 'sessions',
       component: () => import('@/features/sessions/index'),

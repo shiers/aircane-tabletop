@@ -21,6 +21,7 @@ const navItems = [
   { label: 'AI DM', to: '/settings/ai', icon: 'ai' },
   { label: 'Adventure Forge', to: '/adventures/generate', icon: 'adventure' },
   { label: 'Dice Roller', to: '/sessions', icon: 'dice' },
+  { label: 'About & Credits', to: '/about', icon: 'about' },
 ]
 
 function isActive(to: string): boolean {
@@ -96,6 +97,10 @@ function isActive(to: string): boolean {
           <!-- Dice -->
           <svg v-else-if="item.icon === 'dice'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+          </svg>
+          <!-- About -->
+          <svg v-else-if="item.icon === 'about'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </span>
 

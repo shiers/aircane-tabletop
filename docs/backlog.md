@@ -25,7 +25,13 @@ Allow players to connect over the internet without router port forwarding. Optio
 Package the app as a Tauri (or Electron) desktop application that starts the ASP.NET Core server, opens the local UI, manages file paths, and displays the LAN URL and QR code - one-click launch for non-technical hosts.
 
 ### Advanced Combat Automation
-Add initiative tracker, turn enforcement, condition duration tracking, automatic damage/healing application, death save management, and concentration checks. The MVP AI can request rolls and propose changes but does not enforce turn order.
+**Backend delivered:** A pure `CombatEngine` (`Aircane.Domain/Combat/`) plus an `EncounterState` model persisted in campaign state drive initiative order, turn advancement (with round wrap + condition tick), per-instance condition durations, HP damage/healing (temp-HP absorption, downed-PC death saves, NPC death), and death-save resolution. Combat commands (StartEncounter, RollInitiative, AdvanceTurn, TickConditions, ApplyDamage, ApplyHealing, ApplyCondition, RemoveCondition, DeathSave) flow through the existing AI-proposes → validate → authority → approval pipeline, and turn changes broadcast over SignalR (`CombatTurnChanged`). Note: this also fixed a latent bug where ApplyDamage/ApplyHealing/ApplyCondition previously no-op'd (generic state merge).
+
+**Still outstanding:**
+- **Surface combat into the AI prompt.** `PlayerActionService` does not yet feed combatant HP / initiative / active turn into the AI DM prompt, so the AI can't reason over live combat state. Add this to the prompt context.
+- **Frontend combat tracker UI.** No initiative/turn/HP tracker view yet; consume the `CombatTurnChanged` SignalR event and the encounter state.
+- **Concentration checks.** Not modeled (would build on the condition + damage hooks).
+- **Turn enforcement.** The engine tracks whose turn it is but does not reject out-of-turn actions; add enforcement if desired.
 
 ### Embedding Provider Portability (Embed-on-First-Run + Provider Metadata)
 Make stored embeddings robust to provider/model changes.

@@ -1,3 +1,4 @@
+using Aircane.Application.Validation;
 using Aircane.Domain.Enums;
 using Aircane.Infrastructure.GameSystems.Seeds;
 using Xunit;
@@ -254,4 +255,123 @@ public class GameSystemSeedTests
         Assert.NotNull(definition.AiGuidance.SystemPromptNotes);
         Assert.Contains("freeform", definition.AiGuidance.SystemPromptNotes, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ── Pathfinder 2e Remaster Seed Tests ─────────────────────────────────────
+
+    [Fact]
+    public void Pf2eRemasterSeed_HasCorrectMetadataAndDeterministicId()
+    {
+        var d = Pathfinder2eRemasterSeed.Create();
+
+        Assert.Equal("pathfinder-2e-remaster", d.Identifier);
+        Assert.Equal("Pathfinder Second Edition (Remaster)", d.Name);
+        Assert.Equal("built-in", d.License);
+        Assert.Equal("Paizo Inc.", d.Publisher);
+        Assert.True(d.IsBuiltIn);
+        Assert.True(d.IsActive);
+        Assert.Equal(Pathfinder2eRemasterSeed.DefinitionId, d.Id);
+    }
+
+    [Fact]
+    public void Pf2eRemasterSeed_UsesDegreesOfSuccessResolution()
+    {
+        var d = Pathfinder2eRemasterSeed.Create();
+
+        Assert.All(d.ResolutionRules, r => Assert.Equal(ResolutionRuleType.DegreesOfSuccess, r.Type));
+
+        var check = d.ResolutionRules.First(r => r.Name == "check");
+        Assert.NotNull(check.DegreesOfSuccess);
+        var degreeNames = check.DegreesOfSuccess!.Select(x => x.Name).ToList();
+        Assert.Contains("Critical Success", degreeNames);
+        Assert.Contains("Success", degreeNames);
+        Assert.Contains("Failure", degreeNames);
+        Assert.Contains("Critical Failure", degreeNames);
+
+        // Critical success band is a margin of +10 or more; critical failure -10 or worse.
+        Assert.Equal(10, check.DegreesOfSuccess.First(x => x.Name == "Critical Success").MinValue);
+        Assert.Equal(-10, check.DegreesOfSuccess.First(x => x.Name == "Critical Failure").MaxValue);
+    }
+
+    [Fact]
+    public void Pf2eRemasterSeed_UsesThreeActionMultiAttackPenaltyEconomy()
+    {
+        var d = Pathfinder2eRemasterSeed.Create();
+
+        Assert.NotNull(d.ActionEconomy);
+        Assert.Equal(ActionEconomyType.MultiActionPenalty, d.ActionEconomy!.Type);
+        Assert.Equal(3, d.ActionEconomy.MaxActions);
+        Assert.Equal(-5, d.ActionEconomy.PenaltyIncrement);
+
+        var actionSlot = d.ActionEconomy.TurnStructure!.Slots.First(s => s.Name == "action");
+        Assert.Equal(3, actionSlot.Count);
+    }
+
+    [Fact]
+    public void Pf2eRemasterSeed_UsesCreatureLevelEncounterBudget()
+    {
+        var d = Pathfinder2eRemasterSeed.Create();
+
+        Assert.NotNull(d.EncounterBudget);
+        Assert.Equal(EncounterBudgetType.CreatureLevel, d.EncounterBudget!.Type);
+        var tiers = d.EncounterBudget.DifficultyTiers.Select(t => t.Name).ToList();
+        Assert.Contains("Trivial", tiers);
+        Assert.Contains("Moderate", tiers);
+        Assert.Contains("Severe", tiers);
+        Assert.Contains("Extreme", tiers);
+    }
+
+    [Fact]
+    public void Pf2eRemasterSeed_HasPathfinderConditions()
+    {
+        var d = Pathfinder2eRemasterSeed.Create();
+
+        var names = d.ConditionSet.Select(c => c.Name).ToList();
+        // PF2e-specific conditions that differ from D&D 5e.
+        Assert.Contains("Dying", names);
+        Assert.Contains("Wounded", names);
+        Assert.Contains("Off-Guard", names);
+        Assert.Contains("Frightened", names);
+        Assert.Contains("Slowed", names);
+    }
+
+    [Fact]
+    public void Pf2eRemasterSeed_HasProficiencyRanksInSchema()
+    {
+        var d = Pathfinder2eRemasterSeed.Create();
+
+        var prof = d.CharacterSchema!.Sections.First(s => s.Id == "proficiencies");
+        var perception = prof.Fields.First(f => f.Id == "perception_rank");
+        Assert.Equal(CharacterFieldType.Enum, perception.Type);
+        Assert.Contains("Legendary", perception.Options!);
+    }
+
+    [Fact]
+    public void Pf2eRemasterSeed_AiGuidance_DescribesDegreesOfSuccess()
+    {
+        var d = Pathfinder2eRemasterSeed.Create();
+
+        Assert.NotNull(d.AiGuidance);
+        Assert.Contains("degrees of success", d.AiGuidance!.SystemPromptNotes, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(d.AiGuidance.CommonMistakes);
+    }
+
+    // ── All built-in seeds must pass validation so the seeder can persist them ─
+
+    [Theory]
+    [MemberData(nameof(BuiltInSeeds))]
+    public void BuiltInSeed_PassesValidation(Aircane.Domain.Entities.GameSystems.GameSystemDefinition definition)
+    {
+        var validator = new GameSystemDefinitionValidator();
+        var result = validator.Validate(definition);
+        Assert.True(result.IsValid,
+            $"Seed '{definition.Identifier}' failed validation: " +
+            string.Join("; ", result.Errors.Select(e => e.ErrorMessage)));
+    }
+
+    public static IEnumerable<object[]> BuiltInSeeds() =>
+    [
+        [DnD5e2014Seed.Create()],
+        [GenericFreeformSeed.Create()],
+        [Pathfinder2eRemasterSeed.Create()],
+    ];
 }

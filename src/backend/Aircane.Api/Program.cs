@@ -115,6 +115,9 @@ builder.Services.AddScoped<HealthCheckService>();
 // Register the built-in open-content rules seeder (Phase 10). Runs after migrations on startup.
 builder.Services.AddScoped<Aircane.Workers.Seeding.BuiltInContentSeeder>();
 
+// Register the built-in game-system-definition seeder (D&D 5e, Freeform, Pathfinder 2e Remaster).
+builder.Services.AddScoped<Aircane.Workers.Seeding.GameSystemDefinitionSeeder>();
+
 // The built-in license/attribution text (OGL-1.0a.txt, SECTION-15.txt) ships as embedded
 // resources in the Aircane.Workers assembly. Bind the reader to that assembly here, where the
 // Workers reference is available, so Infrastructure need not depend on Workers.
@@ -155,6 +158,19 @@ if (app.Environment.IsDevelopment())
     {
         startupLogger.LogError(ex, "Failed to apply database migrations on startup.");
         throw;
+    }
+
+    // Seed built-in game-system definitions (mechanics). Idempotent; failures don't block startup.
+    try
+    {
+        startupLogger.LogInformation("Seeding built-in game-system definitions...");
+        var systemSeeder = scope.ServiceProvider.GetRequiredService<Aircane.Workers.Seeding.GameSystemDefinitionSeeder>();
+        await systemSeeder.SeedAsync();
+        startupLogger.LogInformation("Built-in game-system definition seeding complete.");
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogError(ex, "Failed to seed built-in game-system definitions on startup.");
     }
 
     // Seed built-in open-content rules bundles (Phase 10). Idempotent: already-seeded

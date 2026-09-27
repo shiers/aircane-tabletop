@@ -7,7 +7,12 @@ This document lists planned features and improvements beyond the Aircane Tableto
 ## Priority 1 - High Impact / Frequently Requested
 
 ### Pathfinder 2e Adapter
-Add a ruleset adapter supporting three-action economy, degrees of success, encounter XP budgets, conditions, proficiency scaling, and creature elite/weak adjustments. The core domain model is already system-agnostic; this adds the game-specific validation and generation logic.
+**Delivered:** A built-in `Pathfinder2eRemasterSeed` game-system definition captures the PF2e mechanics — four degrees of success (margin vs DC), three-action economy with multiple attack penalty, creature-level encounter budget, PF2e conditions, and proficiency ranks — and validates against `GameSystemDefinitionValidator`. A new `GameSystemDefinitionSeeder` persists all built-in definitions (D&D 5e, Freeform, PF2e Remaster) into `GameSystemDefinitions` on startup (this also fixed a gap where the built-in definitions were referenced by the migration service but never actually inserted).
+
+**Still outstanding:**
+- **PF2e-specific generation logic.** Adventure generation and encounter validation still use the D&D-5e-oriented `Dnd5eEncounterValidator`; add a PF2e encounter validator (creature-level budget) and PF2e-aware adventure generation.
+- **Elite/weak creature adjustments.** The definition documents them in AI guidance but there is no mechanical applicator; add one if programmatic creature scaling is wanted.
+- **Rules text.** The ORC-licensed PF2e rules-text bundle is a separate, user-blocked item (see above).
 
 ### Pathfinder 2e Remaster Built-in Content (real ORC text)
 The `pf2e_remaster` built-in bundle currently ships a small placeholder (2 chunks) so the app runs; the seeder handles the partial bundle gracefully. To complete it, source the real PF2e Remaster rules text **from a genuine ORC-licensed release** and drop the Markdown files into `src/backend/Aircane.Workers/Resources/builtin/pf2e_remaster/` (adding entries to its `manifest.json`). No code changes needed — the bundle structure, `LICENSE-ORC.txt`, manifest, and seeder already work. **Licensing caution:** do NOT extract content from the Foundry VTT PF2e system data or the Obsidian TTRPG Community repo — that material is distributed under a private Paizo↔Foundry partnership agreement and Paizo's Community Use Policy, not the ORC License, and cannot be bundled as ORC content here. Use only text that is actually released under ORC. Follow the full ORC requirements (Notice, upstream Paizo product attribution, downstream ORC-Content-vs-Reserved-Material declaration, Product Identity exclusions, and the OGL/ORC split) documented in [`docs/licensing/open-content-compliance.md`](licensing/open-content-compliance.md).

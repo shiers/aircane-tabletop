@@ -16,8 +16,6 @@ function licenseBadgeClasses(licenseKey: string): string {
       return 'bg-teal-900 text-teal-300'
     case 'orc':
       return 'bg-purple-900 text-purple-300'
-    case 'ogl-1.0a':
-      return 'bg-amber-900 text-amber-300'
     default:
       return 'bg-gray-800 text-gray-300'
   }

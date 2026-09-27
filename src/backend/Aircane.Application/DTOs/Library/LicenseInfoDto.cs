@@ -11,7 +11,7 @@ public sealed record LicenseInfoDto(
     /// <summary>The source document title.</summary>
     string DocumentTitle,
 
-    /// <summary>Machine-readable license key (e.g. "cc-by-4.0", "orc", "ogl-1.0a").</summary>
+    /// <summary>Machine-readable license key (e.g. "cc-by-4.0", "orc").</summary>
     string? LicenseKey,
 
     /// <summary>Human-readable license name.</summary>
@@ -27,10 +27,4 @@ public sealed record LicenseInfoDto(
     string? AttributionUrl,
 
     /// <summary>True for built-in documents shipped with the app.</summary>
-    bool IsBuiltIn,
-
-    /// <summary>
-    /// True when this document is under the OGL v1.0a and therefore has retrievable
-    /// full-license-text and Section 15 attribution endpoints.
-    /// </summary>
-    bool IsOgl);
+    bool IsBuiltIn);

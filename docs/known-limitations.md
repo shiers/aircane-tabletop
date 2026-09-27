@@ -19,6 +19,7 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 - **System-agnostic framework is in place, but built-in definitions are limited.** The Game System Definition engine supports any TTRPG declaratively, but only D&D 5e 2014 and a generic freeform system ship as starter templates. Custom system definitions can be created but are not yet battle-tested across all mechanics.
 - **No full combat automation.** The AI can request rolls and propose damage/healing, but there is no automated initiative tracker, turn enforcement, or condition duration tracking.
 - **Encounter validation is basic.** The encounter difficulty checker uses placeholder logic and may not accurately assess all encounters.
+- **Pathfinder 1e is not bundled — import your own PDFs via the Library to use PF1e content.** The built-in rules text bundles are D&D 5e SRD (CC BY 4.0) and Pathfinder 2e Remaster (ORC). Pathfinder 1e (OGL v1.0a) is intentionally not shipped as built-in content; you can still play PF1e by registering a folder of your own PF1e PDFs, which the RAG pipeline, dice, and AI DM runtime treat like any other imported source.
 
 ## AI
 

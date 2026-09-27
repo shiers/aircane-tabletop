@@ -3,7 +3,6 @@ using Aircane.Application.Abstractions;
 using Aircane.Application.Library;
 using Aircane.Domain.Entities;
 using Aircane.Domain.Enums;
-using Aircane.Domain.License;
 using Aircane.Infrastructure.DocumentSources;
 using Aircane.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -12,8 +11,8 @@ using Microsoft.Extensions.Logging;
 namespace Aircane.Workers.Seeding;
 
 /// <summary>
-/// Seeds built-in open-content rules bundles (D&amp;D 5e SRD 5.1, Pathfinder 2e Remaster,
-/// Pathfinder 1e PRD) from embedded resources into the database on startup.
+/// Seeds built-in open-content rules bundles (D&amp;D 5e SRD 5.1, Pathfinder 2e Remaster)
+/// from embedded resources into the database on startup.
 /// Idempotent: an existing built-in document for a given (id) is skipped.
 /// </summary>
 public sealed class BuiltInContentSeeder
@@ -25,8 +24,7 @@ public sealed class BuiltInContentSeeder
     private static readonly string[] BundleManifests =
     {
         "Aircane.Workers.Resources.builtin.dnd5e_srd.manifest.json",
-        "Aircane.Workers.Resources.builtin.pf2e_remaster.manifest.json",
-        "Aircane.Workers.Resources.builtin.pf1e_prd.manifest.json"
+        "Aircane.Workers.Resources.builtin.pf2e_remaster.manifest.json"
     };
 
     /// <summary>
@@ -84,27 +82,6 @@ public sealed class BuiltInContentSeeder
                 "BuiltInContentSeeder: bundle '{Manifest}' not found or unparsable; skipping.",
                 manifestResource);
             return;
-        }
-
-        // OGL bundles must carry a Section 15 attribution chain.
-        if (BuiltInLicenses.IsOgl(manifest.LicenseKey))
-        {
-            if (string.IsNullOrWhiteSpace(manifest.OglSection15File))
-            {
-                _logger.LogError(
-                    "BuiltInContentSeeder: OGL bundle '{Id}' is missing oglSection15File; refusing to seed.",
-                    manifest.Id);
-                return;
-            }
-
-            var section15Resource = ResolveSiblingResource(manifestResource, manifest.OglSection15File);
-            if (!await _source.FileExistsAsync(section15Resource, ct))
-            {
-                _logger.LogError(
-                    "BuiltInContentSeeder: OGL bundle '{Id}' Section 15 resource '{Resource}' missing; refusing to seed.",
-                    manifest.Id, section15Resource);
-                return;
-            }
         }
 
         // Idempotency: a built-in document for this bundle title already exists.
@@ -222,17 +199,5 @@ public sealed class BuiltInContentSeeder
                 "BuiltInContentSeeder: seeded bundle '{Id}' ({Chunks} chunks) under license {License}.",
                 manifest.Id, chunkCount, manifest.LicenseKey);
         }
-    }
-
-    /// <summary>
-    /// Resolves the full resource name of a file that is a sibling of the manifest.
-    /// </summary>
-    private static string ResolveSiblingResource(string manifestResource, string siblingFileName)
-    {
-        const string manifestSuffix = ".manifest.json";
-        var ns = manifestResource.EndsWith(manifestSuffix, StringComparison.OrdinalIgnoreCase)
-            ? manifestResource[..^manifestSuffix.Length]
-            : manifestResource;
-        return $"{ns}.{siblingFileName}";
     }
 }

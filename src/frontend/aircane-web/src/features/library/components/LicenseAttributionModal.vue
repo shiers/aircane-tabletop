@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { listLicenses, getOglText, getSection15, type LicenseInfo } from '../licenses'
+import { listLicenses, type LicenseInfo } from '../licenses'
 
 const props = defineProps<{
   /** Controls modal visibility. */
@@ -15,13 +15,6 @@ const licenses = ref<LicenseInfo[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-/** Per-document expand state and lazily-loaded OGL/Section-15 text. */
-const oglExpanded = ref<Record<string, boolean>>({})
-const section15Expanded = ref<Record<string, boolean>>({})
-const oglText = ref<Record<string, string>>({})
-const section15Text = ref<Record<string, string>>({})
-const textLoading = ref<Record<string, boolean>>({})
-
 /** Tailwind classes for each license badge. Falls back to gray for unknown keys. */
 function badgeClasses(licenseKey: string | null): string {
   switch (licenseKey) {
@@ -29,8 +22,6 @@ function badgeClasses(licenseKey: string | null): string {
       return 'bg-teal-900 text-teal-300 ring-1 ring-inset ring-teal-700/50'
     case 'orc':
       return 'bg-purple-900 text-purple-300 ring-1 ring-inset ring-purple-700/50'
-    case 'ogl-1.0a':
-      return 'bg-amber-900 text-amber-300 ring-1 ring-inset ring-amber-700/50'
     default:
       return 'bg-gray-800 text-gray-300 ring-1 ring-inset ring-gray-600/50'
   }
@@ -49,38 +40,6 @@ async function loadLicenses(): Promise<void> {
     error.value = e instanceof Error ? e.message : 'Failed to load license information.'
   } finally {
     loading.value = false
-  }
-}
-
-async function toggleOgl(doc: LicenseInfo): Promise<void> {
-  const id = doc.documentId
-  const next = !oglExpanded.value[id]
-  oglExpanded.value = { ...oglExpanded.value, [id]: next }
-  if (next && oglText.value[id] === undefined) {
-    textLoading.value = { ...textLoading.value, [`ogl-${id}`]: true }
-    try {
-      oglText.value = { ...oglText.value, [id]: await getOglText(id) }
-    } catch {
-      oglText.value = { ...oglText.value, [id]: 'Failed to load OGL license text.' }
-    } finally {
-      textLoading.value = { ...textLoading.value, [`ogl-${id}`]: false }
-    }
-  }
-}
-
-async function toggleSection15(doc: LicenseInfo): Promise<void> {
-  const id = doc.documentId
-  const next = !section15Expanded.value[id]
-  section15Expanded.value = { ...section15Expanded.value, [id]: next }
-  if (next && section15Text.value[id] === undefined) {
-    textLoading.value = { ...textLoading.value, [`s15-${id}`]: true }
-    try {
-      section15Text.value = { ...section15Text.value, [id]: await getSection15(id) }
-    } catch {
-      section15Text.value = { ...section15Text.value, [id]: 'Failed to load Section 15 text.' }
-    } finally {
-      textLoading.value = { ...textLoading.value, [`s15-${id}`]: false }
-    }
   }
 }
 
@@ -206,39 +165,6 @@ watch(
                 >
                   License text ↗
                 </a>
-              </div>
-
-              <!-- OGL-only: collapsible full license text + Section 15 -->
-              <div v-if="doc.isOgl" class="mt-3 space-y-2">
-                <div>
-                  <button
-                    class="flex items-center gap-1 text-xs font-medium text-gray-300 hover:text-white"
-                    :aria-expanded="!!oglExpanded[doc.documentId]"
-                    @click="toggleOgl(doc)"
-                  >
-                    <span>{{ oglExpanded[doc.documentId] ? '▾' : '▸' }}</span>
-                    Full OGL v1.0a text
-                  </button>
-                  <pre
-                    v-if="oglExpanded[doc.documentId]"
-                    class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded border border-surface-700 bg-surface-950 p-3 text-xs text-gray-400"
-                  >{{ textLoading[`ogl-${doc.documentId}`] ? 'Loading…' : oglText[doc.documentId] }}</pre>
-                </div>
-
-                <div>
-                  <button
-                    class="flex items-center gap-1 text-xs font-medium text-gray-300 hover:text-white"
-                    :aria-expanded="!!section15Expanded[doc.documentId]"
-                    @click="toggleSection15(doc)"
-                  >
-                    <span>{{ section15Expanded[doc.documentId] ? '▾' : '▸' }}</span>
-                    Section 15 (attribution chain)
-                  </button>
-                  <pre
-                    v-if="section15Expanded[doc.documentId]"
-                    class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded border border-surface-700 bg-surface-950 p-3 text-xs text-gray-400"
-                  >{{ textLoading[`s15-${doc.documentId}`] ? 'Loading…' : section15Text[doc.documentId] }}</pre>
-                </div>
               </div>
             </li>
           </ul>

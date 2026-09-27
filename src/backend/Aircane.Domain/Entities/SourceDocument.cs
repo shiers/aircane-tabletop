@@ -51,7 +51,7 @@ public class SourceDocument : EntityBase
     public DateTimeOffset UpdatedAt { get; set; }
 
     /// <summary>
-    /// True when this is a built-in rules text document (SRD, ORC, or OGL content) shipped with the app.
+    /// True when this is a built-in rules text document (SRD or ORC content) shipped with the app.
     /// Built-in documents cannot be deleted; they can only be disabled.
     /// Distinct from GameSystemDefinitions.IsBuiltIn which marks a built-in mechanic definition.
     /// </summary>
@@ -64,7 +64,7 @@ public class SourceDocument : EntityBase
     public bool IsDisabled { get; set; }
 
     /// <summary>
-    /// Machine-readable open-content license key (e.g. "cc-by-4.0", "orc", "ogl-1.0a").
+    /// Machine-readable open-content license key (e.g. "cc-by-4.0", "orc").
     /// Null for user-imported documents.
     /// </summary>
     public string? LicenseKey { get; set; }

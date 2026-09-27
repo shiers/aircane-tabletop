@@ -118,14 +118,6 @@ builder.Services.AddScoped<Aircane.Workers.Seeding.BuiltInContentSeeder>();
 // Register the built-in game-system-definition seeder (D&D 5e, Freeform, Pathfinder 2e Remaster).
 builder.Services.AddScoped<Aircane.Workers.Seeding.GameSystemDefinitionSeeder>();
 
-// The built-in license/attribution text (OGL-1.0a.txt, SECTION-15.txt) ships as embedded
-// resources in the Aircane.Workers assembly. Bind the reader to that assembly here, where the
-// Workers reference is available, so Infrastructure need not depend on Workers.
-builder.Services.AddScoped<Aircane.Application.Abstractions.IBuiltInLicenseTextReader>(sp =>
-    new Aircane.Infrastructure.DocumentSources.BuiltInLicenseTextReader(
-        typeof(Aircane.Workers.Seeding.BuiltInContentSeeder).Assembly,
-        sp.GetRequiredService<ILogger<Aircane.Infrastructure.DocumentSources.EmbeddedResourceDocumentSource>>()));
-
 var app = builder.Build();
 
 // Apply EF Core migrations automatically in Development so the schema (and the

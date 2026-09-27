@@ -13,8 +13,6 @@ function badgeClasses(licenseKey: string | null): string {
       return 'bg-teal-900 text-teal-300 ring-1 ring-inset ring-teal-700/50'
     case 'orc':
       return 'bg-purple-900 text-purple-300 ring-1 ring-inset ring-purple-700/50'
-    case 'ogl-1.0a':
-      return 'bg-amber-900 text-amber-300 ring-1 ring-inset ring-amber-700/50'
     default:
       return 'bg-gray-800 text-gray-300 ring-1 ring-inset ring-gray-600/50'
   }
@@ -102,13 +100,6 @@ onMounted(async () => {
             >
               License text ↗
             </a>
-            <RouterLink
-              v-if="doc.isOgl"
-              to="/library"
-              class="text-aircane-400 hover:text-aircane-300 hover:underline"
-            >
-              Full OGL text &amp; Section 15 (in Library)
-            </RouterLink>
           </div>
         </li>
       </ul>
@@ -138,9 +129,9 @@ onMounted(async () => {
           </p>
         </div>
         <p>
-          Content under other licenses (Creative Commons Attribution 4.0, Open Game License v1.0a)
-          is governed by those licenses; each bundle's notice and attribution are shown above and
-          in the Library's Open Content Licenses view.
+          Content under other licenses (Creative Commons Attribution 4.0) is governed by those
+          licenses; each bundle's notice and attribution are shown above and in the Library's Open
+          Content Licenses view.
         </p>
       </div>
     </section>

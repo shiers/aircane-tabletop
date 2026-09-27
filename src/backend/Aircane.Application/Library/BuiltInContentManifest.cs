@@ -38,19 +38,6 @@ public sealed class BuiltInContentManifest
     [JsonPropertyName("attributionUrl")]
     public string AttributionUrl { get; set; } = string.Empty;
 
-    /// <summary>
-    /// For OGL bundles: relative resource name of the SECTION-15.txt file that carries the
-    /// full attribution chain. Null for non-OGL bundles.
-    /// </summary>
-    [JsonPropertyName("oglSection15File")]
-    public string? OglSection15File { get; set; }
-
-    /// <summary>
-    /// For OGL bundles: list of Product Identity terms deliberately omitted from the content.
-    /// </summary>
-    [JsonPropertyName("productIdentityExclusions")]
-    public List<string> ProductIdentityExclusions { get; set; } = [];
-
     [JsonPropertyName("files")]
     public List<BuiltInContentFile> Files { get; set; } = [];
 }

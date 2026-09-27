@@ -8,7 +8,7 @@ namespace Aircane.Domain.License;
 /// <param name="Url">Canonical URL of the license text.</param>
 /// <param name="RequiresAttributionDisplay">
 /// True when the license obliges us to visibly display attribution to end users
-/// (CC BY, OGL Section 15, ORC attribution notice).
+/// (CC BY, ORC attribution notice).
 /// </param>
 public sealed record BuiltInLicense(
     string Key,
@@ -29,9 +29,6 @@ public static class BuiltInLicenses
     /// <summary>Open RPG Creative License (Pathfinder 2e Remaster).</summary>
     public const string OrcKey = "orc";
 
-    /// <summary>Open Game License v1.0a (Pathfinder 1e PRD).</summary>
-    public const string Ogl10aKey = "ogl-1.0a";
-
     public static readonly BuiltInLicense CcBy40 = new(
         Key: CcBy40Key,
         DisplayName: "Creative Commons Attribution 4.0 International",
@@ -44,18 +41,11 @@ public static class BuiltInLicenses
         Url: "https://paizo.com/orclicense",
         RequiresAttributionDisplay: true);
 
-    public static readonly BuiltInLicense Ogl10a = new(
-        Key: Ogl10aKey,
-        DisplayName: "Open Game License v1.0a",
-        Url: "https://opengamingfoundation.org/ogl.html",
-        RequiresAttributionDisplay: true);
-
     private static readonly IReadOnlyDictionary<string, BuiltInLicense> ByKey =
         new Dictionary<string, BuiltInLicense>(StringComparer.OrdinalIgnoreCase)
         {
             [CcBy40Key] = CcBy40,
-            [OrcKey] = Orc,
-            [Ogl10aKey] = Ogl10a
+            [OrcKey] = Orc
         };
 
     /// <summary>All known built-in licenses.</summary>
@@ -64,8 +54,4 @@ public static class BuiltInLicenses
     /// <summary>Resolves a license by its key, or null if the key is unknown.</summary>
     public static BuiltInLicense? TryResolve(string? key)
         => key is not null && ByKey.TryGetValue(key, out var license) ? license : null;
-
-    /// <summary>Returns true if the given key refers to an OGL license (which carries Section 15 obligations).</summary>
-    public static bool IsOgl(string? key)
-        => string.Equals(key, Ogl10aKey, StringComparison.OrdinalIgnoreCase);
 }

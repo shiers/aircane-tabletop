@@ -14,16 +14,13 @@ namespace Aircane.Infrastructure.Library;
 public sealed class LicenseService : ILicenseService
 {
     private readonly AircaneDbContext _db;
-    private readonly IBuiltInLicenseTextReader _licenseTextReader;
     private readonly ILogger<LicenseService> _logger;
 
     public LicenseService(
         AircaneDbContext db,
-        IBuiltInLicenseTextReader licenseTextReader,
         ILogger<LicenseService> logger)
     {
         _db = db;
-        _licenseTextReader = licenseTextReader;
         _logger = logger;
     }
 
@@ -40,46 +37,6 @@ public sealed class LicenseService : ILicenseService
         return documents.Select(MapToLicenseInfo).ToList();
     }
 
-    /// <inheritdoc />
-    public async Task<string?> GetOglTextAsync(
-        Guid documentId,
-        CancellationToken cancellationToken = default)
-    {
-        var doc = await GetOglDocumentAsync(documentId, cancellationToken);
-        if (doc is null)
-            return null;
-
-        return await _licenseTextReader.ReadOglTextAsync(doc.SourcePath, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<string?> GetSection15Async(
-        Guid documentId,
-        CancellationToken cancellationToken = default)
-    {
-        var doc = await GetOglDocumentAsync(documentId, cancellationToken);
-        if (doc is null)
-            return null;
-
-        return await _licenseTextReader.ReadSection15Async(doc.SourcePath, cancellationToken);
-    }
-
-    /// <summary>
-    /// Loads a document only if it exists, is built-in, and is under the OGL license.
-    /// Returns null otherwise (the controller maps null to 404).
-    /// </summary>
-    private async Task<SourceDocument?> GetOglDocumentAsync(Guid documentId, CancellationToken ct)
-    {
-        var doc = await _db.SourceDocuments
-            .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Id == documentId, ct);
-
-        if (doc is null || !doc.IsBuiltIn || !BuiltInLicenses.IsOgl(doc.LicenseKey))
-            return null;
-
-        return doc;
-    }
-
     private static LicenseInfoDto MapToLicenseInfo(SourceDocument doc)
     {
         var license = BuiltInLicenses.TryResolve(doc.LicenseKey);
@@ -91,7 +48,6 @@ public sealed class LicenseService : ILicenseService
             LicenseUrl: license?.Url,
             AttributionText: doc.AttributionText,
             AttributionUrl: doc.AttributionUrl,
-            IsBuiltIn: doc.IsBuiltIn,
-            IsOgl: BuiltInLicenses.IsOgl(doc.LicenseKey));
+            IsBuiltIn: doc.IsBuiltIn);
     }
 }

@@ -4,10 +4,83 @@
 > full project context. Claude uses it to have productive design/planning conversations, then
 > Shawn hands implementation work to AWS Kiro. Update this file after each significant session.
 >
-> **Last updated:** 2026-09-25
+> **Last updated:** 2026-09-25 (late — Priority-1 backlog session)
 > **MVP status:** ✅ Complete — all 9 phases shipped.
-> **Phase 10 (Built-in Rules Content Bundle):** 🚧 In progress — 10.1–10.5 done & verified at
-> runtime; 10.6 (license/attribution API) underway; 10.7 (attribution UI) and 10.8 (tests) pending.
+> **Phase 10 (Built-in Rules Content Bundle):** ✅ Complete — 10.1–10.8 done & verified
+> (embedded bundles, license metadata, `LicensesController`, attribution UI, tests).
+> **Priority-1 backlog:** ✅ All 6 items delivered this session (see "Latest Session" below).
+> Work is on branch `dev` (pushed); commits `e12e1ad → 11a37c4`. Backend suite green:
+> **1826 unit + 18 integration.**
+
+---
+
+## Latest Session — Priority-1 Backlog (all 6 delivered)
+
+Autonomous session working the P1 backlog. Each item was committed as a logical green group
+and pushed to `dev`. Full backend suite green after each (1826 unit + 18 integration).
+
+1. **Embedding Provider Portability — core** (`e12e1ad`). Each `DocumentChunk` now records
+   `EmbeddingProvider` / `EmbeddingModel` / `EmbeddingDimensions` at generation time (seeder,
+   import job, re-embed). Vector search **excludes chunks whose provenance ≠ the active
+   provider** and logs a "re-index required" warning (null provenance treated as compatible),
+   so a provider/model change no longer silently returns garbage. Re-embed endpoints:
+   `POST /api/library/documents/reembed-all` and `.../{id}/reembed`. The "ship text, embed on
+   first run" contract is documented in `docs/architecture/overview.md`.
+   *Deferred:* flexible column dimension (still hardwired `vector(768)`) and cloud embedding
+   providers — both gated behind the dimension work. Async re-embed depends on the new
+   Background Job Infrastructure backlog item (the app has **no** job runner yet — import,
+   folder scan, reindex, re-embed all run synchronously on the request thread).
+
+2. **Open-Content Compliance — About/Credits panel** (`2dc0c1c`). New `/about` view + sidebar
+   link (`features/about/AboutView.vue`) reusing the public `/api/library/licenses` list. Shows
+   the ORC Notice, CC BY / OGL / ORC attributions, an explicit **ORC-Content-vs-Reserved-Material
+   downstream declaration**, and a trademark note. *Still open (maintainer decision):* the
+   **application source-code license** — README still says "License TBD"; the About panel points
+   users to the README for it.
+
+3. **Advanced Combat Automation — backend** (through `8c5a729`). A pure `CombatEngine`
+   (`Aircane.Domain/Combat/`) + an `EncounterState` model persisted **in campaign state JSON**
+   (so combat joins undo/replay/broadcast) drives initiative order, turn advancement (round wrap
+   + condition tick), per-instance condition durations, HP damage/healing (temp-HP absorption,
+   downed-PC death saves, NPC death), and death-save resolution. New combat commands
+   (StartEncounter, RollInitiative, AdvanceTurn, TickConditions, ApplyDamage, ApplyHealing,
+   ApplyCondition, RemoveCondition, DeathSave) flow through the existing **AI-proposes → validate
+   → authority → approval** pipeline; turn changes broadcast over SignalR (`CombatTurnChanged`,
+   nullable-string IDs — PCs use Guid-string, NPCs use slugs). **Also fixed a latent bug:**
+   ApplyDamage/ApplyHealing/ApplyCondition previously no-op'd via a generic state merge.
+   *Deferred:* feed live combat state into the AI DM prompt (`PlayerActionService`); frontend
+   initiative/turn/HP tracker UI; concentration checks; out-of-turn action enforcement.
+
+4. **Pathfinder 2e Adapter — game-system definition** (through `926ff5f`). New
+   `Pathfinder2eRemasterSeed` definition (DefinitionId `…0003`) capturing four degrees of success
+   (margin vs DC), three-action economy + multiple-attack penalty, creature-level encounter
+   budget, PF2e conditions, and proficiency ranks — validates against `GameSystemDefinitionValidator`.
+   New `GameSystemDefinitionSeeder` (wired in `Program.cs`) **persists all built-in definitions**
+   (D&D 5e, Freeform, PF2e Remaster) on startup — this fixed a gap where built-in defs were
+   referenced by the migration service but never actually inserted. All three verified in the DB.
+   *Deferred:* PF2e-specific encounter validator + generation (still uses `Dnd5eEncounterValidator`);
+   an elite/weak mechanical applicator; and the ORC **rules text** (separate, user-blocked).
+
+5. **OCR Pipeline** (`e7b720c`). New `IOcrEngine` abstraction; `TesseractOcrEngine` (TesseractOCR
+   5.5.2 → Tesseract 5) that lazily initializes and **gates cleanly to unavailable when the native
+   lib or `tessdata` is missing — never throws**; `NullOcrEngine` when disabled. `PdfPigTextExtractor`
+   now takes `IOcrEngine`: on low/no-text pages it pulls the page's embedded raster images
+   (`TryGetPng` / `RawBytes`), OCRs them, keeps whichever text is longer, and recomputes the
+   OCR-required flag. **Off by default** (`Ocr:Enabled=false`; also `TessdataPath`, `Language`,
+   `MinConfidence=0.3`). Docs: `docs/setup/ocr.md` + getting-started link. 7 new tests.
+   *Deferred:* full-page rasterization (PDFium/Ghostscript) for vector-glyph PDFs; bundled/auto-download
+   `tessdata`; a re-OCR-on-enable action (ties into Background Jobs).
+
+6. **Maintainer-decision docs** (`11a37c4`). Added an "Intentionally Not Auto-Built" decision table
+   to `docs/backlog.md` recording *why* four items were skipped and *what unblocks each*: PF2e real
+   ORC text (licensing — Foundry/Obsidian sources are **not** ORC), Internet Tunnel (security-sensitive),
+   Desktop Wrapper (new toolchain), and the app source-code license (owner decision).
+
+**Suggested next focus (not started):** Priority-2 items are larger/architectural (Map/Battlemap,
+AWS deploy, File Upload source mode, User Accounts, SQLite). None are blocked, but scope should be
+agreed before starting. Lower-effort high-value follow-ups from P1: the **frontend combat tracker UI**
++ feeding combat state into the AI prompt (completes the combat feature end-to-end), and the
+**Background Job Infrastructure** foundation (unblocks async import/reindex/re-embed).
 
 ---
 
@@ -132,14 +205,18 @@ of the box, with per-document license metadata and attribution obligations fulfi
 - `SourceDocument` gained `IsBuiltIn`, `IsDisabled`, `LicenseKey`, `LicenseDisplayName`,
   `AttributionText`, `AttributionUrl`. Delete guard (built-in cannot be deleted), disable/enable,
   and RAG exclusion of disabled docs are wired. `BuiltInLicenses` typed constants for
-  `cc-by-4.0`, `orc`, `ogl-1.0a`.
-- `BuiltInContentSeeder` (idempotent, runs from `Program.cs` after migrations) seeds three
-  bundles from real licensed content:
+  `cc-by-4.0`, `orc`.
+- `BuiltInContentSeeder` (idempotent, runs from `Program.cs` after migrations) seeds the
+  built-in bundles from real licensed content:
   - **D&D 5e SRD 5.1** (CC BY 4.0) — 313 chunks
-  - **Pathfinder 1e PRD** (OGL v1.0a, with `OGL-1.0a.txt` + `SECTION-15.txt`) — 607 chunks
   - **Pathfinder 2e Remaster** (ORC) — 2 chunks (⚠️ intentionally incomplete; see below)
 - Seeder hardened: logs a clear error per missing manifest file; warns (does not throw) when a
   bundle yields fewer than 10 chunks so the app starts cleanly with a partial bundle.
+- **PF1e removed (commercialization):** the Pathfinder 1e PRD bundle (OGL v1.0a) that previously
+  shipped was **removed** to avoid the OGL Section 15 / content-identification burden — along with
+  the `ogl-1.0a` license key, the OGL/Section-15 endpoints + reader, and the `IsOgl` DTO field.
+  Users can still import their own PF1e PDFs via the folder-watching Library. See `docs/backlog.md`
+  decision table.
 
 **Migration-chain repair (done):** The EF migration history was broken — several migrations
 lacked `.Designer.cs` files (no `[Migration]` attribute) so `MigrateAsync` silently ignored
@@ -149,11 +226,12 @@ with a correct snapshot. Also fixed a fresh-DB pgvector bug: Npgsql cached its t
 before `CREATE EXTENSION vector` ran, so embedding writes failed — `Program.cs` now calls
 `ReloadTypesAsync()` after migrations, before seeding.
 
-**Remaining:**
-- **10.6 (in progress)** — `LicensesController`: `GET /api/library/licenses` (public, no auth),
-  `GET /api/library/licenses/{documentId}/ogl-text`, `.../section-15`; extend rules-question
-  citations with `LicenseKey` / `LicenseDisplayName` / short attribution.
-- **10.7** — attribution UI (license modal, badges, Disable/Enable toggle, "Restore defaults").
+**Done (10.6–10.8):**
+- **10.6** — `LicensesController` (anonymous): `GET /api/library/licenses`; rules-question citations
+  carry `LicenseKey` / `LicenseDisplayName` / short attribution. (The OGL-text / Section-15
+  endpoints were removed with the PF1e bundle.)
+- **10.7** — attribution UI: license modal + badges in the library, plus the new
+  **About & Credits** page (`/about`) added in the latest session.
 - **10.8** — integration/regression tests for seeding, delete guard, disable/enable, RAG
   scoping, and the license endpoints.
 
@@ -165,32 +243,33 @@ before `CREATE EXTENSION vector` ran, so embedding writes failed — `Program.cs
   Policy, **not** the ORC License, so extracting its packs and shipping them as ORC content in
   Aircane would misrepresent the license and likely breach Community Use. Real PF2e Remaster text
   must be sourced from an actual ORC-licensed release (the same content-sourcing step used for the
-  D&D SRD and PF1e PRD), then dropped into the existing `pf2e_remaster` bundle. No code is needed —
+  D&D SRD), then dropped into the existing `pf2e_remaster` bundle. No code is needed —
   the bundle structure, ORC license file, manifest, and seeder already work and the seeder handles
   the partial bundle gracefully.
 - **Dev RAG now uses real embeddings (local dev only).** `appsettings.Development.json` was
   switched from the Fake embedding provider to **Ollama `nomic-embed-text`** (768-dim), and the
-  dev DB was re-seeded so all ~922 chunks carry real vectors. Verified end-to-end: the "grapple"
-  query returns 5 D&D SRD citations (all `cc-by-4.0`) and "combat maneuvers" returns 4 PF1e
-  citations (all `ogl-1.0a`), correctly scoped by game system, with the 10.6 license metadata
-  populated. Note: the shipped defaults are unchanged — non-Development `appsettings.json` still
+  dev DB was re-seeded so all chunks carry real vectors. Verified end-to-end: the "grapple"
+  query returns D&D SRD citations (all `cc-by-4.0`), correctly scoped by game system, with the 10.6
+  license metadata populated. Note: the shipped defaults are unchanged — non-Development `appsettings.json` still
   defaults `Embeddings:Provider=Fake`; Production already defaults to Ollama.
 
-### ⚠️ Embedding provider coupling (important design constraint)
+### ⚠️ Embedding provider coupling (mostly addressed — see below)
 
 Embeddings are **locked to the provider + model that generated them** — queries must be embedded
-with the same provider/model or retrieval silently returns wrong/empty results. Today only Ollama
+with the same provider/model or retrieval returns wrong/empty results. Today only Ollama
 (`nomic-embed-text`, 768-dim) and a Fake test provider exist; there is **no OpenAI embedding
-provider**, and an AI *chat* key does not enable embeddings. The `DocumentChunk.Embedding` column
-is fixed at `vector(768)`. Consequences: seeding with Ollama makes it a de facto dependency for
-retrieval; removing/changing the embedding provider or model requires a **manual re-index/re-seed**;
-there is no mismatch detection or one-click re-embed yet.
+provider**, and an AI *chat* key does not enable embeddings.
 
-**Durable fix (backlog, P1):** ship text and embed on first run (never ship pre-computed vectors),
-record provider/model/dimension alongside each embedding, add a query-time mismatch guard, provide
-a first-class re-embed path, and make the column dimension flexible so cloud embedding providers
-(e.g. OpenAI at 1536-dim) can be added. User-facing warnings are documented in
-`docs/setup/ai-configuration.md` and `docs/known-limitations.md`.
+**Addressed this session (see Latest Session #1):** each chunk now records provider/model/dimension,
+vector search **guards against provenance mismatch** (skips mismatched chunks + logs a re-index
+warning instead of returning garbage), and there are first-class re-embed endpoints. The
+"ship text, embed on first run" contract is documented in `docs/architecture/overview.md`.
+
+**Still open (backlog):** the `DocumentChunk.Embedding` column is still fixed at `vector(768)`, so
+adding a different-dimension provider (e.g. OpenAI `text-embedding-3-small` at 1536) needs a
+configurable/migrated column dimension + a full re-embed. Making re-embed/import/reindex asynchronous
+depends on the new **Background Job Infrastructure** item (no job runner exists yet). User-facing
+warnings are in `docs/setup/ai-configuration.md` and `docs/known-limitations.md`.
 
 ---
 
@@ -210,26 +289,41 @@ a first-class re-embed path, and make the column dimension flexible so cloud emb
 
 ## Known Limitations (Deliberate MVP Scope)
 
-- **No OCR** — scanned PDFs flagged as OCR-required but not processed.
+- **OCR is off by default and image-only** — a Tesseract pipeline now exists (`Ocr:Enabled`), but
+  it needs native libs + `tessdata`, gates cleanly to unavailable if they're missing, and only OCRs
+  images already embedded in the PDF (no full-page rasterization yet). Scanned PDFs stay `OcrRequired`
+  when OCR is off/unavailable.
+- **Combat automation is backend-only** — engine (initiative, turns, conditions, HP, death saves) is
+  delivered behind the command pipeline, but there's **no combat tracker UI** and the AI prompt is
+  **not yet fed live combat state**.
 - **LAN only** — no HTTPS on LAN, no internet tunnel yet, no persistent user accounts.
 - **In-memory token revocation** — lost on server restart.
-- **Only OpenAI + Ollama fully wired** — Azure/Bedrock/Grok fall back to Fake.
+- **Only OpenAI + Ollama fully wired** (chat); **only Ollama + Fake** for embeddings. Azure/Bedrock/Grok
+  fall back to Fake. No OpenAI embedding provider yet (blocked on flexible embedding dimension).
 - **Default provider is Fake** — deterministic placeholder; no real AI without config.
-- **No combat automation** — AI can request rolls and propose damage, but no initiative tracker, turn enforcement, or condition-duration tracking.
-- **Encounter validation is placeholder logic.**
+- **Encounter validation is D&D-5e placeholder logic** — PF2e has a game-system *definition* but no
+  PF2e-specific encounter validator/generation yet.
+- **PF2e Remaster rules text is a 2-chunk stub** — the mechanics definition ships, but real
+  ORC-licensed rules text is still needed (see decision table in `docs/backlog.md`).
 - **PDF character import is best-effort** — form-fillable + simple text-layer only.
+- **No background job runner** — import/folder-scan/reindex/re-embed run synchronously on the request thread.
 - **No cloud/upload mode, no desktop wrapper, no mobile UI, PostgreSQL required (no SQLite).**
 
 ---
 
 ## Post-MVP Backlog
 
-**P1 — Next meaningful features:**
-- Pathfinder 2e adapter
-- OCR pipeline (Tesseract, already stubbed)
-- Internet tunnel / remote play (Cloudflare Tunnel)
-- Desktop wrapper (Tauri or Electron)
-- Advanced combat automation (initiative tracker, condition-duration, turn enforcement)
+**P1 — status after the latest session** (full detail + "not auto-built" decision table in `docs/backlog.md`):
+- ✅ Pathfinder 2e adapter — *definition delivered; PF2e-specific validation/generation + ORC text still open*
+- ✅ OCR pipeline (Tesseract) — *delivered, off by default; full-page rasterization still open*
+- ✅ Advanced combat automation — *backend delivered; tracker UI + AI-prompt integration still open*
+- ✅ Embedding portability (core) + About/Credits compliance panel
+- ⛔ Internet tunnel / remote play — *not auto-built: security-sensitive (maintainer decision)*
+- ⛔ Desktop wrapper (Tauri/Electron) — *not auto-built: new toolchain (maintainer decision)*
+- ⛔ App source-code license — *not auto-built: owner decision (README "License TBD")*
+- 🔜 **Background Job Infrastructure** (new) — single job runner (Hangfire/Quartz or in-process
+  hosted-service + channel queue) for import/folder-scan/reindex/re-embed; unblocks async work above.
+- 🔜 PF2e-specific encounter validator + generation; frontend combat tracker + AI combat-state prompt.
 
 **P2:**
 - Map / battlemap support
@@ -244,6 +338,7 @@ a first-class re-embed path, and make the column dimension flexible so cloud emb
 - Automatic folder watching (file-system watcher)
 - Advanced PDF layout parsing
 - D&D Beyond / VTT import
+- Pathbuilder 2e character import (JSON export → existing JSON character import path)
 - Multi-turn AI memory
 - Rate limiting
 - Persistent token revocation

@@ -77,16 +77,16 @@ public class BuiltInContentTests : IDisposable
     // ── Seeder: clean database ───────────────────────────────────────────────
 
     [Fact]
-    public async Task BuiltInContentSeeder_OnCleanDatabase_SeedsAllThreeDocuments()
+    public async Task BuiltInContentSeeder_OnCleanDatabase_SeedsBothDocuments()
     {
         await CreateSeeder().SeedAsync();
 
         var builtIns = await _db.SourceDocuments.Where(d => d.IsBuiltIn).ToListAsync();
-        Assert.Equal(3, builtIns.Count);
+        Assert.Equal(2, builtIns.Count);
 
         Assert.Contains(builtIns, d => d.GameSystem == "D&D 5e");
-        Assert.Contains(builtIns, d => d.GameSystem == "Pathfinder 1e");
         Assert.Contains(builtIns, d => d.GameSystem == "Pathfinder 2e");
+        Assert.DoesNotContain(builtIns, d => d.GameSystem == "Pathfinder 1e");
     }
 
     [Fact]
@@ -193,8 +193,8 @@ public class BuiltInContentTests : IDisposable
             .ToDictionaryAsync(d => d.GameSystem, d => d.LicenseKey);
 
         Assert.Equal(BuiltInLicenses.CcBy40Key, byGameSystem["D&D 5e"]);
-        Assert.Equal(BuiltInLicenses.Ogl10aKey, byGameSystem["Pathfinder 1e"]);
         Assert.Equal(BuiltInLicenses.OrcKey, byGameSystem["Pathfinder 2e"]);
+        Assert.False(byGameSystem.ContainsKey("Pathfinder 1e"));
     }
 
     // ── Delete guard ──────────────────────────────────────────────────────────
@@ -285,18 +285,6 @@ public class BuiltInContentTests : IDisposable
         Assert.NotEmpty(chunks);
         Assert.All(chunks, c => Assert.Equal(
             "D&D 5e Systems Reference Document (2014)", c.DocTitle));
-    }
-
-    [Fact]
-    public async Task Retrieval_ScopedToPf1e_YieldsOnlyPf1eChunks()
-    {
-        await CreateSeeder().SeedAsync();
-
-        var chunks = await RetrievableChunksAsync(gameSystem: "Pathfinder 1e");
-
-        Assert.NotEmpty(chunks);
-        Assert.All(chunks, c => Assert.Equal(
-            "Pathfinder 1e Reference Document (Core Rulebook)", c.DocTitle));
     }
 
     [Fact]

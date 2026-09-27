@@ -60,6 +60,12 @@ public static class DependencyInjection
         // ParticipantTokenService is a singleton - the signing key is loaded once from config.
         services.AddSingleton<IParticipantTokenService, ParticipantTokenService>();
         services.AddScoped<CharacterSchemaValidator>();
+
+        // OCR pipeline (optional). The Tesseract engine depends on native binaries and
+        // language data that may not be present; it gates cleanly to unavailable when so.
+        // When disabled by config, a no-op engine keeps scanned PDFs marked OCR-required.
+        RegisterOcrEngine(services, configuration);
+
         services.AddScoped<IPdfTextExtractor, PdfPigTextExtractor>();
         services.AddScoped<IPdfCharacterExtractor, PdfCharacterExtractor>();
         services.AddSingleton<ITextChunker, SlidingWindowTextChunker>();
@@ -123,6 +129,26 @@ public static class DependencyInjection
         services.AddScoped<IGameSystemMigrationService, GameSystemMigrationService>();
 
         return services;
+    }
+
+    private static void RegisterOcrEngine(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var options = new Aircane.Application.DocumentProcessing.OcrOptions();
+        configuration.GetSection(Aircane.Application.DocumentProcessing.OcrOptions.SectionName).Bind(options);
+
+        if (options.Enabled)
+        {
+            // Singleton: the Tesseract Engine is expensive to construct and is initialized
+            // lazily on first use. It is internally thread-safe for our single-image calls.
+            services.AddSingleton(options);
+            services.AddSingleton<Aircane.Application.Abstractions.IOcrEngine, TesseractOcrEngine>();
+        }
+        else
+        {
+            services.AddSingleton<Aircane.Application.Abstractions.IOcrEngine, NullOcrEngine>();
+        }
     }
 
     private static void RegisterAiProvider(

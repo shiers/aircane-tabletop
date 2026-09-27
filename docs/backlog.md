@@ -21,7 +21,12 @@ The `pf2e_remaster` built-in bundle currently ships a small placeholder (2 chunk
 Close the compliance gaps captured in [`docs/licensing/open-content-compliance.md`](licensing/open-content-compliance.md): decide and state the application code license (README currently says "License TBD", keep it distinct from content licenses); add an in-app **About / Credits** panel that prominently displays the ORC Notice and CC BY / OGL attributions; add an explicit ORC-Content-vs-Reserved-Material downstream declaration.
 
 ### OCR Pipeline
-Integrate Tesseract (or equivalent) to process scanned/image-only PDFs that the MVP marks as "OCR required." Enables hosts with older or scan-only rulebooks to index their full library.
+**Delivered:** A Tesseract-backed OCR pipeline (`IOcrEngine` / `TesseractOcrEngine`, using the `TesseractOCR` wrapper for Tesseract 5) runs behind the existing OCR-required detection. When a page has little/no extractable text, the extractor pulls the page's embedded raster images and feeds them to OCR; recognized text above a confidence threshold is chunked and embedded like any other content. OCR is **optional and off by default** (`Ocr:Enabled`), and the engine **gates cleanly** — a missing native library or `tessdata` reports the engine unavailable rather than crashing, and the document stays `OcrRequired`. Setup and licensing are documented in [`docs/setup/ocr.md`](setup/ocr.md).
+
+**Still outstanding:**
+- **Full-page rasterization.** OCR currently runs on images already embedded in the PDF (the common case for scanned rulebooks: one full-page image per page). PDFs that draw text as vector glyphs or that split pages into many small images are not rasterized; add a PDF-to-image renderer (PDFium/Docnet, Ghostscript) for full fidelity.
+- **Bundled language data / auto-download.** Users must supply `tessdata` themselves; consider an opt-in downloader or a bundled English pack.
+- **Re-run on enable.** Documents imported while OCR was off keep `OcrRequired`; a re-index/re-OCR action would let users process them without re-importing (ties into the Background Job Infrastructure item).
 
 ### Internet Tunnel / Remote Play
 Allow players to connect over the internet without router port forwarding. Options include Cloudflare Tunnel, ngrok, or a custom relay service. Requires HTTPS, rate limiting, CSRF protection, and persistent token revocation.

@@ -171,7 +171,7 @@ public class PdfPigTextExtractorTests
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static PdfPigTextExtractor CreateExtractor(int threshold = PdfPigTextExtractor.DefaultOcrThresholdCharsPerPage)
-        => new(NullLogger<PdfPigTextExtractor>.Instance, threshold);
+        => new(NullLogger<PdfPigTextExtractor>.Instance, new NullOcrEngine(), threshold);
 
     /// <summary>
     /// Creates a minimal but structurally valid PDF stream with one empty page.

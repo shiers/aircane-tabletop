@@ -74,6 +74,7 @@ Navigate to **http://localhost:5173** in your browser. You should see the Aircan
 - [Configure an AI provider](./ai-configuration.md) to enable rules lookup and AI DM features
 - [Host a LAN session](./lan-hosting.md) so other players can join from their devices
 - [Docker development environment](./docker.md) for running everything in containers
+- [Enable OCR](./ocr.md) to make scanned (image-only) PDFs searchable
 
 ## Resetting Local Data
 

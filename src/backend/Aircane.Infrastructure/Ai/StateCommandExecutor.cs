@@ -151,24 +151,29 @@ public sealed class StateCommandExecutor : IStateCommandExecutor
             },
             AiActionType.ApplyDamage => new Dictionary<string, object?>
             {
+                ["combatantId"] = command.CharacterId?.ToString(),
                 ["characterId"] = command.CharacterId?.ToString(),
                 ["amount"] = command.Amount,
                 ["reason"] = command.Reason,
             },
             AiActionType.ApplyHealing => new Dictionary<string, object?>
             {
+                ["combatantId"] = command.CharacterId?.ToString(),
                 ["characterId"] = command.CharacterId?.ToString(),
                 ["amount"] = command.Amount,
                 ["reason"] = command.Reason,
             },
             AiActionType.ApplyCondition => new Dictionary<string, object?>
             {
+                ["combatantId"] = command.CharacterId?.ToString(),
                 ["characterId"] = command.CharacterId?.ToString(),
                 ["conditionName"] = command.ConditionName,
+                ["remainingRounds"] = command.RemainingRounds,
                 ["reason"] = command.Reason,
             },
             AiActionType.RemoveCondition => new Dictionary<string, object?>
             {
+                ["combatantId"] = command.CharacterId?.ToString(),
                 ["characterId"] = command.CharacterId?.ToString(),
                 ["conditionName"] = command.ConditionName,
                 ["reason"] = command.Reason,
@@ -181,6 +186,17 @@ public sealed class StateCommandExecutor : IStateCommandExecutor
             {
                 ["sceneId"] = command.TargetSceneId?.ToString(),
             },
+            AiActionType.DeathSave => new Dictionary<string, object?>
+            {
+                ["combatantId"] = command.CharacterId?.ToString(),
+                ["success"] = command.Success,
+                ["recoversHp"] = command.RecoversHp,
+                ["reason"] = command.Reason,
+            },
+            // StartEncounter / RollInitiative carry a structured combat payload (combatants array
+            // or initiative map). AdvanceTurn / TickConditions need no payload beyond the type.
+            AiActionType.StartEncounter or AiActionType.RollInitiative =>
+                MergeCombatPayload(command),
             _ => new Dictionary<string, object?>
             {
                 ["actionType"] = command.Type.ToString(),
@@ -190,5 +206,39 @@ public sealed class StateCommandExecutor : IStateCommandExecutor
         };
 
         return JsonSerializer.Serialize(payload);
+    }
+
+    /// <summary>
+    /// Builds the payload for StartEncounter / RollInitiative by lifting the structured
+    /// <see cref="AiProposedAction.CombatPayloadJson"/> (a JSON object with a <c>combatants</c>
+    /// array and/or <c>initiative</c> map) into the command payload dictionary so the encounter
+    /// handler can read it directly. Falls back to an empty payload when none is provided.
+    /// </summary>
+    private static Dictionary<string, object?> MergeCombatPayload(AiProposedAction command)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["reason"] = command.Reason,
+        };
+
+        if (string.IsNullOrWhiteSpace(command.CombatPayloadJson))
+            return payload;
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(command.CombatPayloadJson);
+            if (parsed is not null)
+            {
+                foreach (var kvp in parsed)
+                    payload[kvp.Key] = kvp.Value;
+            }
+        }
+        catch (JsonException)
+        {
+            // Malformed combat payload: fall through with just the reason; the handler will no-op
+            // (e.g. StartEncounter with no combatants creates an empty encounter).
+        }
+
+        return payload;
     }
 }

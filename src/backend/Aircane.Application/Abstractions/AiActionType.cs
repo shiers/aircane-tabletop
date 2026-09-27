@@ -37,8 +37,17 @@ public enum AiActionType
     /// <summary>Start a combat encounter.</summary>
     StartEncounter,
 
+    /// <summary>Roll initiative for the current encounter and establish turn order.</summary>
+    RollInitiative,
+
     /// <summary>Advance the combat turn to the next initiative slot.</summary>
     AdvanceTurn,
+
+    /// <summary>Tick active condition durations by one round (usually driven by turn/round advancement).</summary>
+    TickConditions,
+
+    /// <summary>Record a death-saving throw for a downed player character.</summary>
+    DeathSave,
 
     /// <summary>Award treasure or items to one or more characters.</summary>
     AwardTreasure,

@@ -124,4 +124,25 @@ public sealed record AiProposedAction
     /// Flag value for AddQuestFlag / UpdateWorldFlag actions. Null for other action types.
     /// </summary>
     public string? FlagValue { get; init; }
+
+    /// <summary>
+    /// Remaining duration in rounds for ApplyCondition. Null means indefinite (until removed).
+    /// </summary>
+    public int? RemainingRounds { get; init; }
+
+    /// <summary>
+    /// Result of a DeathSave action: true for a success, false for a failure.
+    /// </summary>
+    public bool? Success { get; init; }
+
+    /// <summary>
+    /// For DeathSave: true when the character regains HP (e.g. a natural 20), clearing death saves.
+    /// </summary>
+    public bool? RecoversHp { get; init; }
+
+    /// <summary>
+    /// Structured combat payload as JSON for StartEncounter (a <c>combatants</c> array) and
+    /// RollInitiative (an <c>initiative</c> map of combatantId -&gt; value). Null for other actions.
+    /// </summary>
+    public string? CombatPayloadJson { get; init; }
 }

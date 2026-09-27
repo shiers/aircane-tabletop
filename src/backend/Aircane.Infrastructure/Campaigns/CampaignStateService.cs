@@ -354,6 +354,15 @@ public sealed class CampaignStateService : ICampaignStateService
         string commandType,
         Dictionary<string, JsonElement> payload)
     {
+        // Combat commands (encounter lifecycle, damage/healing, conditions, death saves) are
+        // delegated to the encounter handler, which drives the pure CombatEngine and persists
+        // the encounter under the "encounter" key.
+        if (EncounterCommandHandler.Handles(commandType))
+        {
+            EncounterCommandHandler.Apply(state, commandType, payload);
+            return;
+        }
+
         switch (commandType)
         {
             case "MoveScene":
@@ -447,7 +456,9 @@ public sealed class CampaignStateService : ICampaignStateService
             worldFlags = new Dictionary<string, object>(),
             revealedContentIds = new List<string>(),
             npcStates = new Dictionary<string, object>(),
-            activeEncounterId = (string?)null
+            activeEncounterId = (string?)null,
+            // Live combat encounter (EncounterState); null until StartEncounter is applied.
+            encounter = (object?)null
         };
 
         return JsonSerializer.Serialize(defaultState);

@@ -17,11 +17,16 @@ public sealed class CampaignStateService : ICampaignStateService
 {
     private readonly AircaneDbContext _db;
     private readonly ILogger<CampaignStateService> _logger;
+    private readonly ISessionHubNotifier? _hubNotifier;
 
-    public CampaignStateService(AircaneDbContext db, ILogger<CampaignStateService> logger)
+    public CampaignStateService(
+        AircaneDbContext db,
+        ILogger<CampaignStateService> logger,
+        ISessionHubNotifier? hubNotifier = null)
     {
         _db = db;
         _logger = logger;
+        _hubNotifier = hubNotifier;
     }
 
     /// <inheritdoc />
@@ -138,7 +143,56 @@ public sealed class CampaignStateService : ICampaignStateService
             "Applied command '{CommandType}' to campaign {CampaignId}",
             request.CommandType, request.CampaignId);
 
+        // Broadcast turn changes so player screens can follow the initiative order live.
+        await BroadcastCombatTurnIfChangedAsync(request, currentState, cancellationToken);
+
         return ToDto(snapshot);
+    }
+
+    /// <summary>
+    /// When a turn-affecting combat command was applied and a session is active, broadcasts the
+    /// current active combatant / round / turn to session participants via SignalR. Best-effort:
+    /// a notifier failure must not fail the command.
+    /// </summary>
+    private async Task BroadcastCombatTurnIfChangedAsync(
+        ApplyCommandRequest request,
+        Dictionary<string, JsonElement> newState,
+        CancellationToken cancellationToken)
+    {
+        if (_hubNotifier is null || request.SessionId is null)
+            return;
+
+        // Only turn-order commands change whose turn it is.
+        if (request.CommandType is not ("RollInitiative" or "AdvanceTurn" or "StartEncounter"))
+            return;
+
+        if (!newState.TryGetValue("encounter", out var encEl) ||
+            encEl.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return;
+
+        try
+        {
+            var encounter = encEl.Deserialize<Aircane.Domain.Combat.EncounterState>(
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            if (encounter is null || !encounter.IsActive)
+                return;
+
+            var active = encounter.ActiveCombatant;
+            var notification = new Application.DTOs.Sessions.CombatTurnChangedNotification(
+                SessionId: request.SessionId.Value,
+                ActiveCreatureId: active?.Id,
+                ActiveCreatureName: active?.Name,
+                Round: encounter.Round,
+                TurnIndex: encounter.TurnIndex);
+
+            await _hubNotifier.NotifyCombatTurnChangedAsync(
+                request.SessionId.Value, notification, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to broadcast combat turn change for campaign {CampaignId}", request.CampaignId);
+        }
     }
 
     /// <inheritdoc />

@@ -235,7 +235,7 @@ public class SessionHubNotifierTests
     {
         var sessionId = NewSession();
         var notification = new CombatTurnChangedNotification(
-            sessionId, Guid.NewGuid(), "Goblin", 1, 0);
+            sessionId, "goblin", "Goblin", 1, 0);
 
         await _notifier.NotifyCombatTurnChangedAsync(sessionId, notification);
 

@@ -191,8 +191,10 @@ public sealed record HandoutRevealedNotification(
 /// </summary>
 public sealed record CombatTurnChangedNotification(
     Guid SessionId,
-    Guid ActiveCreatureId,
-    string ActiveCreatureName,
+    // Combatant IDs are strings: player characters use their Character Guid as a string,
+    // NPCs/monsters use a stable slug. Null when no combatant is active (e.g. before initiative).
+    string? ActiveCreatureId,
+    string? ActiveCreatureName,
     int Round,
     int TurnIndex);
 

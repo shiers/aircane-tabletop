@@ -236,6 +236,67 @@ public class CombatCommandIntegrationTests : IDisposable
         Assert.Empty(removed!.Combatants[0].Conditions);
     }
 
+    // ── SignalR turn broadcast ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RollInitiative_BroadcastsCombatTurnChanged()
+    {
+        var notifier = new CapturingHubNotifier();
+        var stateService = new CampaignStateService(_db, NullLogger<CampaignStateService>.Instance, notifier);
+        var executor = new StateCommandExecutor(
+            [],
+            new AiRoleConfigurationService(),
+            new AiAuthorityConfigurationService(),
+            stateService,
+            new AiProposalService(_db, stateService, NullLogger<AiProposalService>.Instance),
+            NullLogger<StateCommandExecutor>.Instance);
+
+        var (campaign, session, ctx) = await SeedAsync();
+
+        await executor.ExecuteAsync(new AiProposedAction
+        {
+            Type = AiActionType.StartEncounter,
+            CombatPayloadJson = StartEncounterPayload(("hero", "Hero", true, 20), ("goblin", "Goblin", false, 7)),
+        }, ctx);
+        await executor.ExecuteAsync(new AiProposedAction
+        {
+            Type = AiActionType.RollInitiative,
+            CombatPayloadJson = JsonSerializer.Serialize(new { initiative = new { hero = 18, goblin = 12 } }),
+        }, ctx);
+
+        var turnChange = notifier.CombatTurnChanges.LastOrDefault();
+        Assert.NotNull(turnChange);
+        Assert.Equal("hero", turnChange!.ActiveCreatureId);
+        Assert.Equal("Hero", turnChange.ActiveCreatureName);
+        Assert.Equal(1, turnChange.Round);
+    }
+
+    /// <summary>Captures combat-turn broadcasts; all other notifier methods are no-ops.</summary>
+    private sealed class CapturingHubNotifier : ISessionHubNotifier
+    {
+        public List<Aircane.Application.DTOs.Sessions.CombatTurnChangedNotification> CombatTurnChanges { get; } = [];
+
+        public Task NotifyCombatTurnChangedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.CombatTurnChangedNotification notification, CancellationToken ct = default)
+        {
+            CombatTurnChanges.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task NotifyParticipantJoinedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.ParticipantDto participant, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyParticipantLeftAsync(Guid sessionId, Guid participantId, string displayName, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyChatMessageReceivedAsync(Guid sessionId, Guid participantId, string displayName, string text, DateTimeOffset sentAt, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyRollRecordedAsync(Guid sessionId, Aircane.Application.DTOs.Dice.RollDto roll, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyRollRequestedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.RollRequestedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAINarrationStartedAsync(Guid sessionId, Guid narrationId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAINarrationChunkAsync(Guid sessionId, Guid narrationId, string chunk, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAINarrationCompletedAsync(Guid sessionId, Guid narrationId, string fullText, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAIProposalCreatedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AIProposalCreatedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyStateUpdatedAsync(Guid sessionId, string stateJson, DateTimeOffset updatedAt, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifySceneChangedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.SceneChangedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyHandoutRevealedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.HandoutRevealedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyImportStatusUpdatedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.ImportStatusUpdatedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
     // ── Death saves ────────────────────────────────────────────────────────────
 
     [Fact]

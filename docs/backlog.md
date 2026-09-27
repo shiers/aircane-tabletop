@@ -4,6 +4,23 @@ This document lists planned features and improvements beyond the Aircane Tableto
 
 ---
 
+## Intentionally Not Auto-Built (Maintainer Decision Required)
+
+The following backlog items were **deliberately left for a human maintainer** rather than
+implemented autonomously, because each is blocked on a decision, carries security risk, or
+needs a toolchain/content that cannot be safely chosen without owner input. They remain in
+the priority lists below with full detail; this section records *why* they were skipped and
+*what unblocks them*.
+
+| Item | Why not auto-built | What unblocks it |
+|------|--------------------|------------------|
+| **PF2e Remaster real ORC text** | Content/licensing decision. The obvious data sources (Foundry PF2e, Obsidian TTRPG Community) are **not** ORC-licensed — they fall under a private Paizo↔Foundry agreement and Paizo's Community Use Policy, so bundling them as ORC content would be a licensing violation. | Maintainer sources text from a genuine ORC release and drops it into the existing `pf2e_remaster` bundle (no code changes needed). |
+| **Internet Tunnel / Remote Play** | Security-sensitive. Exposing a local-first server to the public internet needs deliberate choices about the tunneling provider, HTTPS, auth hardening, rate limiting, CSRF, and durable token revocation — not something to enable silently. | Maintainer chooses the tunnel approach and signs off on the hardening checklist. |
+| **Desktop Wrapper (Tauri/Electron)** | Toolchain decision. Requires adding a new build toolchain and packaging/signing pipeline (Rust+Tauri or Node+Electron), plus per-OS installer decisions. | Maintainer picks the wrapper stack and accepts the added build/release tooling. |
+| **Application source-code license** | Owner decision. The README says "License TBD"; the code license is distinct from the content licenses (ORC/OGL/CC BY) and is the repository owner's call to make. | Maintainer chooses a license and updates the README + `LICENSE` file. The in-app About panel already points at the README for this. |
+
+---
+
 ## Priority 1 - High Impact / Frequently Requested
 
 ### Pathfinder 2e Adapter
@@ -18,7 +35,11 @@ This document lists planned features and improvements beyond the Aircane Tableto
 The `pf2e_remaster` built-in bundle currently ships a small placeholder (2 chunks) so the app runs; the seeder handles the partial bundle gracefully. To complete it, source the real PF2e Remaster rules text **from a genuine ORC-licensed release** and drop the Markdown files into `src/backend/Aircane.Workers/Resources/builtin/pf2e_remaster/` (adding entries to its `manifest.json`). No code changes needed — the bundle structure, `LICENSE-ORC.txt`, manifest, and seeder already work. **Licensing caution:** do NOT extract content from the Foundry VTT PF2e system data or the Obsidian TTRPG Community repo — that material is distributed under a private Paizo↔Foundry partnership agreement and Paizo's Community Use Policy, not the ORC License, and cannot be bundled as ORC content here. Use only text that is actually released under ORC. Follow the full ORC requirements (Notice, upstream Paizo product attribution, downstream ORC-Content-vs-Reserved-Material declaration, Product Identity exclusions, and the OGL/ORC split) documented in [`docs/licensing/open-content-compliance.md`](licensing/open-content-compliance.md).
 
 ### Open-Content Compliance Follow-ups
-Close the compliance gaps captured in [`docs/licensing/open-content-compliance.md`](licensing/open-content-compliance.md): decide and state the application code license (README currently says "License TBD", keep it distinct from content licenses); add an in-app **About / Credits** panel that prominently displays the ORC Notice and CC BY / OGL attributions; add an explicit ORC-Content-vs-Reserved-Material downstream declaration.
+Close the compliance gaps captured in [`docs/licensing/open-content-compliance.md`](licensing/open-content-compliance.md).
+
+**Delivered:** An in-app **About / Credits** panel (`/about`) prominently displays the ORC Notice and the CC BY / OGL attributions (reusing the license list), plus an explicit ORC-Content-vs-Reserved-Material downstream declaration and a trademark note.
+
+**Still outstanding (maintainer decision):** Decide and state the **application code license** — the README currently says "License TBD". This is deliberately left to the repository owner and is kept distinct from the content licenses (ORC/OGL/CC BY). The About panel already points users at the README for the app license; once chosen, update the README and add a `LICENSE` file. See the decision table at the top of this file.
 
 ### OCR Pipeline
 **Delivered:** A Tesseract-backed OCR pipeline (`IOcrEngine` / `TesseractOcrEngine`, using the `TesseractOCR` wrapper for Tesseract 5) runs behind the existing OCR-required detection. When a page has little/no extractable text, the extractor pulls the page's embedded raster images and feeds them to OCR; recognized text above a confidence threshold is chunked and embedded like any other content. OCR is **optional and off by default** (`Ocr:Enabled`), and the engine **gates cleanly** — a missing native library or `tessdata` reports the engine unavailable rather than crashing, and the document stays `OcrRequired`. Setup and licensing are documented in [`docs/setup/ocr.md`](setup/ocr.md).
@@ -29,9 +50,13 @@ Close the compliance gaps captured in [`docs/licensing/open-content-compliance.m
 - **Re-run on enable.** Documents imported while OCR was off keep `OcrRequired`; a re-index/re-OCR action would let users process them without re-importing (ties into the Background Job Infrastructure item).
 
 ### Internet Tunnel / Remote Play
+> **Not auto-built — security-sensitive; maintainer decision.** See the decision table at the top of this file.
+
 Allow players to connect over the internet without router port forwarding. Options include Cloudflare Tunnel, ngrok, or a custom relay service. Requires HTTPS, rate limiting, CSRF protection, and persistent token revocation.
 
 ### Desktop Wrapper
+> **Not auto-built — needs a new build toolchain; maintainer decision.** See the decision table at the top of this file.
+
 Package the app as a Tauri (or Electron) desktop application that starts the ASP.NET Core server, opens the local UI, manages file paths, and displays the LAN URL and QR code - one-click launch for non-technical hosts.
 
 ### Advanced Combat Automation

@@ -50,11 +50,19 @@ public class FolderScanJobReviewTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private async Task<WatchedFolder> SeedFolderAsync(string path = @"C:\books")
+    // A platform-appropriate absolute folder path so FolderPathValidator.IsFileWithinFolder
+    // (which uses Path.GetFullPath) passes on both Windows and Linux CI.
+    private static readonly string FolderPath =
+        Path.Combine(Path.GetTempPath(), "aircane-scan-tests", Guid.NewGuid().ToString("N"));
+
+    /// <summary>Builds an absolute file path inside <see cref="FolderPath"/> for a bare filename.</summary>
+    private static string FileInFolder(string fileName) => Path.Combine(FolderPath, fileName);
+
+    private async Task<WatchedFolder> SeedFolderAsync(string? path = null)
     {
         var folder = new WatchedFolder(
             displayName: "Books",
-            absolutePath: path,
+            absolutePath: path ?? FolderPath,
             defaultSourceType: SourceType.Rules,
             defaultGameSystem: "D&D 5e",
             defaultRuleset: "2014");
@@ -67,7 +75,7 @@ public class FolderScanJobReviewTests : IDisposable
     {
         _source.Files = fileNames
             .Select(n => new DocumentSourceFile(
-                SourcePath: $"{folderPath}\\{n}",
+                SourcePath: Path.Combine(folderPath, n),
                 FileName: n,
                 LastModifiedUtc: DateTimeOffset.UtcNow,
                 SizeBytes: 1000))
@@ -144,9 +152,9 @@ public class FolderScanJobReviewTests : IDisposable
 
         var request = new FolderImportSelectionRequest(folder.Id, new[]
         {
-            new FolderImportSelectionItem($"{folder.AbsolutePath}\\A.pdf", Import: true),
-            new FolderImportSelectionItem($"{folder.AbsolutePath}\\B.pdf", Import: false),
-            new FolderImportSelectionItem($"{folder.AbsolutePath}\\C.pdf", Import: true),
+            new FolderImportSelectionItem(FileInFolder("A.pdf"), Import: true),
+            new FolderImportSelectionItem(FileInFolder("B.pdf"), Import: false),
+            new FolderImportSelectionItem(FileInFolder("C.pdf"), Import: true),
         });
 
         var result = await _sut.ImportSelectionAsync(request);
@@ -171,7 +179,7 @@ public class FolderScanJobReviewTests : IDisposable
         var request = new FolderImportSelectionRequest(folder.Id, new[]
         {
             new FolderImportSelectionItem(
-                $"{folder.AbsolutePath}\\phb.pdf",
+                FileInFolder("phb.pdf"),
                 Import: true,
                 Title: "Player's Handbook",
                 SourceType: SourceType.Adventure,
@@ -196,7 +204,7 @@ public class FolderScanJobReviewTests : IDisposable
 
         var request = new FolderImportSelectionRequest(folder.Id, new[]
         {
-            new FolderImportSelectionItem($"{folder.AbsolutePath}\\Monster Manual.pdf", Import: true),
+            new FolderImportSelectionItem(FileInFolder("Monster Manual.pdf"), Import: true),
         });
 
         await _sut.ImportSelectionAsync(request);
@@ -213,7 +221,7 @@ public class FolderScanJobReviewTests : IDisposable
     {
         var folder = await SeedFolderAsync();
         SetFolderFiles(folder.AbsolutePath, "phb.pdf");
-        var path = $"{folder.AbsolutePath}\\phb.pdf";
+        var path = FileInFolder("phb.pdf");
 
         var request = new FolderImportSelectionRequest(folder.Id, new[]
         {
@@ -237,7 +245,7 @@ public class FolderScanJobReviewTests : IDisposable
 
         var request = new FolderImportSelectionRequest(folder.Id, new[]
         {
-            new FolderImportSelectionItem($"{folder.AbsolutePath}\\ghost.pdf", Import: true),
+            new FolderImportSelectionItem(FileInFolder("ghost.pdf"), Import: true),
         });
 
         var result = await _sut.ImportSelectionAsync(request);

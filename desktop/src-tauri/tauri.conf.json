@@ -1,6 +1,6 @@
 {
   "productName": "Aircane Tabletop",
-  "version": "../../VERSION",
+  "version": "0.1.0",
   "identifier": "dev.aircane.tabletop",
   "build": {
     "devUrl": "http://localhost:5173",

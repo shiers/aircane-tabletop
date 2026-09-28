@@ -184,25 +184,25 @@ The generated binaries and Rust `target/` output are gitignored; only
 ## Version synchronisation
 
 The app version has a single source of truth: the [`VERSION`](../../VERSION) file
-at the repo root. It flows to the three places that need it:
+at the repo root. It flows to the places that need it:
 
-- `desktop/src-tauri/tauri.conf.json` → `"version"` points directly at the
-  `VERSION` file, so it always tracks it.
 - `src/backend/Aircane.Api/Aircane.Api.csproj` → `<Version>` reads the file at
   build time (with a `0.0.0` fallback if the file is missing).
-- `src/frontend/aircane-web/package.json` and `desktop/package.json` → cannot
-  reference an external file, so a script keeps them in sync.
+- `src/frontend/aircane-web/package.json`, `desktop/package.json`, and
+  `desktop/src-tauri/tauri.conf.json` → these need a literal version string (Tauri
+  parses a file-path `version` value as JSON, which a plain `VERSION` file is
+  not), so a script keeps them in sync.
 
-To bump the version, run the script (it edits `VERSION` and both `package.json`
-files); `tauri.conf.json` and the csproj pick it up automatically:
+To bump the version, run the script (it edits `VERSION`, both `package.json`
+files, and `tauri.conf.json`); the csproj picks it up automatically at build:
 
 ```bash
 scripts/bump-version.sh 0.2.0          # macOS / Linux
 pwsh scripts/bump-version.ps1 0.2.0    # Windows
 ```
 
-A version-bump PR should therefore change `VERSION` and the two `package.json`
-files, nothing else.
+A version-bump PR should therefore change `VERSION`, the two `package.json`
+files, and `tauri.conf.json`.
 
 ---
 

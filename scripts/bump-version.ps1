@@ -5,9 +5,10 @@
 # Usage: scripts/bump-version.ps1 <new-version>
 #   e.g. scripts/bump-version.ps1 0.2.0
 #
-# See scripts/bump-version.sh for the full rationale. tauri.conf.json and the
-# backend csproj read VERSION directly, so this only writes VERSION and syncs the
-# two package.json files that cannot reference an external file.
+# See scripts/bump-version.sh for the full rationale. The backend csproj reads
+# VERSION directly at build; this script writes VERSION and syncs the two
+# package.json files and tauri.conf.json (whose "version" must be a literal
+# string, since Tauri parses a file-path value as JSON).
 param(
   [Parameter(Mandatory = $true, Position = 0)]
   [string]$NewVersion
@@ -41,5 +42,7 @@ function Update-PackageJson([string]$File) {
 
 Update-PackageJson (Join-Path $RepoRoot 'src/frontend/aircane-web/package.json')
 Update-PackageJson (Join-Path $RepoRoot 'desktop/package.json')
+# tauri.conf.json uses the same top-level "version": "x.y.z" shape.
+Update-PackageJson (Join-Path $RepoRoot 'desktop/src-tauri/tauri.conf.json')
 
-Write-Host 'Done. Review the diff, then commit VERSION and the package.json changes.'
+Write-Host 'Done. Review the diff, then commit VERSION, the package.json changes, and tauri.conf.json.'

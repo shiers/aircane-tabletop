@@ -10,12 +10,15 @@
 #   - src/frontend/aircane-web/package.json  ("version")
 #   - desktop/package.json                   ("version")
 #
+# It also updates desktop/src-tauri/tauri.conf.json, whose "version" must be a
+# literal string (Tauri parses a file-path value as JSON, which a plain VERSION
+# file is not).
+#
 # It does NOT need to touch:
-#   - desktop/src-tauri/tauri.conf.json  → its "version" points at ../../VERSION
 #   - src/backend/Aircane.Api/Aircane.Api.csproj → <Version> reads VERSION at build
 #
-# A version-bump PR should therefore change VERSION plus the two package.json
-# files (all done by this script).
+# A version-bump PR should therefore change VERSION, the two package.json files,
+# and tauri.conf.json (all done by this script).
 set -euo pipefail
 
 if [ $# -ne 1 ]; then
@@ -51,4 +54,12 @@ update_package_json() {
 update_package_json "$REPO_ROOT/src/frontend/aircane-web/package.json"
 update_package_json "$REPO_ROOT/desktop/package.json"
 
-echo "Done. Review the diff, then commit VERSION and the package.json changes."
+# Update the Tauri config's literal "version" (first top-level occurrence).
+tauri_conf="$REPO_ROOT/desktop/src-tauri/tauri.conf.json"
+if [ -f "$tauri_conf" ]; then
+  sed -i.bak -E "0,/(\"version\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")/s//\1$NEW_VERSION\2/" "$tauri_conf"
+  rm -f "$tauri_conf.bak"
+  echo "updated $tauri_conf"
+fi
+
+echo "Done. Review the diff, then commit VERSION, the package.json changes, and tauri.conf.json."

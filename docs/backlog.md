@@ -15,9 +15,9 @@ the priority lists below with full detail; this section records *why* they were 
 | Item | Why not auto-built | What unblocks it |
 |------|--------------------|------------------|
 | **PF2e Remaster real ORC text** | Content/licensing decision. The obvious data sources (Foundry PF2e, Obsidian TTRPG Community) are **not** ORC-licensed — they fall under a private Paizo↔Foundry agreement and Paizo's Community Use Policy, so bundling them as ORC content would be a licensing violation. | Maintainer sources text from a genuine ORC release and drops it into the existing `pf2e_remaster` bundle (no code changes needed). |
-| **Internet Tunnel / Remote Play** | Security-sensitive. Exposing a local-first server to the public internet needs deliberate choices about the tunneling provider, HTTPS, auth hardening, rate limiting, CSRF, and durable token revocation — not something to enable silently. | Maintainer chooses the tunnel approach and signs off on the hardening checklist. |
-| **Desktop Wrapper (Tauri/Electron)** | Toolchain decision. Requires adding a new build toolchain and packaging/signing pipeline (Rust+Tauri or Node+Electron), plus per-OS installer decisions. | Maintainer picks the wrapper stack and accepts the added build/release tooling. |
-| **Application source-code license** | Owner decision. The README says "License TBD"; the code license is distinct from the content licenses (ORC/CC BY) and is the repository owner's call to make. | Maintainer chooses a license and updates the README + `LICENSE` file. The in-app About panel already points at the README for this. |
+| **Internet Tunnel / Remote Play** | Decision made. Cloudflare Tunnel chosen as the tunnel provider. Full implementation task written and ready for Kiro. Security hardening (rate limiting, CSRF, persistent token revocation) is a hard prerequisite and is included in the task. | Nothing — implementation task is ready. See `kiro-task-internet-tunnel.md`. |
+| **Desktop Wrapper (Tauri/Electron)** | **Decision made — Tauri.** Wrapper implemented: backend runs as a Tauri sidecar, native webview, LAN URL/QR in the tray, Ollama awareness. See "Completed P1 Work" below. | Nothing — delivered. Remaining follow-ups (code signing/notarisation, auto-update, bundled database) are tracked as separate deferred items. |
+| **Application source-code license** | Decision made. **Proprietary** license chosen for the application source code (distinct from the content licenses ORC/CC BY, which are unaffected). | Update the README and add a `LICENSE` file reflecting the proprietary terms. The in-app About panel already points at the README for this. |
 | **PF1e built-in content** | Removed for commercialization — OGL v1.0a adds a Section 15 attribution chain and a content-identification burden that adds legal complexity for a commercial product regardless of the source-code license chosen. D&D 5e SRD (CC BY 4.0) and PF2e Remaster (ORC) are commercial-friendly and retained. | Nothing to unblock — this is a deliberate removal, not deferred work. Users may still import their own PF1e PDFs via the folder-watching Library; only the bundled OGL rules text was removed. |
 
 ---
@@ -38,19 +38,14 @@ the priority lists below with full detail; this section records *why* they were 
 The `pf2e_remaster` built-in bundle currently ships a small placeholder (2 chunks) so the app runs; the seeder handles the partial bundle gracefully. To complete it, source the real PF2e Remaster rules text **from a genuine ORC-licensed release** and drop the Markdown files into `src/backend/Aircane.Workers/Resources/builtin/pf2e_remaster/` (adding entries to its `manifest.json`). No code changes needed — the bundle structure, `LICENSE-ORC.txt`, manifest, and seeder already work. **Licensing caution:** do NOT extract content from the Foundry VTT PF2e system data or the Obsidian TTRPG Community repo — that material is distributed under a private Paizo↔Foundry partnership agreement and Paizo's Community Use Policy, not the ORC License, and cannot be bundled as ORC content here. Use only text that is actually released under ORC. Follow the full ORC requirements (Notice, upstream Paizo product attribution, downstream ORC-Content-vs-Reserved-Material declaration, Product Identity exclusions, and the OGL/ORC split) documented in [`docs/licensing/open-content-compliance.md`](licensing/open-content-compliance.md).
 
 ### Application Source-Code License
-> **Not auto-built — owner decision.** See the decision table at the top of this file.
+> **Decision made — Proprietary.** The application source code is licensed under a **Proprietary** license, kept distinct from the content licenses (ORC/OGL/CC BY), which are unaffected. See the decision table at the top of this file.
 
-Decide and state the **application code license** — the README currently says "License TBD". This is kept distinct from the content licenses (ORC/OGL/CC BY). The in-app About / Credits panel (`/about`) already points users at the README for the app license; once chosen, update the README and add a `LICENSE` file. (The compliance surface itself — ORC Notice, CC BY / OGL attributions, ORC-Content-vs-Reserved-Material downstream declaration, and trademark note — is delivered in the About panel.)
+The remaining work is documentation: update the README (currently "License TBD") and add a `LICENSE` file reflecting the proprietary terms. The in-app About / Credits panel (`/about`) already points users at the README for the app license. (The compliance surface itself — ORC Notice, CC BY / OGL attributions, ORC-Content-vs-Reserved-Material downstream declaration, and trademark note — is delivered in the About panel.)
 
 ### Internet Tunnel / Remote Play
 > **Not auto-built — security-sensitive; maintainer decision.** See the decision table at the top of this file.
 
 Allow players to connect over the internet without router port forwarding. Options include Cloudflare Tunnel, ngrok, or a custom relay service. Requires HTTPS, rate limiting, CSRF protection, and persistent token revocation.
-
-### Desktop Wrapper
-> **Not auto-built — needs a new build toolchain; maintainer decision.** See the decision table at the top of this file.
-
-Package the app as a Tauri (or Electron) desktop application that starts the ASP.NET Core server, opens the local UI, manages file paths, and displays the LAN URL and QR code - one-click launch for non-technical hosts.
 
 ---
 
@@ -66,6 +61,7 @@ in the active list above.
 - **Embedding Provider Portability (dimensions + cloud providers).** Configurable embedding dimension with a startup compatibility check that disables vector search (keyword search still works) and logs a clear warning on a provider/column mismatch; `OpenAiEmbeddingProvider` (`text-embedding-3-small`, 1536) and `AzureOpenAiEmbeddingProvider` behind the existing `IEmbeddingProvider` abstraction. Provenance recording + mismatch guard + re-embed endpoints were delivered previously. Migration path documented in `docs/setup/ai-configuration.md`.
 - **Library Import UX follow-ups.** Content-based duplicate detection (`SourceDocument.ContentHash` SHA-256 + `ExactDuplicate` flag), a `GameSystemAlias` table with seeded common aliases + canonicalizer alias lookup + management API, and configurable per-folder `WatchedFolder.ExcludePatterns` (glob) driving the likely-not-rules signal. (The review-before-import flow, quick import, filename suggestions, and canonicalization were delivered previously.)
 - **OCR follow-ups.** Full-page rasterization via `IPdfRasterizer`/`DocnetPdfRasterizer` (PDFium, gated by `Ocr:FullPageRasterization`), an opt-in tessdata auto-downloader (`Ocr:AutoDownloadTessdata`), and re-OCR endpoints (`POST /api/library/documents/reocr[-all]`) with a "Re-run OCR" library UI button — all routed through the background job queue. (The Tesseract engine + embedded-image OCR were delivered previously.) See `docs/setup/ocr.md`.
+- **Desktop Wrapper (Tauri v2).** A `desktop/` Tauri v2 app that runs the ASP.NET Core backend as a managed sidecar (self-contained single-file publish), waits on `/api/health` behind a loading screen, then opens the Vue frontend in a native OS webview; a clear error screen handles startup timeout and port conflicts. Adds a system tray (Copy LAN URL, Show QR, Open, Quit), a dynamic window title with the local + LAN URLs backed by a new `GET /api/sessions/network-info` endpoint, and Ollama awareness (a dismissible banner when Ollama is the active provider but not running, plus a live status indicator in AI settings). The Vue app stays browser-agnostic behind a `window.__TAURI__` bridge. The sidecar sets `Aircane:TrustLocalHost=true` so the single local host can drive host-only surfaces (and first-run migrations) without a session token; a shared/hosted backend must not set it. Cross-platform build scripts (`desktop/build.{sh,ps1}`), a `Desktop CI` workflow (win/mac/linux, artifacts only), a single-source `VERSION` file with `scripts/bump-version.*`, and placeholder icons are included. See `docs/setup/desktop.md`. **Deferred follow-ups:** code signing/notarisation, `tauri-plugin-updater` auto-update, and a bundled/embedded database (the wrapper still needs an external PostgreSQL).
 
 ---
 
@@ -95,6 +91,16 @@ Ensure token-by-token streaming works consistently across all AI providers and U
 
 ### Mobile-Optimized UI
 Responsive redesign targeting phone and tablet screens for player-side usage.
+
+### Native Player Companion App (iOS / Android)
+A lightweight native app for players connecting to an Aircane session from a phone or
+tablet. The host always runs the desktop app; this is purely the player-side view.
+Planned features: push notifications for turn prompts and roll requests, offline character
+sheet viewing, native dice roller with haptics, QR code scanner for session join, and
+background session persistence. Built against the existing SignalR and REST API — no
+backend changes required. Technology TBD (React Native, Flutter, or Swift/Kotlin native).
+Planned for after the main app (desktop wrapper + internet tunnel) stabilises and real
+player feedback is available.
 
 ### Automatic Folder Watching
 Add a filesystem watcher that detects new or changed files in registered folders and triggers re-indexing without manual scans.
@@ -138,4 +144,4 @@ Localize the UI and support non-English source documents.
 
 ---
 
-*Last updated: 2026-09-28 — Priority-1 engineering items completed and removed; only maintainer-gated P1 items remain.*
+*Last updated: 2026-09-28 — Desktop wrapper (Tauri v2) delivered and moved to Completed P1 Work; internet tunnel decision made (Cloudflare); native mobile companion app in P3.*

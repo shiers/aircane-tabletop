@@ -5,5 +5,8 @@ export { default as ParticipantApprovalPanel } from './ParticipantApprovalPanel.
 export { default as ChatPanel } from './ChatPanel.vue'
 export { default as HostSessionView } from './HostSessionView.vue'
 export { default as PlayerSessionView } from './PlayerSessionView.vue'
+export { default as InternetPlayPanel } from './components/InternetPlayPanel.vue'
+export { default as AccessModeToggle } from './components/AccessModeToggle.vue'
+export { default as QRCode } from './components/QRCode.vue'
 export { useSessionStore } from './store'
 export * from './api'

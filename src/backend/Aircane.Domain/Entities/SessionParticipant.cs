@@ -16,6 +16,15 @@ public class SessionParticipant : EntityBase
     public DateTimeOffset LastSeenAt { get; set; }
     public bool IsApproved { get; set; }
 
+    /// <summary>
+    /// The <c>jti</c> of the participant token last issued to this participant, if any.
+    /// Recorded so the host can revoke this exact token when the session ends.
+    /// </summary>
+    public string? TokenId { get; set; }
+
+    /// <summary>Expiry of the last-issued participant token, used when persisting a revocation.</summary>
+    public DateTimeOffset? TokenExpiresAt { get; set; }
+
     public SessionParticipant(
         Guid sessionId,
         string displayName,

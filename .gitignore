@@ -106,6 +106,9 @@ desktop/src-tauri/target/
 # Sidecar binaries are produced by `dotnet publish` during the build; never commit them.
 desktop/src-tauri/binaries/*
 !desktop/src-tauri/binaries/README.md
+# The pinned cloudflared version + checksum manifest IS tracked (used to verify the
+# binary fetched at build time). The binaries themselves stay ignored.
+!desktop/src-tauri/binaries/cloudflared-versions.json
 # Generated Tauri gen/ (schemas, Android/iOS scaffolding) — recreated by the CLI.
 desktop/src-tauri/gen/
 # Vendored at build time from the frontend's qrcode dependency (next to the

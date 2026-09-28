@@ -90,10 +90,24 @@ export function getBaseUrl(): Promise<string | null> {
   return invoke<string>('get_base_url')
 }
 
+/**
+ * Start the Cloudflare tunnel (internet play). Resolves to the public tunnel URL
+ * on success, or null when not running in the desktop wrapper or on failure.
+ */
+export function enableInternetPlay(): Promise<string | null> {
+  return invoke<string>('enable_internet_play')
+}
+
+/** Stop the Cloudflare tunnel and return to LAN-only mode. */
+export function disableInternetPlay(): Promise<unknown | null> {
+  return invoke('disable_internet_play')
+}
+
 // ── Event name constants (must match the Rust side) ────────────────────────────
 
 export const TauriEvents = {
   OllamaNotRunning: 'ollama://not-running',
   CopyLanUrl: 'tray://copy-lan-url',
+  CopyInternetUrl: 'tray://copy-internet-url',
   NavigateAiSettings: 'navigate://ai-settings',
 } as const

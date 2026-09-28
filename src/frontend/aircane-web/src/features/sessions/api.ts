@@ -74,6 +74,16 @@ export interface ParticipantDto {
   lastSeenAt: string
 }
 
+export interface NetworkInfo {
+  localUrl: string
+  lanUrl: string | null
+  inviteCode: string | null
+  /** Public Cloudflare Tunnel URL for remote players, when internet play is active. */
+  tunnelUrl: string | null
+  /** True when an internet tunnel is currently active. */
+  tunnelActive: boolean
+}
+
 // ---------------------------------------------------------------------------
 // Display helpers
 // ---------------------------------------------------------------------------
@@ -161,5 +171,11 @@ export async function assignCharacter(
     `/api/sessions/${sessionId}/assign-character`,
     { participantId, characterId },
   )
+  return response.data
+}
+
+/** Get the host's reachable URLs (local, LAN, and tunnel when internet play is active). */
+export async function getNetworkInfo(): Promise<NetworkInfo> {
+  const response = await apiClient.get<NetworkInfo>('/api/sessions/network-info')
   return response.data
 }

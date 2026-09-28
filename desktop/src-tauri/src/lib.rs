@@ -15,6 +15,7 @@ mod network;
 mod ollama;
 mod sidecar;
 mod tray;
+mod tunnel;
 
 use std::io::Write;
 
@@ -23,6 +24,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use config::DesktopConfig;
 use sidecar::{ReadyResult, SidecarState};
+use tunnel::TunnelState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -30,6 +32,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .manage(SidecarState::default())
+        .manage(TunnelState::default())
         .invoke_handler(tauri::generate_handler![
             retry_startup,
             open_logs,
@@ -37,6 +40,8 @@ pub fn run() {
             open_external,
             get_base_url,
             check_ollama_status,
+            enable_internet_play,
+            disable_internet_play,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -71,6 +76,9 @@ pub fn run() {
             // on the "main" window so closing the QR popup doesn't kill the server.
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { .. } = event {
+                    // Stop the tunnel before the backend so cloudflared never
+                    // outlives the server it was fronting.
+                    tunnel::stop_tunnel_blocking(window.app_handle());
                     sidecar::stop_sidecar(window.app_handle());
                 }
             }
@@ -78,8 +86,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building the Aircane Tabletop desktop app")
         .run(|app_handle, event| {
-            // Final safety net: ensure the sidecar dies if the app exits for any reason.
+            // Final safety net: ensure the tunnel and sidecar die if the app exits
+            // for any reason.
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                tunnel::stop_tunnel_blocking(app_handle);
                 sidecar::stop_sidecar(app_handle);
             }
         });
@@ -278,4 +288,19 @@ fn get_base_url(app: AppHandle) -> String {
 #[tauri::command]
 async fn check_ollama_status() -> bool {
     ollama::check_ollama().await
+}
+
+/// Starts the Cloudflare tunnel pointing at the local backend and returns the
+/// public URL. Called from the internet-play UI. The backend is put into internet
+/// mode (rate limiting + CSRF) once the URL is reported.
+#[tauri::command]
+async fn enable_internet_play(app: AppHandle) -> Result<String, String> {
+    let port = app.state::<DesktopConfig>().inner().port;
+    tunnel::start_tunnel(&app, port).await
+}
+
+/// Stops the Cloudflare tunnel and returns the backend to LAN-only mode.
+#[tauri::command]
+async fn disable_internet_play(app: AppHandle) {
+    tunnel::stop_tunnel(&app).await;
 }

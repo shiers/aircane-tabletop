@@ -27,7 +27,7 @@ public class ParticipantTokenServiceTests
             })
             .Build();
 
-        revocation ??= new InMemoryTokenRevocationService();
+        revocation ??= new FakeTokenRevocationService();
         return new ParticipantTokenService(config, revocation, NullLogger<ParticipantTokenService>.Instance);
     }
 
@@ -41,7 +41,7 @@ public class ParticipantTokenServiceTests
             .Build();
 
         Assert.Throws<InvalidOperationException>(() =>
-            new ParticipantTokenService(config, new InMemoryTokenRevocationService(), NullLogger<ParticipantTokenService>.Instance));
+            new ParticipantTokenService(config, new FakeTokenRevocationService(), NullLogger<ParticipantTokenService>.Instance));
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class ParticipantTokenServiceTests
             .Build();
 
         Assert.Throws<InvalidOperationException>(() =>
-            new ParticipantTokenService(config, new InMemoryTokenRevocationService(), NullLogger<ParticipantTokenService>.Instance));
+            new ParticipantTokenService(config, new FakeTokenRevocationService(), NullLogger<ParticipantTokenService>.Instance));
     }
 
     // ── Token issuance ────────────────────────────────────────────────────────
@@ -64,20 +64,21 @@ public class ParticipantTokenServiceTests
     public void IssueToken_ReturnsNonEmptyString()
     {
         var svc = CreateService();
-        var token = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "Thorin", "Player");
+        var issued = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "Thorin", "Player");
 
-        Assert.NotNull(token);
-        Assert.NotEmpty(token);
+        Assert.NotNull(issued.Token);
+        Assert.NotEmpty(issued.Token);
+        Assert.NotEmpty(issued.TokenId);
     }
 
     [Fact]
     public void IssueToken_ProducesValidJwtFormat()
     {
         var svc = CreateService();
-        var token = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "Gandalf", "HumanDm");
+        var issued = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "Gandalf", "HumanDm");
 
         // A JWT has exactly three dot-separated segments.
-        var parts = token.Split('.');
+        var parts = issued.Token.Split('.');
         Assert.Equal(3, parts.Length);
     }
 
@@ -93,7 +94,8 @@ public class ParticipantTokenServiceTests
         System.Threading.Thread.Sleep(1100); // ensure different iat second
         var token2 = svc.IssueToken(sessionId, participantId, "Thorin", "Player");
 
-        Assert.NotEqual(token1, token2);
+        Assert.NotEqual(token1.Token, token2.Token);
+        Assert.NotEqual(token1.TokenId, token2.TokenId);
     }
 
     // ── Token validation - happy path ─────────────────────────────────────────
@@ -105,14 +107,15 @@ public class ParticipantTokenServiceTests
         var sessionId = Guid.NewGuid();
         var participantId = Guid.NewGuid();
 
-        var token = svc.IssueToken(sessionId, participantId, "Thorin", "Player");
-        var claims = svc.ValidateToken(token);
+        var issued = svc.IssueToken(sessionId, participantId, "Thorin", "Player");
+        var claims = svc.ValidateToken(issued.Token);
 
         Assert.NotNull(claims);
         Assert.Equal(sessionId, claims!.SessionId);
         Assert.Equal(participantId, claims.ParticipantId);
         Assert.Equal("Thorin", claims.DisplayName);
         Assert.Equal("Player", claims.Role);
+        Assert.Equal(issued.TokenId, claims.TokenId);
     }
 
     [Theory]
@@ -123,8 +126,8 @@ public class ParticipantTokenServiceTests
     public void ValidateToken_PreservesRoleClaim(string role)
     {
         var svc = CreateService();
-        var token = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "TestUser", role);
-        var claims = svc.ValidateToken(token);
+        var issued = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "TestUser", role);
+        var claims = svc.ValidateToken(issued.Token);
 
         Assert.NotNull(claims);
         Assert.Equal(role, claims!.Role);
@@ -135,8 +138,8 @@ public class ParticipantTokenServiceTests
     {
         var svc = CreateService();
         const string displayName = "Thorin Oakenshield Jr.";
-        var token = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), displayName, "Player");
-        var claims = svc.ValidateToken(token);
+        var issued = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), displayName, "Player");
+        var claims = svc.ValidateToken(issued.Token);
 
         Assert.NotNull(claims);
         Assert.Equal(displayName, claims!.DisplayName);
@@ -168,8 +171,8 @@ public class ParticipantTokenServiceTests
         var svc1 = CreateService(signingKey: "aircane-test-signing-key-at-least-32-chars-long");
         var svc2 = CreateService(signingKey: "different-signing-key-at-least-32-chars-long!!");
 
-        var token = svc1.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "Thorin", "Player");
-        var claims = svc2.ValidateToken(token);
+        var issued = svc1.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "Thorin", "Player");
+        var claims = svc2.ValidateToken(issued.Token);
 
         Assert.Null(claims);
     }
@@ -181,17 +184,17 @@ public class ParticipantTokenServiceTests
         // We can't directly set expiry in the past via the service, so we use a very short expiry
         // and wait for it to expire.
         var svc = CreateService(expiryHours: 0.0001); // ~0.36 seconds
-        var token = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "Thorin", "Player");
+        var issued = svc.IssueToken(Guid.NewGuid(), Guid.NewGuid(), "Thorin", "Player");
 
         // Wait for the token to expire (plus clock skew of 30s means we need to wait longer).
         // Instead, validate immediately - the token should still be valid.
-        var claimsBeforeExpiry = svc.ValidateToken(token);
+        var claimsBeforeExpiry = svc.ValidateToken(issued.Token);
         Assert.NotNull(claimsBeforeExpiry);
 
         // We can't easily test expiry without waiting 30+ seconds due to clock skew.
         // The expiry logic is covered by the JWT library itself; we verify the token
         // is issued with the correct expiry by checking the JWT payload.
-        var parts = token.Split('.');
+        var parts = issued.Token.Split('.');
         var payload = System.Text.Json.JsonDocument.Parse(
             System.Text.Encoding.UTF8.GetString(
                 Convert.FromBase64String(PadBase64(parts[1]))));
@@ -205,26 +208,26 @@ public class ParticipantTokenServiceTests
     [Fact]
     public void ValidateToken_ReturnsNullWhenSessionIsRevoked()
     {
-        var revocation = new InMemoryTokenRevocationService();
+        var revocation = new FakeTokenRevocationService();
         var svc = CreateService(revocation: revocation);
 
         var sessionId = Guid.NewGuid();
-        var token = svc.IssueToken(sessionId, Guid.NewGuid(), "Thorin", "Player");
+        var issued = svc.IssueToken(sessionId, Guid.NewGuid(), "Thorin", "Player");
 
         // Token is valid before revocation.
-        Assert.NotNull(svc.ValidateToken(token));
+        Assert.NotNull(svc.ValidateToken(issued.Token));
 
         // Revoke the session (simulates host ending the session).
         revocation.RevokeSession(sessionId);
 
         // Token should now be rejected.
-        Assert.Null(svc.ValidateToken(token));
+        Assert.Null(svc.ValidateToken(issued.Token));
     }
 
     [Fact]
     public void ValidateToken_OnlyRevokesTargetSession()
     {
-        var revocation = new InMemoryTokenRevocationService();
+        var revocation = new FakeTokenRevocationService();
         var svc = CreateService(revocation: revocation);
 
         var sessionId1 = Guid.NewGuid();
@@ -235,8 +238,32 @@ public class ParticipantTokenServiceTests
 
         revocation.RevokeSession(sessionId1);
 
-        Assert.Null(svc.ValidateToken(token1));
-        Assert.NotNull(svc.ValidateToken(token2));
+        Assert.Null(svc.ValidateToken(token1.Token));
+        Assert.NotNull(svc.ValidateToken(token2.Token));
+    }
+
+    [Fact]
+    public async Task ValidateTokenAsync_ReturnsNullWhenTokenPersistentlyRevoked()
+    {
+        var revocation = new FakeTokenRevocationService();
+        var svc = CreateService(revocation: revocation);
+
+        var sessionId = Guid.NewGuid();
+        var issued = svc.IssueToken(sessionId, Guid.NewGuid(), "Thorin", "Player");
+
+        // Valid before revocation.
+        Assert.NotNull(await svc.ValidateTokenAsync(issued.Token));
+
+        // Persistently revoke this exact token (simulates end-session bulk insert).
+        await revocation.RevokeTokensAsync(new[]
+        {
+            new RevokedTokenRecord(issued.TokenId, sessionId, issued.ExpiresAt),
+        });
+
+        // The synchronous fast path still passes (session not in the in-memory set)...
+        Assert.NotNull(svc.ValidateToken(issued.Token));
+        // ...but the async path consults the persistent store and rejects it.
+        Assert.Null(await svc.ValidateTokenAsync(issued.Token));
     }
 
     // ── Round-trip identity ───────────────────────────────────────────────────
@@ -250,8 +277,8 @@ public class ParticipantTokenServiceTests
         const string displayName = "Bilbo Baggins";
         const string role = "Player";
 
-        var token = svc.IssueToken(sessionId, participantId, displayName, role);
-        var claims = svc.ValidateToken(token);
+        var issued = svc.IssueToken(sessionId, participantId, displayName, role);
+        var claims = svc.ValidateToken(issued.Token);
 
         Assert.NotNull(claims);
         Assert.Equal(sessionId, claims!.SessionId);

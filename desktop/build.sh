@@ -63,6 +63,100 @@ mv -f "$SRC_BIN" "$DEST_BIN"
 chmod +x "$DEST_BIN"
 echo "Sidecar     : $DEST_BIN"
 
+# ── 2b. Fetch the cloudflared sidecar (pinned + checksum-verified) ─────────────
+# cloudflared powers internet play (Cloudflare Tunnel). It is fetched at build time
+# from the official Cloudflare release and verified against the pinned SHA256 in
+# binaries/cloudflared-versions.json. The build FAILS if the checksum does not match,
+# so an unverified binary is never bundled. See docs/setup/desktop.md.
+echo "==> Fetching cloudflared sidecar"
+CF_MANIFEST="$BINARIES_DIR/cloudflared-versions.json"
+if [ ! -f "$CF_MANIFEST" ]; then
+  echo "ERROR: cloudflared manifest not found at '$CF_MANIFEST'." >&2
+  exit 1
+fi
+
+# Minimal JSON extraction via python3 (available on macOS/Linux CI) to avoid a jq dependency.
+read_manifest() {
+  python3 - "$CF_MANIFEST" "$RUST_TARGET" "$1" <<'PY'
+import json, sys
+manifest_path, target, key = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(manifest_path) as f:
+    m = json.load(f)
+if key == "version":
+    print(m["version"]); sys.exit(0)
+if key == "baseUrl":
+    print(m["baseUrl"]); sys.exit(0)
+entry = m["assets"].get(target)
+if not entry:
+    sys.exit(3)
+print(entry.get(key, ""))
+PY
+}
+
+CF_VERSION="$(read_manifest version)"
+CF_BASEURL="$(read_manifest baseUrl)"
+CF_ASSET="$(read_manifest asset)" || { echo "ERROR: no cloudflared asset pinned for target '$RUST_TARGET'." >&2; exit 1; }
+if [ -z "$CF_ASSET" ]; then
+  echo "ERROR: no cloudflared asset pinned for target '$RUST_TARGET' in cloudflared-versions.json." >&2
+  exit 1
+fi
+CF_ARCHIVE="$(read_manifest archive)"
+CF_SHA256="$(read_manifest sha256)"
+CF_MEMBER="$(read_manifest member)"
+
+CF_DEST="$BINARIES_DIR/cloudflared-$RUST_TARGET"
+CF_URL="$CF_BASEURL/$CF_VERSION/$CF_ASSET"
+echo "cloudflared : $CF_VERSION ($CF_ASSET)"
+
+if [ -f "$CF_DEST" ]; then
+  echo "cloudflared already present; skipping download."
+else
+  CF_DOWNLOAD="$BINARIES_DIR/$CF_ASSET"
+  curl -fsSL -o "$CF_DOWNLOAD" "$CF_URL"
+
+  # Verify the checksum of the downloaded asset BEFORE trusting/extracting it.
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL_HASH="$(sha256sum "$CF_DOWNLOAD" | awk '{print $1}')"
+  else
+    ACTUAL_HASH="$(shasum -a 256 "$CF_DOWNLOAD" | awk '{print $1}')"
+  fi
+  EXPECTED_HASH="$(printf '%s' "$CF_SHA256" | tr '[:upper:]' '[:lower:]')"
+  ACTUAL_HASH="$(printf '%s' "$ACTUAL_HASH" | tr '[:upper:]' '[:lower:]')"
+  if [ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]; then
+    rm -f "$CF_DOWNLOAD"
+    echo "ERROR: cloudflared checksum mismatch for '$CF_ASSET'." >&2
+    echo "  expected: $EXPECTED_HASH" >&2
+    echo "  actual:   $ACTUAL_HASH" >&2
+    echo "Refusing to bundle an unverified binary." >&2
+    exit 1
+  fi
+  echo "cloudflared checksum OK ($EXPECTED_HASH)."
+
+  case "$CF_ARCHIVE" in
+    none)
+      mv -f "$CF_DOWNLOAD" "$CF_DEST"
+      ;;
+    tgz)
+      CF_EXTRACT_DIR="$BINARIES_DIR/cf-extract"
+      mkdir -p "$CF_EXTRACT_DIR"
+      tar -xzf "$CF_DOWNLOAD" -C "$CF_EXTRACT_DIR"
+      if [ ! -f "$CF_EXTRACT_DIR/$CF_MEMBER" ]; then
+        echo "ERROR: expected '$CF_MEMBER' inside '$CF_ASSET' but it was not found." >&2
+        exit 1
+      fi
+      mv -f "$CF_EXTRACT_DIR/$CF_MEMBER" "$CF_DEST"
+      rm -rf "$CF_EXTRACT_DIR"
+      rm -f "$CF_DOWNLOAD"
+      ;;
+    *)
+      echo "ERROR: unknown archive type '$CF_ARCHIVE' in cloudflared-versions.json." >&2
+      exit 1
+      ;;
+  esac
+  chmod +x "$CF_DEST"
+fi
+echo "cloudflared : $CF_DEST"
+
 # ── 3. Vendor the QR library used by the tray QR window (offline-safe) ────────
 # The wrapper's shell pages (loading/error/qr .html) live in the frontend's
 # public/desktop/ folder, so Vite already copied them into dist/desktop during

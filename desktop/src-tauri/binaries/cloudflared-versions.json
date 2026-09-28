@@ -1,0 +1,34 @@
+{
+  "_comment": "Pinned cloudflared version + SHA256 checksums of the actual downloadable release assets, used to verify the sidecar binary fetched at build time. NOTE: the darwin .tgz checksums are the hashes of the assets as served from the release download URL, computed by downloading them over HTTPS — the 'SHA256 Checksums' block in the release notes can be stale for the darwin tarballs, so trust the downloaded-asset hash. Update deliberately: bump the version, re-download each asset from https://github.com/cloudflare/cloudflared/releases/download/<version>/<asset>, recompute its sha256, and record the change in docs/setup/desktop.md. The build scripts (desktop/build.ps1 / build.sh) fail if a downloaded asset's checksum does not match the value here.",
+  "version": "2026.8.2",
+  "baseUrl": "https://github.com/cloudflare/cloudflared/releases/download",
+  "assets": {
+    "x86_64-pc-windows-msvc": {
+      "asset": "cloudflared-windows-amd64.exe",
+      "archive": "none",
+      "sha256": "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "asset": "cloudflared-linux-amd64",
+      "archive": "none",
+      "sha256": "fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2"
+    },
+    "aarch64-unknown-linux-gnu": {
+      "asset": "cloudflared-linux-arm64",
+      "archive": "none",
+      "sha256": "7747d94570fb390cf47dcb4f9555c193c6355cda9793f0d878d9049e5d6a7790"
+    },
+    "x86_64-apple-darwin": {
+      "asset": "cloudflared-darwin-amd64.tgz",
+      "archive": "tgz",
+      "member": "cloudflared",
+      "sha256": "f1727723c586500e2092368ae21871b3df7ddfd2cb097f22d81bee4a9c458bb4"
+    },
+    "aarch64-apple-darwin": {
+      "asset": "cloudflared-darwin-arm64.tgz",
+      "archive": "tgz",
+      "member": "cloudflared",
+      "sha256": "9042c2c5d8b2de78e60f313d5fb31b6c5c1cebde787a3caf1f2c9588084ac442"
+    }
+  }
+}

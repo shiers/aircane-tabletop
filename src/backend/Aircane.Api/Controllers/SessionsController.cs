@@ -1,9 +1,11 @@
 using Aircane.Api.Authorization;
 using Aircane.Application.Abstractions;
+using Aircane.Application.Configuration;
 using Aircane.Application.DTOs.Sessions;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Aircane.Api.Controllers;
 
@@ -17,17 +19,20 @@ public sealed class SessionsController : ControllerBase
 {
     private readonly ISessionHostingService _sessions;
     private readonly IParticipantTokenService _tokenService;
+    private readonly ITunnelStateService _tunnelState;
     private readonly IValidator<CreateSessionRequest> _createValidator;
     private readonly ILogger<SessionsController> _logger;
 
     public SessionsController(
         ISessionHostingService sessions,
         IParticipantTokenService tokenService,
+        ITunnelStateService tunnelState,
         IValidator<CreateSessionRequest> createValidator,
         ILogger<SessionsController> logger)
     {
         _sessions = sessions;
         _tokenService = tokenService;
+        _tunnelState = tunnelState;
         _createValidator = createValidator;
         _logger = logger;
     }
@@ -80,6 +85,7 @@ public sealed class SessionsController : ControllerBase
     /// </summary>
     [HttpPost("api/sessions/{id:guid}/join")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimitingSettings.JoinPolicy)]
     [ProducesResponseType(typeof(JoinSessionResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -149,6 +155,7 @@ public sealed class SessionsController : ControllerBase
     /// </summary>
     [HttpPost("api/sessions/{id:guid}/reconnect")]
     [Authorize(Policy = AuthorizationPolicies.Authenticated)]
+    [EnableRateLimiting(RateLimitingSettings.JoinPolicy)]
     [ProducesResponseType(typeof(ReconnectResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -169,7 +176,7 @@ public sealed class SessionsController : ControllerBase
         }
 
         var token = authHeader["Bearer ".Length..].Trim();
-        var claims = _tokenService.ValidateToken(token);
+        var claims = await _tokenService.ValidateTokenAsync(token, cancellationToken);
 
         if (claims is null)
         {
@@ -274,6 +281,7 @@ public sealed class SessionsController : ControllerBase
     /// Approves a pending participant, granting them access to the session.
     /// </summary>
     [HttpPost("api/sessions/{id:guid}/approve-participant")]
+    [EnableRateLimiting(RateLimitingSettings.JoinPolicy)]
     [ProducesResponseType(typeof(ParticipantDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -401,7 +409,14 @@ public sealed class SessionsController : ControllerBase
         var lanIp = TryGetLanIpv4();
         var lanUrl = lanIp is null ? null : $"http://{lanIp}:{port}";
 
-        return Ok(new NetworkInfoDto(localUrl, lanUrl, InviteCode: null));
+        var tunnelUrl = _tunnelState.TunnelUrl;
+
+        return Ok(new NetworkInfoDto(
+            localUrl,
+            lanUrl,
+            InviteCode: null,
+            TunnelUrl: tunnelUrl,
+            TunnelActive: _tunnelState.IsInternetModeActive));
     }
 
     /// <summary>

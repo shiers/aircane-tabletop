@@ -34,6 +34,7 @@ public class FolderDocumentInheritanceTests : IDisposable
             new NoOpFileStorageService(),
             new Aircane.Infrastructure.Embeddings.FakeEmbeddingProvider(),
             new Aircane.Infrastructure.GameSystems.GameSystemCanonicalizer(_db),
+            new NoOpDocumentImportService(),
             NullLogger<LibraryService>.Instance);
     }
 
@@ -267,4 +268,17 @@ file sealed class NoOpFileStorageService : Aircane.Application.Abstractions.IFil
 
     public Task DeleteFileAsync(string storagePath, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+}
+
+/// <summary>
+/// No-op implementation of <see cref="Aircane.Application.Abstractions.IDocumentImportService"/>
+/// for tests that do not exercise the import queue.
+/// </summary>
+file sealed class NoOpDocumentImportService : Aircane.Application.Abstractions.IDocumentImportService
+{
+    public Task<Guid> EnqueueImportJobAsync(Guid documentId, CancellationToken cancellationToken = default)
+        => Task.FromResult(Guid.NewGuid());
+
+    public Task<ImportStatusDto> GetJobStatusAsync(Guid documentId, CancellationToken cancellationToken = default)
+        => Task.FromResult(new ImportStatusDto(documentId, Aircane.Domain.Enums.ImportStatus.Pending, null, null, DateTimeOffset.UtcNow));
 }

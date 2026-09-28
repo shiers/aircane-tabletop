@@ -11,4 +11,5 @@ public sealed record UpdateFolderRequest(
     string? AbsolutePath = null,
     SourceType? DefaultSourceType = null,
     string? DefaultGameSystem = null,
-    string? DefaultRuleset = null);
+    string? DefaultRuleset = null,
+    IReadOnlyList<string>? ExcludePatterns = null);

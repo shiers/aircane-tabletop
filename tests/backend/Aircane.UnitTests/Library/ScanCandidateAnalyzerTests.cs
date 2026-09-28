@@ -123,4 +123,77 @@ public class ScanCandidateAnalyzerTests
         Assert.Empty(candidate.Flags);
         Assert.Null(candidate.Reason);
     }
+
+    // ── Content-hash exact-duplicate detection (B4.1) ────────────────────────────
+
+    [Fact]
+    public void Analyze_ContentHashMatchesExisting_FlaggedExactDuplicate()
+    {
+        var file = File("Some Random Name.pdf");
+        var fileHashes = new Dictionary<string, string> { [file.SourcePath] = "abc123" };
+        var existingHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "abc123" };
+
+        var result = Sut.Analyze(
+            new[] { file }, new HashSet<string>(), fileHashes, existingHashes);
+
+        var candidate = result.Single();
+        Assert.Contains(ScanCandidateFlag.ExactDuplicate, candidate.Flags);
+        Assert.True(candidate.AlreadyImported);
+    }
+
+    [Fact]
+    public void Analyze_ContentHashDoesNotMatch_NotFlaggedExactDuplicate()
+    {
+        var file = File("Unique.pdf");
+        var fileHashes = new Dictionary<string, string> { [file.SourcePath] = "unique-hash" };
+        var existingHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "other-hash" };
+
+        var result = Sut.Analyze(
+            new[] { file }, new HashSet<string>(), fileHashes, existingHashes);
+
+        Assert.DoesNotContain(ScanCandidateFlag.ExactDuplicate, result.Single().Flags);
+    }
+
+    // ── Configurable exclude patterns (B4.3) ─────────────────────────────────────
+
+    [Fact]
+    public void Analyze_CustomExcludePatterns_FlagMatchingFiles()
+    {
+        // A "battlemap" file wouldn't match the default signals, but a custom *battlemap* pattern does.
+        var result = Sut.Analyze(
+            new[] { File("Grand Battlemap Collection.pdf") },
+            new HashSet<string>(),
+            fileContentHashes: null,
+            existingContentHashes: null,
+            excludePatterns: ["*battlemap*"]);
+
+        Assert.Contains(ScanCandidateFlag.LikelyNotRules, result.Single().Flags);
+    }
+
+    [Fact]
+    public void Analyze_CustomExcludePatterns_ExcludeEverything()
+    {
+        // A maps folder can flag all files with a "*" pattern.
+        var result = Sut.Analyze(
+            new[] { File("Players Handbook.pdf") },
+            new HashSet<string>(),
+            fileContentHashes: null,
+            existingContentHashes: null,
+            excludePatterns: ["*"]);
+
+        Assert.Contains(ScanCandidateFlag.LikelyNotRules, result.Single().Flags);
+    }
+
+    [Fact]
+    public void Analyze_CustomExcludePatterns_NonMatchingRulesFileNotFlagged()
+    {
+        var result = Sut.Analyze(
+            new[] { File("Players Handbook.pdf") },
+            new HashSet<string>(),
+            fileContentHashes: null,
+            existingContentHashes: null,
+            excludePatterns: ["*token*"]);
+
+        Assert.DoesNotContain(ScanCandidateFlag.LikelyNotRules, result.Single().Flags);
+    }
 }

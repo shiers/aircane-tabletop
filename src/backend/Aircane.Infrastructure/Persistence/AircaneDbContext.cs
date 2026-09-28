@@ -36,6 +36,7 @@ public class AircaneDbContext : DbContext
     public DbSet<GeneratedAdventure> GeneratedAdventures => Set<GeneratedAdventure>();
     public DbSet<GameSystemDefinition> GameSystemDefinitions => Set<GameSystemDefinition>();
     public DbSet<GameSystemDefinitionVersion> GameSystemDefinitionVersions => Set<GameSystemDefinitionVersion>();
+    public DbSet<GameSystemAlias> GameSystemAliases => Set<GameSystemAlias>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -145,6 +146,14 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.DefaultRuleset).HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.LastScannedAt).IsRequired(false);
             entity.Property(e => e.CreatedAt).IsRequired();
+
+            // ExcludePatterns: stored as jsonb in PostgreSQL; string conversion for in-memory tests.
+            var excludeProperty = entity.Property(e => e.ExcludePatterns)
+                .HasConversion(
+                    v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                    v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new List<string>())
+                .IsRequired();
+            if (!_isInMemory) excludeProperty.HasColumnType("jsonb");
         });
 
         // ── SourceDocument ────────────────────────────────────────────────────
@@ -173,6 +182,10 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.LicenseDisplayName).HasMaxLength(200).IsRequired(false);
             if (!_isInMemory) entity.Property(e => e.AttributionText).HasColumnType("text").IsRequired(false);
             entity.Property(e => e.AttributionUrl).HasMaxLength(500).IsRequired(false);
+
+            // SHA-256 content hash (lowercase hex) for content-based duplicate detection.
+            entity.Property(e => e.ContentHash).HasMaxLength(64).IsRequired(false);
+            entity.HasIndex(e => e.ContentHash).HasDatabaseName("IX_SourceDocuments_ContentHash");
 
             // Supports idempotency checks in the built-in content seeder.
             entity.HasIndex(e => new { e.IsBuiltIn, e.GameSystem })
@@ -382,6 +395,23 @@ public class AircaneDbContext : DbContext
             entity.HasIndex(e => e.Identifier)
                 .IsUnique()
                 .HasDatabaseName("IX_GameSystemDefinitions_Identifier");
+        });
+
+        // ── GameSystemAlias ───────────────────────────────────────────────────
+        modelBuilder.Entity<GameSystemAlias>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.GameSystemDefinitionId).IsRequired();
+            entity.Property(e => e.Alias).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasOne(e => e.GameSystemDefinition)
+                .WithMany()
+                .HasForeignKey(e => e.GameSystemDefinitionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.GameSystemDefinitionId)
+                .HasDatabaseName("IX_GameSystemAliases_GameSystemDefinitionId");
         });
 
         // ── GameSystemDefinitionVersion ───────────────────────────────────────

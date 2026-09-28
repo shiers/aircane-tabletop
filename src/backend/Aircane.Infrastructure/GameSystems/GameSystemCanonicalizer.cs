@@ -45,6 +45,20 @@ public sealed class GameSystemCanonicalizer : IGameSystemCanonicalizer
             }
         }
 
+        // Fall back to alias matching: a stored GameSystemAlias may map a common short-hand
+        // (e.g. "D&D 5e", "PF2e") to a definition whose canonical name we then return.
+        var aliasMatch = await _db.GameSystemAliases
+            .AsNoTracking()
+            .Where(a => a.GameSystemDefinition != null && a.GameSystemDefinition.IsActive)
+            .Select(a => new { a.Alias, DefinitionName = a.GameSystemDefinition!.Name })
+            .ToListAsync(cancellationToken);
+
+        foreach (var alias in aliasMatch)
+        {
+            if (Normalize(alias.Alias) == normalizedInput)
+                return alias.DefinitionName;
+        }
+
         // No known definition matched: preserve the user's value (trimmed) so systems without a
         // GameSystemDefinition can still be recorded.
         return input.Trim();

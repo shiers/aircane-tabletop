@@ -89,6 +89,36 @@ public sealed class AdventureGenerationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GenerateAsync_Pf2eCampaign_UsesPf2eTerminologyInPrompts()
+    {
+        var request = CreateRequest() with
+        {
+            GameSystem = "pathfinder-2e-remaster",
+            Ruleset = "Pathfinder Second Edition (Remaster)",
+        };
+
+        var result = await _service.GenerateAsync(request, CreatePartyAnalysis());
+
+        Assert.NotNull(result);
+
+        // The system prompt should carry PF2e framing (three actions, degrees of success,
+        // PF2e tiers/conditions) rather than D&D-5e-only language.
+        var prompts = _fakeAi.AllSystemPrompts;
+        Assert.Contains("three actions", prompts, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("degrees of success", prompts, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Off-Guard", prompts, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_Dnd5eCampaign_OmitsPf2eGuidance()
+    {
+        var request = CreateRequest(); // D&D 5e 2014
+        await _service.GenerateAsync(request, CreatePartyAnalysis());
+
+        Assert.DoesNotContain("degrees of success", _fakeAi.AllSystemPrompts, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task GenerateAsync_persists_adventure_to_database()
     {
         var request = CreateRequest();
@@ -333,6 +363,9 @@ public sealed class AdventureGenerationServiceTests : IDisposable
         public string ProviderName => "StructuredFake";
         public int CallCount { get; private set; }
 
+        /// <summary>Concatenated system-message content seen across all calls, for prompt assertions.</summary>
+        public string AllSystemPrompts { get; private set; } = "";
+
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -343,6 +376,8 @@ public sealed class AdventureGenerationServiceTests : IDisposable
             CancellationToken ct = default)
         {
             CallCount++;
+            foreach (var m in messages.Where(m => m.Role == "system"))
+                AllSystemPrompts += m.Content + "\n";
             var userMessage = messages.LastOrDefault(m => m.Role == "user")?.Content ?? "";
 
             string response;

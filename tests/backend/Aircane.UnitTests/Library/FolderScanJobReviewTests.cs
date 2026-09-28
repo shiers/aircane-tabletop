@@ -1,4 +1,5 @@
 using Aircane.Application.Abstractions;
+using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Library;
 using Aircane.Application.Library;
 using Aircane.Domain.Entities;
@@ -37,6 +38,7 @@ public class FolderScanJobReviewTests : IDisposable
             new NoOpStorage(),
             new FakeEmbeddingProvider(),
             new GameSystemCanonicalizer(_db),
+            _importJob,
             NullLogger<LibraryService>.Instance);
 
         _sut = new FolderScanJob(
@@ -281,15 +283,22 @@ public class FolderScanJobReviewTests : IDisposable
             => Task.FromResult(Files.Any(f => f.SourcePath == sourcePath));
     }
 
-    private sealed class RecordingImportJob : IDocumentImportJob
+    /// <summary>
+    /// Test double for <see cref="IDocumentImportService"/> that records enqueued document ids
+    /// instead of running the import pipeline.
+    /// </summary>
+    private sealed class RecordingImportJob : IDocumentImportService
     {
         public List<Guid> Processed { get; } = new();
 
-        public Task ProcessDocumentAsync(Guid documentId, CancellationToken ct = default)
+        public Task<Guid> EnqueueImportJobAsync(Guid documentId, CancellationToken cancellationToken = default)
         {
             Processed.Add(documentId);
-            return Task.CompletedTask;
+            return Task.FromResult(Guid.NewGuid());
         }
+
+        public Task<ImportStatusDto> GetJobStatusAsync(Guid documentId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ImportStatusDto(documentId, ImportStatus.Pending, null, null, DateTimeOffset.UtcNow));
     }
 
     private sealed class NoOpStorage : IFileStorageService

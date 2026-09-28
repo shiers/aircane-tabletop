@@ -1,10 +1,12 @@
 using Aircane.Application.Abstractions;
+using Aircane.Application.Abstractions.BackgroundJobs;
 using Aircane.Application.AiRuntime;
 using Aircane.Application.AiRuntime.Validators;
 using Aircane.Application.Characters;
 using Aircane.Application.GameSystems;
 using Aircane.Application.Library;
 using Aircane.Infrastructure.Adventures;
+using Aircane.Infrastructure.BackgroundJobs;
 using Aircane.Infrastructure.Ai;
 using Aircane.Infrastructure.Campaigns;
 using Aircane.Infrastructure.Characters;
@@ -113,8 +115,13 @@ public static class DependencyInjection
         // Adventure generation - party analysis
         services.AddScoped<IPartyAnalysisService, PartyAnalysisService>();
 
-        // Adventure generation - encounter validation (D&D 5e placeholder)
-        services.AddSingleton<IEncounterValidator, Dnd5eEncounterValidator>();
+        // Adventure generation - encounter validation. Both system validators are registered as
+        // concretes; the selector picks the right one per campaign's bound game system. The
+        // default IEncounterValidator remains D&D 5e for callers that don't select by system.
+        services.AddSingleton<Dnd5eEncounterValidator>();
+        services.AddSingleton<Pf2eEncounterValidator>();
+        services.AddSingleton<IEncounterValidator>(sp => sp.GetRequiredService<Dnd5eEncounterValidator>());
+        services.AddSingleton<IEncounterValidatorSelector, EncounterValidatorSelector>();
 
         // Adventure generation - staged pipeline
         services.AddScoped<IAdventureGenerationService, AdventureGenerationService>();
@@ -129,9 +136,49 @@ public static class DependencyInjection
         services.AddScoped<ISystemRegistry, SystemRegistry>();
         services.AddScoped<IGameSystemMigrationService, GameSystemMigrationService>();
         services.AddScoped<IGameSystemCanonicalizer, GameSystemCanonicalizer>();
+        services.AddScoped<IGameSystemAliasService, GameSystemAliasService>();
         services.AddSingleton<IScanCandidateAnalyzer, ScanCandidateAnalyzer>();
 
+        RegisterBackgroundJobs(services, configuration);
+
         return services;
+    }
+
+    /// <summary>
+    /// Registers the background job queue, status store, the <see cref="IDocumentImportService"/>
+    /// enqueue seam, and the per-type job handlers.
+    /// </summary>
+    /// <remarks>
+    /// Default runner is the in-process channel queue. A <c>BackgroundJobs:Runner=Hangfire</c>
+    /// switch is reserved so a persistent runner can be introduced later without touching callers;
+    /// only the queue/worker registration would change here.
+    /// </remarks>
+    private static void RegisterBackgroundJobs(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var runner = configuration["BackgroundJobs:Runner"] ?? "InProcess";
+
+        // Status store is shared regardless of runner.
+        services.AddSingleton<IBackgroundJobStatusStore, InMemoryBackgroundJobStatusStore>();
+
+        switch (runner.Trim().ToLowerInvariant())
+        {
+            // case "hangfire": // Reserved: register a Hangfire-backed IBackgroundJobQueue here.
+            default:
+                // Singleton so the enqueuing request scope and the hosted worker share the channel.
+                services.AddSingleton<IBackgroundJobQueue, ChannelBackgroundJobQueue>();
+                break;
+        }
+
+        // Enqueue seam used by controllers/services for document import.
+        services.AddScoped<IDocumentImportService, DocumentImportService>();
+
+        // Per-type job handlers, resolved by the worker inside a fresh scope.
+        services.AddScoped<IJobHandler<DocumentImportJobMessage>, DocumentImportJobHandler>();
+        services.AddScoped<IJobHandler<FolderScanJobMessage>, FolderScanJobHandler>();
+        services.AddScoped<IJobHandler<ReembedJobMessage>, ReembedJobHandler>();
+        services.AddScoped<IJobHandler<ReocrJobMessage>, ReocrJobHandler>();
     }
 
     private static void RegisterOcrEngine(
@@ -146,11 +193,64 @@ public static class DependencyInjection
             // Singleton: the Tesseract Engine is expensive to construct and is initialized
             // lazily on first use. It is internally thread-safe for our single-image calls.
             services.AddSingleton(options);
+
+            // Opt-in tessdata auto-download (B5.2): resolve/populate the tessdata path before the
+            // engine is constructed so it can find the language data.
+            TryAutoDownloadTessdata(options);
+
             services.AddSingleton<Aircane.Application.Abstractions.IOcrEngine, TesseractOcrEngine>();
+
+            // Full-page rasterizer (B5.1): only wire the real (native) rasterizer when the feature
+            // is enabled; otherwise a no-op keeps the extractor's optional dependency satisfied.
+            if (options.FullPageRasterization)
+                services.AddSingleton<Aircane.Application.Abstractions.IPdfRasterizer, DocnetPdfRasterizer>();
+            else
+                services.AddSingleton<Aircane.Application.Abstractions.IPdfRasterizer, NullPdfRasterizer>();
         }
         else
         {
+            services.AddSingleton(options);
             services.AddSingleton<Aircane.Application.Abstractions.IOcrEngine, NullOcrEngine>();
+            services.AddSingleton<Aircane.Application.Abstractions.IPdfRasterizer, NullPdfRasterizer>();
+        }
+    }
+
+    /// <summary>
+    /// Opt-in (B5.2): when OCR is enabled, <c>Ocr:AutoDownloadTessdata</c> is true, and no
+    /// tessdata path is configured, download <c>eng.traineddata</c> to a local app-data directory
+    /// and set <see cref="Aircane.Application.DocumentProcessing.OcrOptions.TessdataPath"/>.
+    /// Best-effort and synchronous at startup; failures are swallowed (OCR simply stays
+    /// unavailable and logs a clear message when tessdata is missing).
+    /// </summary>
+    private static void TryAutoDownloadTessdata(Aircane.Application.DocumentProcessing.OcrOptions options)
+    {
+        if (!options.AutoDownloadTessdata || !string.IsNullOrWhiteSpace(options.TessdataPath))
+            return;
+
+        try
+        {
+            var targetDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Aircane", "tessdata");
+            Directory.CreateDirectory(targetDir);
+            var targetFile = Path.Combine(targetDir, "eng.traineddata");
+
+            if (!File.Exists(targetFile))
+            {
+                // Official Tesseract trained data (fast model) from the tessdata_fast release.
+                const string url =
+                    "https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata";
+                using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+                var bytes = http.GetByteArrayAsync(url).GetAwaiter().GetResult();
+                File.WriteAllBytes(targetFile, bytes);
+            }
+
+            options.TessdataPath = targetDir;
+        }
+        catch
+        {
+            // Non-fatal: leave TessdataPath unset. TesseractOcrEngine reports unavailable and the
+            // startup logs will explain that tessdata is missing.
         }
     }
 
@@ -161,6 +261,7 @@ public static class DependencyInjection
         // Register named HttpClients for providers that need them
         services.AddHttpClient("OpenAI");
         services.AddHttpClient("Ollama");
+        services.AddHttpClient("AzureOpenAI");
 
         // Use a scoped factory that resolves the correct provider based on the
         // current AiSettingsService state. This allows the user to switch providers
@@ -219,9 +320,43 @@ public static class DependencyInjection
                 services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();
                 break;
 
+            case "openai":
+                services.AddSingleton<IEmbeddingProvider>(sp =>
+                {
+                    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+                    var httpClient = httpClientFactory.CreateClient("OpenAI");
+                    // Reuse the chat provider's key; allow a dedicated embedding model/dimension.
+                    var apiKey = configuration["Ai:OpenAi:ApiKey"];
+                    var model = configuration["Embeddings:OpenAi:Model"];
+                    var dims = configuration.GetValue<int?>("Embeddings:OpenAi:Dimensions");
+                    var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<OpenAiEmbeddingProvider>>();
+                    return new OpenAiEmbeddingProvider(httpClient, apiKey, model, dims, logger);
+                });
+                break;
+
+            case "azureopenai":
+                services.AddSingleton<IEmbeddingProvider>(sp =>
+                {
+                    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+                    var httpClient = httpClientFactory.CreateClient("AzureOpenAI");
+                    var endpoint = configuration["Ai:AzureOpenAi:Endpoint"];
+                    var apiKey = configuration["Ai:AzureOpenAi:ApiKey"];
+                    var deployment = configuration["Embeddings:AzureOpenAi:DeploymentName"];
+                    var apiVersion = configuration["Ai:AzureOpenAi:ApiVersion"];
+                    var dims = configuration.GetValue<int?>("Embeddings:AzureOpenAi:Dimensions");
+                    var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AzureOpenAiEmbeddingProvider>>();
+                    return new AzureOpenAiEmbeddingProvider(
+                        httpClient, endpoint, apiKey, deployment, apiVersion, dims, logger);
+                });
+                break;
+
             default:
                 services.AddSingleton<IEmbeddingProvider, FakeEmbeddingProvider>();
                 break;
         }
+
+        // Reports whether the active provider dimension matches the pgvector column dimension so
+        // vector operations can be gracefully disabled on a mismatch (keyword search still works).
+        services.AddSingleton<IEmbeddingCompatibility, EmbeddingCompatibility>();
     }
 }

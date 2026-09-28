@@ -118,6 +118,10 @@ builder.Services.AddScoped<Aircane.Workers.Seeding.BuiltInContentSeeder>();
 // Register the built-in game-system-definition seeder (D&D 5e, Freeform, Pathfinder 2e Remaster).
 builder.Services.AddScoped<Aircane.Workers.Seeding.GameSystemDefinitionSeeder>();
 
+// Background job worker: dequeues import/scan/re-embed jobs and dispatches them to handlers.
+// The queue and handlers themselves are registered by AddInfrastructure.
+builder.Services.AddHostedService<Aircane.Workers.BackgroundJobs.BackgroundJobWorker>();
+
 var app = builder.Build();
 
 // Apply EF Core migrations automatically in Development so the schema (and the

@@ -121,4 +121,58 @@ public class GameSystemCanonicalizerTests : IDisposable
 
         Assert.Equal("D&D 5e", result);
     }
+
+    // ── Alias matching (B4.2) ────────────────────────────────────────────────────
+
+    private async Task SeedAliasAsync(string definitionIdentifier, string alias)
+    {
+        var def = await _db.GameSystemDefinitions.FirstAsync(d => d.Identifier == definitionIdentifier);
+        _db.GameSystemAliases.Add(new GameSystemAlias(def.Id, alias));
+        await _db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Canonicalize_AliasMatch_ReturnsCanonicalName()
+    {
+        await SeedDefinitionAsync("dnd-5e-2014", "Dungeons & Dragons 5th Edition (2014)");
+        await SeedAliasAsync("dnd-5e-2014", "D&D 5e");
+
+        var result = await _sut.CanonicalizeAsync("D&D 5e");
+
+        Assert.Equal("Dungeons & Dragons 5th Edition (2014)", result);
+    }
+
+    [Fact]
+    public async Task Canonicalize_AliasMatchIgnoresCaseAndWhitespace()
+    {
+        await SeedDefinitionAsync("dnd-5e-2014", "Dungeons & Dragons 5th Edition (2014)");
+        await SeedAliasAsync("dnd-5e-2014", "D&D 5e");
+
+        var result = await _sut.CanonicalizeAsync("  d&d   5e ");
+
+        Assert.Equal("Dungeons & Dragons 5th Edition (2014)", result);
+    }
+
+    [Fact]
+    public async Task Canonicalize_NameMatchTakesPrecedenceOverAlias()
+    {
+        // Exact name match should resolve before falling back to aliases.
+        await SeedDefinitionAsync("dnd-5e-2014", "Dungeons & Dragons 5th Edition (2014)");
+        await SeedAliasAsync("dnd-5e-2014", "D&D 5e");
+
+        var result = await _sut.CanonicalizeAsync("Dungeons & Dragons 5th Edition (2014)");
+
+        Assert.Equal("Dungeons & Dragons 5th Edition (2014)", result);
+    }
+
+    [Fact]
+    public async Task Canonicalize_AliasForInactiveDefinition_NotMatched()
+    {
+        await SeedDefinitionAsync("legacy", "Legacy System", isActive: false);
+        await SeedAliasAsync("legacy", "LS");
+
+        var result = await _sut.CanonicalizeAsync("LS");
+
+        Assert.Equal("LS", result);
+    }
 }

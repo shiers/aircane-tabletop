@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Cryptography;
 using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Library;
 using Aircane.Domain.Entities;
@@ -27,6 +28,7 @@ public sealed class DocumentImportJob : IDocumentImportJob
     private readonly IEmbeddingProvider _embeddingProvider;
     private readonly ILibraryHubNotifier _hubNotifier;
     private readonly IDocumentSource _documentSource;
+    private readonly IEmbeddingCompatibility? _embeddingCompatibility;
     private readonly ILogger<DocumentImportJob> _logger;
 
     public DocumentImportJob(
@@ -36,7 +38,8 @@ public sealed class DocumentImportJob : IDocumentImportJob
         IEmbeddingProvider embeddingProvider,
         ILibraryHubNotifier hubNotifier,
         IDocumentSource documentSource,
-        ILogger<DocumentImportJob> logger)
+        ILogger<DocumentImportJob> logger,
+        IEmbeddingCompatibility? embeddingCompatibility = null)
     {
         _db = db;
         _pdfExtractor = pdfExtractor;
@@ -44,12 +47,19 @@ public sealed class DocumentImportJob : IDocumentImportJob
         _embeddingProvider = embeddingProvider;
         _hubNotifier = hubNotifier;
         _documentSource = documentSource;
+        _embeddingCompatibility = embeddingCompatibility;
         _logger = logger;
     }
 
     /// <inheritdoc />
-    public async Task ProcessDocumentAsync(Guid documentId, CancellationToken ct = default)
+    // The background job id driving the current import, threaded into ImportStatusUpdated events
+    // so the frontend can correlate progress to a specific job. Null for direct/legacy calls.
+    private Guid? _currentJobId;
+
+    public async Task ProcessDocumentAsync(Guid documentId, Guid? jobId = null, CancellationToken ct = default)
     {
+        _currentJobId = jobId;
+
         var document = await _db.SourceDocuments
             .FirstOrDefaultAsync(d => d.Id == documentId, ct);
 
@@ -79,7 +89,7 @@ public sealed class DocumentImportJob : IDocumentImportJob
             await _hubNotifier.NotifyImportStatusUpdatedAsync(
                 new ImportStatusDto(document.Id, document.ImportStatus, null,
                     $"Source file is not accessible: {document.SourcePath}", document.UpdatedAt,
-                    document.IsSourceAvailable),
+                    document.IsSourceAvailable, _currentJobId),
                 CancellationToken.None);
 
             return;
@@ -87,11 +97,15 @@ public sealed class DocumentImportJob : IDocumentImportJob
 
         document.ImportStatus = ImportStatus.Processing;
         document.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Compute (or backfill) the content hash for content-based duplicate detection.
+        await ComputeContentHashAsync(document, ct);
+
         await _db.SaveChangesAsync(ct);
 
         await _hubNotifier.NotifyImportStatusUpdatedAsync(
             new ImportStatusDto(document.Id, document.ImportStatus, null, null, document.UpdatedAt,
-                document.IsSourceAvailable),
+                document.IsSourceAvailable, _currentJobId),
             CancellationToken.None);
 
         try
@@ -109,7 +123,7 @@ public sealed class DocumentImportJob : IDocumentImportJob
 
             await _hubNotifier.NotifyImportStatusUpdatedAsync(
                 new ImportStatusDto(document.Id, document.ImportStatus, null, ex.Message, document.UpdatedAt,
-                    document.IsSourceAvailable),
+                    document.IsSourceAvailable, _currentJobId),
                 CancellationToken.None);
         }
     }
@@ -127,7 +141,7 @@ public sealed class DocumentImportJob : IDocumentImportJob
 
             await _hubNotifier.NotifyImportStatusUpdatedAsync(
                 new ImportStatusDto(document.Id, document.ImportStatus, 100, null, document.UpdatedAt,
-                    document.IsSourceAvailable),
+                    document.IsSourceAvailable, _currentJobId),
                 CancellationToken.None);
 
             _logger.LogInformation(
@@ -153,7 +167,7 @@ public sealed class DocumentImportJob : IDocumentImportJob
 
         await _hubNotifier.NotifyImportStatusUpdatedAsync(
             new ImportStatusDto(document.Id, document.ImportStatus, null, $"Unsupported file extension: {extension}", document.UpdatedAt,
-                document.IsSourceAvailable),
+                document.IsSourceAvailable, _currentJobId),
             CancellationToken.None);
     }
 
@@ -175,7 +189,7 @@ public sealed class DocumentImportJob : IDocumentImportJob
 
             await _hubNotifier.NotifyImportStatusUpdatedAsync(
                 new ImportStatusDto(document.Id, document.ImportStatus, null, null, document.UpdatedAt,
-                    document.IsSourceAvailable),
+                    document.IsSourceAvailable, _currentJobId),
                 CancellationToken.None);
             return;
         }
@@ -235,14 +249,47 @@ public sealed class DocumentImportJob : IDocumentImportJob
 
         await _hubNotifier.NotifyImportStatusUpdatedAsync(
             new ImportStatusDto(document.Id, document.ImportStatus, 100, null, document.UpdatedAt,
-                document.IsSourceAvailable),
+                document.IsSourceAvailable, _currentJobId),
             CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Computes the SHA-256 content hash of the document's file bytes and stores it on the entity.
+    /// Best-effort: a hashing failure is logged and does not fail the import (the document is
+    /// simply left without a content hash).
+    /// </summary>
+    private async Task ComputeContentHashAsync(SourceDocument document, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = await _documentSource.OpenStreamAsync(document.SourcePath, ct);
+            using var sha = SHA256.Create();
+            var hashBytes = await sha.ComputeHashAsync(stream, ct);
+            document.ContentHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to compute content hash for document {DocumentId}; continuing without it.",
+                document.Id);
+        }
     }
 
     private async Task GenerateEmbeddingsAsync(List<DocumentChunk> chunks, CancellationToken ct)
     {
         if (chunks.Count == 0)
             return;
+
+        // Skip embedding entirely when the provider dimension doesn't match the pgvector column;
+        // writing incompatible vectors would fail. Chunks are still stored (keyword-searchable).
+        if (_embeddingCompatibility is { IsVectorSearchEnabled: false })
+        {
+            _logger.LogWarning(
+                "Skipping embedding generation: provider dimension ({ProviderDim}) does not match the " +
+                "column ({ColumnDim}). Chunks stored without embeddings; migrate the column and re-embed.",
+                _embeddingCompatibility.ProviderDimension, _embeddingCompatibility.ColumnDimension);
+            return;
+        }
 
         try
         {

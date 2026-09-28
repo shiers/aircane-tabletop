@@ -23,7 +23,8 @@ internal static class EncounterCommandHandler
     {
         "StartEncounter" or "RollInitiative" or "AdvanceTurn" or "TickConditions"
             or "ApplyDamage" or "ApplyHealing" or "ApplyCondition" or "RemoveCondition"
-            or "DeathSave" => true,
+            or "DeathSave" or "EndEncounter"
+            or "ApplyEliteTemplate" or "ApplyWeakTemplate" => true,
         _ => false,
     };
 
@@ -52,6 +53,9 @@ internal static class EncounterCommandHandler
             "RemoveCondition" => encounter is null ? null : CombatEngine.RemoveCondition(encounter, TargetId(payload), ConditionName(payload)),
             "DeathSave" => encounter is null ? null : CombatEngine.RecordDeathSave(
                 encounter, TargetId(payload), Success(payload), RecoversHp(payload)),
+            "EndEncounter" => encounter is null ? null : CombatEngine.EndEncounter(encounter),
+            "ApplyEliteTemplate" => encounter is null ? null : EliteWeakAdjuster.ApplyElite(encounter, TargetId(payload)),
+            "ApplyWeakTemplate" => encounter is null ? null : EliteWeakAdjuster.ApplyWeak(encounter, TargetId(payload)),
             _ => encounter,
         };
 

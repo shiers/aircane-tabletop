@@ -97,6 +97,158 @@ public class AiContextAdapter : IAiContextAdapter
         return sb.ToString().TrimEnd();
     }
 
+    /// <summary>
+    /// Approximate upper bound on combatants rendered in full detail before the roster is
+    /// truncated to the active combatant and its neighbours to keep the block compact.
+    /// </summary>
+    private const int MaxCombatantsBeforeTruncation = 10;
+
+    /// <inheritdoc />
+    public string BuildCombatContext(
+        Aircane.Domain.Combat.EncounterState? encounter,
+        GameSystemDefinition? definition)
+    {
+        if (encounter is null || !encounter.IsActive)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("ACTIVE COMBAT ENCOUNTER:");
+        sb.AppendLine($"Round: {encounter.Round}");
+
+        var active = encounter.ActiveCombatant;
+        if (active is not null)
+            sb.AppendLine($"Active turn: {active.Name}");
+
+        // Determine which combatants to render. Keep it compact: when the roster is large, show
+        // the active combatant plus its immediate neighbours in initiative order.
+        var ordered = OrderByInitiative(encounter);
+        var rendered = SelectRenderableCombatants(encounter, ordered, active);
+
+        sb.AppendLine("Initiative order:");
+        foreach (var (combatant, position) in rendered)
+        {
+            var marker = ReferenceEquals(combatant, active) ? " (active)" : string.Empty;
+            sb.Append($"  {position}. {combatant.Name}{marker} — HP {combatant.CurrentHp}/{combatant.MaxHp}");
+
+            if (combatant.TemporaryHp > 0)
+                sb.Append($" (+{combatant.TemporaryHp} temp)");
+
+            if (combatant.Conditions.Count > 0)
+            {
+                var conditions = string.Join(", ", combatant.Conditions.Select(FormatCondition));
+                sb.Append($"; conditions: {conditions}");
+            }
+
+            if (combatant.DeathSaves is { } ds)
+            {
+                if (ds.IsDead)
+                    sb.Append("; DEAD");
+                else if (ds.IsStable)
+                    sb.Append("; stable (downed)");
+                else
+                    sb.Append($"; dying (death saves {ds.Successes}/3 success, {ds.Failures}/3 fail)");
+            }
+            else if (combatant.IsDowned)
+            {
+                sb.Append(combatant.IsPlayerCharacter ? "; downed" : "; defeated");
+            }
+
+            sb.AppendLine();
+        }
+
+        if (rendered.Count < ordered.Count)
+            sb.AppendLine($"  … ({ordered.Count - rendered.Count} more combatant(s) not shown)");
+
+        // Action economy for the active combatant, only for systems that use a structured economy.
+        AppendActionSlots(sb, definition);
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static IReadOnlyList<Aircane.Domain.Combat.Combatant> OrderByInitiative(
+        Aircane.Domain.Combat.EncounterState encounter)
+    {
+        if (encounter.InitiativeOrder.Count == 0)
+            return encounter.Combatants;
+
+        var byId = encounter.Combatants.ToDictionary(c => c.Id);
+        var ordered = new List<Aircane.Domain.Combat.Combatant>(encounter.InitiativeOrder.Count);
+        foreach (var id in encounter.InitiativeOrder)
+        {
+            if (byId.TryGetValue(id, out var c))
+                ordered.Add(c);
+        }
+
+        // Include any combatants not present in the initiative order (e.g. just added) at the end.
+        foreach (var c in encounter.Combatants)
+        {
+            if (!encounter.InitiativeOrder.Contains(c.Id))
+                ordered.Add(c);
+        }
+
+        return ordered;
+    }
+
+    private static List<(Aircane.Domain.Combat.Combatant Combatant, int Position)> SelectRenderableCombatants(
+        Aircane.Domain.Combat.EncounterState encounter,
+        IReadOnlyList<Aircane.Domain.Combat.Combatant> ordered,
+        Aircane.Domain.Combat.Combatant? active)
+    {
+        var result = new List<(Aircane.Domain.Combat.Combatant, int)>();
+
+        if (ordered.Count <= MaxCombatantsBeforeTruncation || active is null)
+        {
+            for (var i = 0; i < ordered.Count; i++)
+                result.Add((ordered[i], i + 1));
+            return result;
+        }
+
+        // Truncate: active combatant plus a window of neighbours around it.
+        var activeIndex = ordered.ToList().FindIndex(c => ReferenceEquals(c, active));
+        if (activeIndex < 0)
+            activeIndex = 0;
+
+        var start = Math.Max(0, activeIndex - 2);
+        var end = Math.Min(ordered.Count - 1, activeIndex + 2);
+        for (var i = start; i <= end; i++)
+            result.Add((ordered[i], i + 1));
+
+        return result;
+    }
+
+    private static string FormatCondition(Aircane.Domain.Combat.ConditionInstance condition)
+    {
+        return condition.RemainingRounds is int rounds
+            ? $"{condition.Name} ({rounds}r)"
+            : condition.Name;
+    }
+
+    private static void AppendActionSlots(StringBuilder sb, GameSystemDefinition? definition)
+    {
+        var economy = definition?.ActionEconomy;
+
+        // Hidden for freeform systems (no structured action economy).
+        if (economy is null || economy.Type == ActionEconomyType.Freeform)
+            return;
+
+        var slots = economy.TurnStructure?.Slots;
+        if (slots is { Count: > 0 })
+        {
+            var slotText = string.Join(", ", slots.Select(s =>
+                $"{s.Label}: {(s.Count == -1 ? "unlimited" : s.Count.ToString())}"));
+            sb.AppendLine($"Active combatant action slots (per turn): {slotText}");
+        }
+        else if (economy.Type == ActionEconomyType.MultiActionPenalty && economy.MaxActions is int maxActions)
+        {
+            sb.AppendLine($"Active combatant action slots (per turn): {maxActions} actions " +
+                "(multiple-attack penalty applies to additional attacks).");
+        }
+        else if (economy.Type == ActionEconomyType.ActionPoints && economy.PointsPerTurn is int points)
+        {
+            sb.AppendLine($"Active combatant action points (per turn): {points}.");
+        }
+    }
+
     /// <inheritdoc />
     public AiRollRequest FormatRollRequest(
         DiceConvention convention,

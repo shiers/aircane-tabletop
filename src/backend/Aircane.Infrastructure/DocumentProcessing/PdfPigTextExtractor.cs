@@ -19,26 +19,47 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
     public const int DefaultOcrThresholdCharsPerPage = 50;
 
     private readonly int _ocrThresholdCharsPerPage;
-    private readonly IOcrEngine _ocrEngine;
+    private readonly Aircane.Application.Abstractions.IOcrEngine _ocrEngine;
+    private readonly Aircane.Application.Abstractions.IPdfRasterizer? _rasterizer;
+    private readonly OcrOptions _ocrOptions;
     private readonly ILogger<PdfPigTextExtractor> _logger;
 
     public PdfPigTextExtractor(
         ILogger<PdfPigTextExtractor> logger,
-        IOcrEngine ocrEngine,
-        int ocrThresholdCharsPerPage = DefaultOcrThresholdCharsPerPage)
+        Aircane.Application.Abstractions.IOcrEngine ocrEngine,
+        int ocrThresholdCharsPerPage = DefaultOcrThresholdCharsPerPage,
+        Aircane.Application.Abstractions.IPdfRasterizer? rasterizer = null,
+        OcrOptions? ocrOptions = null)
     {
         _logger = logger;
         _ocrEngine = ocrEngine;
         _ocrThresholdCharsPerPage = ocrThresholdCharsPerPage;
+        _rasterizer = rasterizer;
+        _ocrOptions = ocrOptions ?? new OcrOptions();
     }
 
     /// <inheritdoc />
     public async Task<PdfExtractionResult> ExtractTextAsync(Stream pdfStream, CancellationToken ct = default)
     {
+        // Buffer the stream so we can both parse it (PdfPig) and, if needed, hand the raw bytes to
+        // the full-page rasterizer. The buffer is only materialized when rasterization is enabled;
+        // otherwise the original stream is parsed directly.
+        byte[]? pdfBytes = null;
         List<PdfPage> parsedPages;
         try
         {
-            parsedPages = ParsePages(pdfStream, ct);
+            if (FullPageRasterizationEnabled)
+            {
+                using var buffer = new MemoryStream();
+                await pdfStream.CopyToAsync(buffer, ct);
+                pdfBytes = buffer.ToArray();
+                using var parseStream = new MemoryStream(pdfBytes, writable: false);
+                parsedPages = ParsePages(parseStream, ct);
+            }
+            else
+            {
+                parsedPages = ParsePages(pdfStream, ct);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -81,7 +102,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
             "Attempting OCR via {OcrStatus}.",
             pageCount, totalChars, _ocrEngine.StatusDescription);
 
-        var ocredPages = await RunOcrAsync(parsedPages, pageTexts, ct);
+        var ocredPages = await RunOcrAsync(parsedPages, pageTexts, pdfBytes, ct);
 
         var ocrTotalChars = ocredPages.Sum(p => p.CharacterCount);
         var stillOcrRequired = IsBelowTextThreshold(ocredPages.Count, ocrTotalChars);
@@ -106,6 +127,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
     private async Task<List<PageText>> RunOcrAsync(
         List<PdfPage> parsedPages,
         List<PageText> nativePageTexts,
+        byte[]? pdfBytes,
         CancellationToken ct)
     {
         var result = new List<PageText>(parsedPages.Count);
@@ -124,7 +146,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
                 continue;
             }
 
-            var recognized = await RecognizePageAsync(parsed, ct);
+            var recognized = await RecognizePageAsync(parsed, pdfBytes, ct);
 
             // Prefer whichever source yielded more text so we never lose native text.
             var best = recognized.Length > nativeText.Length ? recognized : nativeText;
@@ -134,13 +156,11 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         return result;
     }
 
-    private async Task<string> RecognizePageAsync(PdfPage page, CancellationToken ct)
+    private async Task<string> RecognizePageAsync(PdfPage page, byte[]? pdfBytes, CancellationToken ct)
     {
-        if (page.Images.Count == 0)
-            return string.Empty;
-
         var recognizedParts = new List<string>();
 
+        // First, OCR any embedded raster images on the page.
         foreach (var imageBytes in page.Images)
         {
             ct.ThrowIfCancellationRequested();
@@ -150,8 +170,30 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
                 recognizedParts.Add(ocr.Text.Trim());
         }
 
+        // Full-page rasterization fallback: if the page had no embedded images (or they yielded
+        // nothing) and rasterization is enabled, render the whole page and OCR the bitmap. This
+        // recovers text from scanned pages drawn as vectors rather than embedded rasters.
+        if (recognizedParts.Count == 0 &&
+            FullPageRasterizationEnabled &&
+            pdfBytes is not null &&
+            _rasterizer is { IsAvailable: true })
+        {
+            ct.ThrowIfCancellationRequested();
+            var bitmap = _rasterizer.RasterizePage(pdfBytes, page.PageNumber, ct);
+            if (bitmap is { Length: > 0 })
+            {
+                var ocr = await _ocrEngine.RecognizeAsync(bitmap, ct);
+                if (ocr.HasText)
+                    recognizedParts.Add(ocr.Text.Trim());
+            }
+        }
+
         return string.Join("\n", recognizedParts);
     }
+
+    /// <summary>True when full-page rasterization OCR is enabled and a rasterizer is wired in.</summary>
+    private bool FullPageRasterizationEnabled =>
+        _ocrOptions.Enabled && _ocrOptions.FullPageRasterization && _rasterizer is not null;
 
     private bool IsBelowTextThreshold(int pageCount, int totalChars)
     {

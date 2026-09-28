@@ -19,15 +19,18 @@ public sealed class RetrievalService : IRetrievalService
 {
     private readonly AircaneDbContext _db;
     private readonly IEmbeddingProvider _embeddingProvider;
+    private readonly IEmbeddingCompatibility? _embeddingCompatibility;
     private readonly ILogger<RetrievalService> _logger;
 
     public RetrievalService(
         AircaneDbContext db,
         IEmbeddingProvider embeddingProvider,
+        IEmbeddingCompatibility? embeddingCompatibility = null,
         ILogger<RetrievalService>? logger = null)
     {
         _db = db;
         _embeddingProvider = embeddingProvider;
+        _embeddingCompatibility = embeddingCompatibility;
         _logger = logger ?? NullLogger<RetrievalService>.Instance;
     }
 
@@ -85,6 +88,17 @@ public sealed class RetrievalService : IRetrievalService
         var providerName = _db.Database.ProviderName ?? string.Empty;
         if (providerName.Contains("InMemory", StringComparison.OrdinalIgnoreCase))
             return [];
+
+        // If the active provider's embedding dimension doesn't match the pgvector column, vector
+        // search is disabled (the vectors are incomparable and can't be stored). Keyword search
+        // continues to work via SearchByKeywordAsync.
+        if (_embeddingCompatibility is { IsVectorSearchEnabled: false })
+        {
+            _logger.LogDebug(
+                "Vector search skipped: embedding dimension ({ProviderDim}) does not match the column ({ColumnDim}).",
+                _embeddingCompatibility.ProviderDimension, _embeddingCompatibility.ColumnDimension);
+            return [];
+        }
 
         var embedding = await _embeddingProvider.GenerateEmbeddingAsync(request.Query, cancellationToken);
         var vector = new Pgvector.Vector(embedding);

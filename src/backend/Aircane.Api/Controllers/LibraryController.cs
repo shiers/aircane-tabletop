@@ -1,5 +1,6 @@
 using Aircane.Api.Authorization;
 using Aircane.Application.Abstractions;
+using Aircane.Application.Abstractions.BackgroundJobs;
 using Aircane.Application.DTOs.Library;
 using Aircane.Application.Validation;
 using Aircane.Domain.Enums;
@@ -39,12 +40,18 @@ namespace Aircane.Api.Controllers;
 public sealed class LibraryController : ControllerBase
 {
     private readonly ILibraryService _libraryService;
+    private readonly IBackgroundJobQueue _jobQueue;
     private readonly ILogger<LibraryController> _logger;
     private readonly IConfiguration _configuration;
 
-    public LibraryController(ILibraryService libraryService, ILogger<LibraryController> logger, IConfiguration configuration)
+    public LibraryController(
+        ILibraryService libraryService,
+        IBackgroundJobQueue jobQueue,
+        ILogger<LibraryController> logger,
+        IConfiguration configuration)
     {
         _libraryService = libraryService;
+        _jobQueue = jobQueue;
         _logger = logger;
         _configuration = configuration;
     }
@@ -268,19 +275,20 @@ public sealed class LibraryController : ControllerBase
     /// or model so the document becomes searchable again.
     /// </summary>
     [HttpPost("{id:guid}/reembed")]
-    [ProducesResponseType(typeof(ReEmbedResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(JobAcceptedResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ReEmbedDocument(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            var count = await _libraryService.ReEmbedDocumentAsync(id, cancellationToken);
-            return Ok(new ReEmbedResult(count));
-        }
-        catch (KeyNotFoundException)
-        {
+        // Confirm the document exists so a missing id still yields 404 even though the re-embed
+        // now runs on the background worker.
+        var document = await _libraryService.GetDocumentAsync(id, cancellationToken);
+        if (document is null)
             return NotFound();
-        }
+
+        var job = new ReembedJobMessage(id);
+        await _jobQueue.EnqueueAsync(job, cancellationToken);
+
+        return Accepted(new JobAcceptedResponse(job.JobId, job.JobType));
     }
 
     /// <summary>
@@ -289,11 +297,47 @@ public sealed class LibraryController : ControllerBase
     /// change. May take a while for large libraries.
     /// </summary>
     [HttpPost("reembed-all")]
-    [ProducesResponseType(typeof(ReEmbedResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(JobAcceptedResponse), StatusCodes.Status202Accepted)]
     public async Task<IActionResult> ReEmbedAll(CancellationToken cancellationToken)
     {
-        var count = await _libraryService.ReEmbedAllAsync(cancellationToken);
-        return Ok(new ReEmbedResult(count));
+        var job = new ReembedJobMessage(null);
+        await _jobQueue.EnqueueAsync(job, cancellationToken);
+
+        return Accepted(new JobAcceptedResponse(job.JobId, job.JobType));
+    }
+
+    /// <summary>
+    /// Re-runs OCR/import on a single document currently marked <c>OcrRequired</c>. Use after
+    /// enabling OCR so a previously-skipped scanned document can be processed. Runs as a background
+    /// job.
+    /// </summary>
+    [HttpPost("{id:guid}/reocr")]
+    [ProducesResponseType(typeof(JobAcceptedResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReOcrDocument(Guid id, CancellationToken cancellationToken)
+    {
+        var document = await _libraryService.GetDocumentAsync(id, cancellationToken);
+        if (document is null)
+            return NotFound();
+
+        var job = new ReocrJobMessage(id);
+        await _jobQueue.EnqueueAsync(job, cancellationToken);
+
+        return Accepted(new JobAcceptedResponse(job.JobId, job.JobType));
+    }
+
+    /// <summary>
+    /// Re-runs OCR/import on every document currently marked <c>OcrRequired</c>. Intended for
+    /// hosts who enable OCR after their initial import. Runs as a background job.
+    /// </summary>
+    [HttpPost("reocr-all")]
+    [ProducesResponseType(typeof(JobAcceptedResponse), StatusCodes.Status202Accepted)]
+    public async Task<IActionResult> ReOcrAll(CancellationToken cancellationToken)
+    {
+        var job = new ReocrJobMessage(null);
+        await _jobQueue.EnqueueAsync(job, cancellationToken);
+
+        return Accepted(new JobAcceptedResponse(job.JobId, job.JobType));
     }
 
     /// <summary>

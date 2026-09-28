@@ -16,6 +16,25 @@ public interface IAiContextAdapter
     string BuildSystemContext(GameSystemDefinition definition);
 
     /// <summary>
+    /// Builds a compact natural-language summary of a live combat encounter for the AI DM prompt:
+    /// current round, initiative order with HP and conditions, whose turn it is, and (for systems
+    /// with a structured action economy) the active combatant's per-turn action slots.
+    /// </summary>
+    /// <param name="encounter">The live encounter state. If null or inactive, returns an empty string.</param>
+    /// <param name="definition">
+    /// The active game system definition, used to decide whether to include action slots (hidden
+    /// for freeform systems) and to source per-turn slot labels/counts. May be null.
+    /// </param>
+    /// <returns>
+    /// A prompt-ready combat context block, kept compact (roughly under ~300 tokens; the roster is
+    /// truncated to the active combatant and its neighbours when large), or an empty string when
+    /// there is no active encounter.
+    /// </returns>
+    string BuildCombatContext(
+        Aircane.Domain.Combat.EncounterState? encounter,
+        GameSystemDefinition? definition);
+
+    /// <summary>
     /// Formats a roll request using the active system's dice convention notation.
     /// </summary>
     /// <param name="convention">The dice convention to use for formatting.</param>

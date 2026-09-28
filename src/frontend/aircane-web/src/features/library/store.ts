@@ -6,6 +6,8 @@ import {
   uploadDocument,
   deleteDocument,
   reindexDocument,
+  reOcrDocument,
+  reOcrAll,
   setDocumentDisabled,
   restoreBuiltInDefaults,
   getImportStatus,
@@ -227,6 +229,42 @@ export const useLibraryStore = defineStore('library', () => {
       if (!hubConnection) {
         startPolling(id)
       }
+    } catch (err) {
+      error.value = extractMessage(err)
+      throw err
+    }
+  }
+
+  /** Re-run OCR/import on a single OCR-required document (background job). */
+  async function reOcrDocumentAction(id: string): Promise<void> {
+    error.value = null
+    try {
+      await reOcrDocument(id)
+      const doc = documents.value.find((d) => d.id === id)
+      if (doc) doc.importStatus = ImportStatus.Pending
+
+      await connectSignalR()
+      if (!hubConnection) {
+        startPolling(id)
+      }
+    } catch (err) {
+      error.value = extractMessage(err)
+      throw err
+    }
+  }
+
+  /** Re-run OCR/import on every OCR-required document (background job). */
+  async function reOcrAllAction(): Promise<void> {
+    error.value = null
+    try {
+      await reOcrAll()
+      for (const doc of documents.value) {
+        if (doc.importStatus === ImportStatus.OcrRequired) {
+          doc.importStatus = ImportStatus.Pending
+          startPolling(doc.id)
+        }
+      }
+      await connectSignalR()
     } catch (err) {
       error.value = extractMessage(err)
       throw err
@@ -492,6 +530,8 @@ export const useLibraryStore = defineStore('library', () => {
     uploadDocument: uploadDocumentAction,
     deleteDocument: deleteDocumentAction,
     reindexDocument: reindexDocumentAction,
+    reOcrDocument: reOcrDocumentAction,
+    reOcrAll: reOcrAllAction,
     setDocumentDisabled: setDocumentDisabledAction,
     restoreBuiltInDefaults: restoreBuiltInDefaultsAction,
     pollImportStatus,

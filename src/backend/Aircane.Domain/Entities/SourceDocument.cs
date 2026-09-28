@@ -84,6 +84,13 @@ public class SourceDocument : EntityBase
     /// </summary>
     public List<string> Tags { get; set; } = [];
 
+    /// <summary>
+    /// SHA-256 hash (lowercase hex, 64 chars) of the file's raw bytes, computed during import.
+    /// Enables content-based duplicate detection independent of filename. Null for documents
+    /// imported before content hashing existed (backfilled on next import/rescan).
+    /// </summary>
+    public string? ContentHash { get; set; }
+
     public SourceDocument(
         string title,
         string originalFileName,

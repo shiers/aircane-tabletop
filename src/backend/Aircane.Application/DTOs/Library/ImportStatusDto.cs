@@ -11,4 +11,5 @@ public sealed record ImportStatusDto(
     int? ProgressPercent,
     string? ErrorMessage,
     DateTimeOffset UpdatedAt,
-    bool IsSourceAvailable = true);
+    bool IsSourceAvailable = true,
+    Guid? JobId = null);

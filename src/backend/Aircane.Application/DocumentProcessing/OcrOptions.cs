@@ -31,4 +31,26 @@ public sealed class OcrOptions
     /// Results below this are discarded so garbage recognition does not pollute the index.
     /// </summary>
     public float MinConfidence { get; set; } = 0.30f;
+
+    /// <summary>
+    /// When <c>true</c> (and <see cref="Enabled"/> is true), pages that yield little text AND have
+    /// no embedded raster images are rendered to a bitmap and OCR'd. Handles scanned PDFs whose
+    /// pages are vector-drawn rather than embedded rasters. Requires a PDFium native dependency;
+    /// off by default. See docs/setup/ocr.md.
+    /// </summary>
+    public bool FullPageRasterization { get; set; }
+
+    /// <summary>
+    /// DPI used when rasterizing full pages for OCR. Higher improves OCR accuracy at the cost of
+    /// memory/time. Defaults to 200.
+    /// </summary>
+    public int RasterizationDpi { get; set; } = 200;
+
+    /// <summary>
+    /// When <c>true</c> (and <see cref="Enabled"/> is true), if <see cref="TessdataPath"/> is not
+    /// set or empty on startup, the app attempts to download <c>eng.traineddata</c> from the
+    /// official Tesseract release into a local app-data directory and set the path automatically.
+    /// Opt-in; off by default. See docs/setup/ocr.md.
+    /// </summary>
+    public bool AutoDownloadTessdata { get; set; }
 }

@@ -1,8 +1,11 @@
 using System.Text;
+using System.Text.Json;
 using Aircane.Application.Abstractions;
 using Aircane.Application.AiRuntime;
 using Aircane.Application.DTOs.Ai;
 using Aircane.Application.DTOs.Retrieval;
+using Aircane.Application.GameSystems;
+using Aircane.Domain.Combat;
 using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging;
@@ -27,6 +30,8 @@ public sealed class PlayerActionService : IPlayerActionService
     private readonly IAiProvider _aiProvider;
     private readonly AiOutputParser _outputParser;
     private readonly IStateCommandExecutor _stateCommandExecutor;
+    private readonly ISystemRegistry _systemRegistry;
+    private readonly IAiContextAdapter _aiContextAdapter;
     private readonly AircaneDbContext _db;
     private readonly ILogger<PlayerActionService> _logger;
 
@@ -37,6 +42,8 @@ public sealed class PlayerActionService : IPlayerActionService
         IAiProvider aiProvider,
         AiOutputParser outputParser,
         IStateCommandExecutor stateCommandExecutor,
+        ISystemRegistry systemRegistry,
+        IAiContextAdapter aiContextAdapter,
         AircaneDbContext db,
         ILogger<PlayerActionService> logger)
     {
@@ -46,6 +53,8 @@ public sealed class PlayerActionService : IPlayerActionService
         _aiProvider = aiProvider;
         _outputParser = outputParser;
         _stateCommandExecutor = stateCommandExecutor;
+        _systemRegistry = systemRegistry;
+        _aiContextAdapter = aiContextAdapter;
         _db = db;
         _logger = logger;
     }
@@ -81,8 +90,12 @@ public sealed class PlayerActionService : IPlayerActionService
 
         var ragResult = await _ragContextBuilder.BuildContextAsync(ragRequest, cancellationToken);
 
-        // 4. Build AI prompt with state + context + player action
-        var messages = BuildPromptMessages(request, campaign, state, ragResult);
+        // 3b. Build the live combat context block, if an encounter is active. This lets the AI DM
+        // reference HP, conditions, and whose turn it is when narrating.
+        var combatContext = await BuildCombatContextAsync(request.CampaignId, state, cancellationToken);
+
+        // 4. Build AI prompt with state + combat + context + player action
+        var messages = BuildPromptMessages(request, campaign, state, ragResult, combatContext);
 
         // 5. Call AI provider for structured output
         var aiOutput = await _aiProvider.StructuredChatCompletionAsync(messages, cancellationToken);
@@ -144,6 +157,67 @@ public sealed class PlayerActionService : IPlayerActionService
     }
 
     /// <summary>
+    /// Deserializes the live <see cref="EncounterState"/> from the campaign state (the
+    /// <c>encounter</c> key) and renders a compact combat context block via
+    /// <see cref="IAiContextAdapter.BuildCombatContext"/>. Returns an empty string when there is
+    /// no active encounter. Failures are non-fatal — combat context is best-effort and must never
+    /// break the AI DM loop.
+    /// </summary>
+    private async Task<string?> BuildCombatContextAsync(
+        Guid campaignId,
+        Application.DTOs.CampaignState.CampaignStateDto state,
+        CancellationToken cancellationToken)
+    {
+        var encounter = TryReadEncounter(state.StateJson);
+        if (encounter is null || !encounter.IsActive)
+            return null;
+
+        // Resolve the bound game-system definition to decide whether to include action slots
+        // (hidden for freeform). Missing/unbound definitions are tolerated: we still render the
+        // combat summary, just without action-economy detail.
+        Domain.Entities.GameSystems.GameSystemDefinition? definition = null;
+        try
+        {
+            definition = await _systemRegistry.GetByCampaignAsync(campaignId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex,
+                "No bound game-system definition for campaign {CampaignId}; combat context will omit action slots.",
+                campaignId);
+        }
+
+        return _aiContextAdapter.BuildCombatContext(encounter, definition);
+    }
+
+    /// <summary>
+    /// Reads the <c>encounter</c> key from the serialized campaign state and deserializes it into
+    /// an <see cref="EncounterState"/>. Returns null when absent, null-valued, or malformed.
+    /// </summary>
+    internal static EncounterState? TryReadEncounter(string? stateJson)
+    {
+        if (string.IsNullOrWhiteSpace(stateJson))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(stateJson);
+            if (!doc.RootElement.TryGetProperty("encounter", out var encEl) ||
+                encEl.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                return null;
+            }
+
+            return encEl.Deserialize<EncounterState>(
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Builds the prompt messages for the AI DM, including system instructions,
     /// campaign state, RAG context, and the player's action.
     /// </summary>
@@ -151,7 +225,8 @@ public sealed class PlayerActionService : IPlayerActionService
         PlayerActionRequest request,
         Application.DTOs.Campaigns.CampaignDto campaign,
         Application.DTOs.CampaignState.CampaignStateDto state,
-        RagContextResult ragResult)
+        RagContextResult ragResult,
+        string? combatContext = null)
     {
         var messages = new List<AiMessage>();
 
@@ -163,6 +238,12 @@ public sealed class PlayerActionService : IPlayerActionService
         if (!string.IsNullOrWhiteSpace(stateContext))
         {
             messages.Add(AiMessage.System(stateContext));
+        }
+
+        // Live combat context (initiative, HP, conditions, whose turn it is)
+        if (!string.IsNullOrWhiteSpace(combatContext))
+        {
+            messages.Add(AiMessage.System(combatContext));
         }
 
         // RAG context (rules + adventure)

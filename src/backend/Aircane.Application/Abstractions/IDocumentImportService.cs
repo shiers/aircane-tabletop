@@ -9,9 +9,10 @@ namespace Aircane.Application.Abstractions;
 public interface IDocumentImportService
 {
     /// <summary>
-    /// Enqueues a background import job for the specified document.
+    /// Enqueues a background import job for the specified document and returns the job's id so
+    /// the caller can correlate status/progress.
     /// </summary>
-    Task EnqueueImportJobAsync(
+    Task<Guid> EnqueueImportJobAsync(
         Guid documentId,
         CancellationToken cancellationToken = default);
 

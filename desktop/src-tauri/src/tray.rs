@@ -18,7 +18,7 @@ pub const TRAY_ID: &str = "aircane-tray";
 /// The monochrome tray icon, embedded at compile time. Falls back to the app's
 /// default window icon if decoding fails.
 fn tray_icon(app: &AppHandle) -> tauri::image::Image<'static> {
-    const TRAY_PNG: &[u8] = include_bytes!("../../icons/tray.png");
+    const TRAY_PNG: &[u8] = include_bytes!("../icons/tray.png");
     tauri::image::Image::from_bytes(TRAY_PNG).unwrap_or_else(|_| {
         app.default_window_icon()
             .cloned()

@@ -208,23 +208,23 @@ files, and `tauri.conf.json`.
 
 ## Icons
 
-Placeholder icons live in [`desktop/icons/`](../../desktop/icons/): a generic
-white "A" on a dark indigo→sky rounded square. They are intentionally
+Placeholder icons live in [`desktop/src-tauri/icons/`](../../desktop/src-tauri/icons/):
+a generic white "A" on a dark indigo→sky rounded square. They are intentionally
 brand-neutral and contain **no** D&D, Pathfinder, or Paizo imagery. Regenerate
 them with:
 
 ```bash
-python desktop/icons/generate_placeholder_icons.py
+python desktop/src-tauri/icons/generate_placeholder_icons.py
 ```
 
 Once final branding and the Rust toolchain are available, the standard pipeline
 regenerates every size from a single 1024×1024 source:
 
 ```bash
-cargo tauri icon desktop/icons/icon.png
+cargo tauri icon desktop/src-tauri/icons/icon.png
 ```
 
-The system tray uses `desktop/icons/tray.png`, a 32×32 monochrome variant.
+The system tray uses `desktop/src-tauri/icons/tray.png`, a 32×32 monochrome variant.
 
 ---
 

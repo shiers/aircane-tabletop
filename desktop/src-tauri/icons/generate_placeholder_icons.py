@@ -15,9 +15,9 @@ Outputs (into this directory):
     32x32.png
     tray.png          32x32 monochrome (white A, transparent bg) for the system tray
 
-Regenerate with:  python desktop/icons/generate_placeholder_icons.py
+Regenerate with:  python desktop/src-tauri/icons/generate_placeholder_icons.py
 Or, once the Rust toolchain is installed, replace with the real pipeline:
-    cargo tauri icon desktop/icons/icon.png
+    cargo tauri icon desktop/src-tauri/icons/icon.png
 """
 
 from __future__ import annotations

@@ -53,10 +53,13 @@ public sealed class ParticipantTokenService : IParticipantTokenService
     }
 
     /// <inheritdoc />
-    public string IssueToken(Guid sessionId, Guid participantId, string displayName, string role)
+    public IssuedToken IssueToken(Guid sessionId, Guid participantId, string displayName, string role)
     {
         var now = DateTime.UtcNow;
         var expires = now.Add(_tokenExpiry);
+
+        // Unique token id (jti) so an individual token can be revoked (persistently) later.
+        var tokenId = Guid.NewGuid().ToString("N");
 
         var claims = new[]
         {
@@ -64,6 +67,7 @@ public sealed class ParticipantTokenService : IParticipantTokenService
             new Claim(ClaimParticipantId, participantId.ToString()),
             new Claim(ClaimDisplayName, displayName),
             new Claim(ClaimRole, role),
+            new Claim(JwtRegisteredClaimNames.Jti, tokenId),
         };
 
         var credentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
@@ -79,14 +83,43 @@ public sealed class ParticipantTokenService : IParticipantTokenService
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
 
         _logger.LogDebug(
-            "Issued participant token for participant {ParticipantId} in session {SessionId}, expires {ExpiresAt}",
-            participantId, sessionId, expires);
+            "Issued participant token {TokenId} for participant {ParticipantId} in session {SessionId}, expires {ExpiresAt}",
+            tokenId, participantId, sessionId, expires);
 
-        return tokenString;
+        return new IssuedToken(tokenString, tokenId, new DateTimeOffset(expires, TimeSpan.Zero));
     }
 
     /// <inheritdoc />
     public ParticipantTokenClaims? ValidateToken(string token)
+        => ValidateSignatureAndFastPath(token);
+
+    /// <inheritdoc />
+    public async Task<ParticipantTokenClaims?> ValidateTokenAsync(
+        string token,
+        CancellationToken cancellationToken = default)
+    {
+        var claims = ValidateSignatureAndFastPath(token);
+        if (claims is null)
+            return null;
+
+        // Authoritative, restart-safe check: reject if this exact token id was persistently
+        // revoked (e.g. the session was ended, then the server restarted).
+        if (await _revocation.IsTokenRevokedAsync(claims.TokenId, cancellationToken))
+        {
+            _logger.LogInformation(
+                "Rejected persistently revoked token {TokenId} for session {SessionId}.",
+                claims.TokenId, claims.SessionId);
+            return null;
+        }
+
+        return claims;
+    }
+
+    /// <summary>
+    /// Validates signature/issuer/audience/lifetime, extracts claims, and applies the in-memory
+    /// session revocation fast path. Does not touch the persistent store.
+    /// </summary>
+    private ParticipantTokenClaims? ValidateSignatureAndFastPath(string token)
     {
         var handler = new JwtSecurityTokenHandler();
 
@@ -110,6 +143,7 @@ public sealed class ParticipantTokenService : IParticipantTokenService
             var participantIdStr = GetClaimValue(principal, ClaimParticipantId);
             var displayName = GetClaimValue(principal, ClaimDisplayName);
             var role = GetClaimValue(principal, ClaimRole);
+            var tokenId = GetClaimValue(principal, JwtRegisteredClaimNames.Jti);
 
             if (sessionIdStr is null || participantIdStr is null || displayName is null || role is null)
             {
@@ -132,7 +166,8 @@ public sealed class ParticipantTokenService : IParticipantTokenService
                 return null;
             }
 
-            return new ParticipantTokenClaims(sessionId, participantId, displayName, role);
+            return new ParticipantTokenClaims(
+                sessionId, participantId, displayName, role, tokenId ?? string.Empty);
         }
         catch (SecurityTokenException ex)
         {

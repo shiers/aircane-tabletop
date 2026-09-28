@@ -58,8 +58,13 @@ public static class DependencyInjection
         services.AddScoped<ICampaignStateService, CampaignStateService>();
         services.AddScoped<ICharacterService, CharacterService>();
         services.AddScoped<ISessionHostingService, SessionHostingService>();
-        // Token revocation is a singleton so the in-memory set survives across requests.
-        services.AddSingleton<ITokenRevocationService, InMemoryTokenRevocationService>();
+        // Token revocation is a singleton so the in-memory fast-path set survives across
+        // requests. Persistent (per-jti) revocation is backed by the RevokedTokens table,
+        // which the singleton reaches through a scoped DbContext via IServiceScopeFactory.
+        services.AddSingleton<ITokenRevocationService, TokenRevocationService>();
+        // Tunnel/internet-mode state is a singleton: one process-wide flag that switches on
+        // internet-mode hardening (rate limiting, CSRF) when the host enables the tunnel.
+        services.AddSingleton<ITunnelStateService, InMemoryTunnelStateService>();
         // ParticipantTokenService is a singleton - the signing key is loaded once from config.
         services.AddSingleton<IParticipantTokenService, ParticipantTokenService>();
         services.AddScoped<CharacterSchemaValidator>();

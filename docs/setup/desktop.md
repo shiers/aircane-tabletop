@@ -177,7 +177,63 @@ dotnet publish src/backend/Aircane.Api/Aircane.Api.csproj \
 ```
 
 The generated binaries and Rust `target/` output are gitignored; only
-`desktop/src-tauri/binaries/README.md` is tracked.
+`desktop/src-tauri/binaries/README.md` and the tracked
+`desktop/src-tauri/binaries/cloudflared-versions.json` pin manifest are committed.
+
+---
+
+## cloudflared sidecar (internet play)
+
+The desktop wrapper bundles a **second sidecar**, `cloudflared`, which powers
+[internet play](./internet-play.md) via Cloudflare Tunnel. Like the backend
+sidecar it is registered in `tauri.conf.json` (`externalBin` now lists both
+`binaries/aircane-server` and `binaries/cloudflared`) and named with the target
+triple.
+
+Unlike the backend, `cloudflared` is a third-party binary **fetched at build
+time** from the official Cloudflare release, not published from our source. The
+build scripts:
+
+1. Read the pinned version and per-platform SHA256 from
+   [`desktop/src-tauri/binaries/cloudflared-versions.json`](../../desktop/src-tauri/binaries/cloudflared-versions.json).
+2. Download the matching asset for the current target triple.
+3. **Verify the SHA256 against the pin and fail the build on mismatch** — an
+   unverified binary is never bundled (supply-chain safety).
+4. Extract the inner binary on macOS (Cloudflare ships darwin as a `.tgz`) and
+   place `cloudflared-<target-triple>[.exe]` next to the backend sidecar.
+
+| Rust target triple           | cloudflared asset                | Archive |
+| ---------------------------- | -------------------------------- | ------- |
+| `x86_64-pc-windows-msvc`     | `cloudflared-windows-amd64.exe`  | raw     |
+| `x86_64-unknown-linux-gnu`   | `cloudflared-linux-amd64`        | raw     |
+| `aarch64-unknown-linux-gnu`  | `cloudflared-linux-arm64`        | raw     |
+| `x86_64-apple-darwin`        | `cloudflared-darwin-amd64.tgz`   | tgz     |
+| `aarch64-apple-darwin`       | `cloudflared-darwin-arm64.tgz`   | tgz     |
+
+The binaries are gitignored (they are large and platform-specific); only the pin
+manifest is tracked.
+
+### Updating the pinned cloudflared version
+
+Update deliberately rather than always pulling latest:
+
+1. Pick a release from <https://github.com/cloudflare/cloudflared/releases>.
+2. In `cloudflared-versions.json`, set `version` and replace **every** `sha256`
+   with the values from that release's "SHA256 Checksums" section.
+3. Delete any stale `desktop/src-tauri/binaries/cloudflared-*` so the next build
+   re-downloads and re-verifies.
+4. Record the bump in the table below and rebuild on each platform.
+
+> Browser-only hosts (running the backend manually without the desktop wrapper)
+> do **not** get cloudflared and cannot start the tunnel from the app — they
+> would install and run `cloudflared` themselves. This is expected and documented
+> in [internet-play.md](./internet-play.md).
+
+### Dependency versions
+
+| Dependency  | Pinned version | Source |
+| ----------- | -------------- | ------ |
+| cloudflared | `2026.8.2`     | [cloudflare/cloudflared releases](https://github.com/cloudflare/cloudflared/releases/tag/2026.8.2) |
 
 ---
 

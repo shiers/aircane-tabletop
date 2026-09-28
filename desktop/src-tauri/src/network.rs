@@ -22,6 +22,14 @@ pub struct NetworkInfo {
     // endpoint always returns null here anyway — invite codes are creation-only.
     #[allow(dead_code)]
     pub invite_code: Option<String>,
+    /// Public Cloudflare Tunnel URL when internet play is active; null otherwise.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub tunnel_url: Option<String>,
+    /// True when an internet tunnel is currently active.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub tunnel_active: bool,
 }
 
 /// Fetches network info using the app's resolved config. Returns None on any error.

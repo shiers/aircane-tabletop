@@ -26,11 +26,13 @@ fn tray_icon() -> tauri::image::Image<'static> {
 
 pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let copy_url = MenuItem::with_id(app, "copy_lan_url", "Copy LAN URL", true, None::<&str>)?;
+    let copy_internet =
+        MenuItem::with_id(app, "copy_internet_url", "Copy internet URL", true, None::<&str>)?;
     let show_qr = MenuItem::with_id(app, "show_qr", "Show QR Code", true, None::<&str>)?;
     let open = MenuItem::with_id(app, "open_main", "Open Aircane", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&copy_url, &show_qr, &open, &quit])?;
+    let menu = Menu::with_items(app, &[&copy_url, &copy_internet, &show_qr, &open, &quit])?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(tray_icon())
@@ -44,6 +46,7 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                     copy_lan_url(&app).await;
                 });
             }
+            "copy_internet_url" => copy_internet_url(app),
             "show_qr" => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
@@ -74,6 +77,22 @@ fn focus_main(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+/// Copies the active tunnel's public URL, if a tunnel is running. When no tunnel
+/// is active it emits an event carrying `None` so the frontend can show a hint.
+fn copy_internet_url(app: &AppHandle) {
+    let url = app
+        .try_state::<crate::tunnel::TunnelState>()
+        .and_then(|state| {
+            state
+                .0
+                .lock()
+                .ok()
+                .and_then(|guard| guard.as_ref().map(|info| info.public_url.clone()))
+        });
+
+    let _ = tauri::Emitter::emit(app, "tray://copy-internet-url", url);
 }
 
 async fn copy_lan_url(app: &AppHandle) {

@@ -38,7 +38,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/aircane-server"],
+    "externalBin": ["binaries/aircane-server", "binaries/cloudflared"],
     "resources": [],
     "windows": {
       "webviewInstallMode": {

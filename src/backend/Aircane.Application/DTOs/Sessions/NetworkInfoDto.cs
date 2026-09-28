@@ -18,7 +18,15 @@ namespace Aircane.Application.DTOs.Sessions;
 /// caller. Always null from this endpoint: invite codes are returned only once,
 /// at session creation, and are never persisted in plaintext.
 /// </param>
+/// <param name="TunnelUrl">
+/// The public Cloudflare Tunnel URL for remote players, e.g.
+/// <c>https://xxx.trycloudflare.com</c>, when internet play is active. Null when
+/// no tunnel is running. Held in memory only; a restart issues a new URL.
+/// </param>
+/// <param name="TunnelActive">True when an internet tunnel is currently active.</param>
 public sealed record NetworkInfoDto(
     string LocalUrl,
     string? LanUrl,
-    string? InviteCode);
+    string? InviteCode,
+    string? TunnelUrl = null,
+    bool TunnelActive = false);

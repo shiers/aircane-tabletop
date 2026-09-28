@@ -128,6 +128,18 @@ public sealed class SessionHostingService : ISessionHostingService
         _db.SessionParticipants.Add(participant);
         await _db.SaveChangesAsync(cancellationToken);
 
+        var issued = _tokenService.IssueToken(
+            sessionId: request.SessionId,
+            participantId: participant.Id,
+            displayName: participant.DisplayName,
+            role: participant.Role.ToString());
+
+        // Record the issued token's id and expiry so ending the session can revoke this
+        // exact token in the persistent store.
+        participant.TokenId = issued.TokenId;
+        participant.TokenExpiresAt = issued.ExpiresAt;
+        await _db.SaveChangesAsync(cancellationToken);
+
         _logger.LogInformation(
             "Participant joined session {SessionId}: {DisplayName} ({ParticipantId})",
             request.SessionId, request.DisplayName, participant.Id);
@@ -137,11 +149,7 @@ public sealed class SessionHostingService : ISessionHostingService
             DisplayName: participant.DisplayName,
             Role: participant.Role,
             IsApproved: participant.IsApproved,
-            ParticipantToken: _tokenService.IssueToken(
-                sessionId: request.SessionId,
-                participantId: participant.Id,
-                displayName: participant.DisplayName,
-                role: participant.Role.ToString()));
+            ParticipantToken: issued.Token);
     }
 
     /// <inheritdoc />
@@ -204,12 +212,24 @@ public sealed class SessionHostingService : ISessionHostingService
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        // Invalidate all participant tokens for this session via the revocation list.
+        // Invalidate all participant tokens for this session. The in-memory session set is the
+        // fast path; the persistent per-token store is authoritative across server restarts.
         _tokenRevocation.RevokeSession(sessionId);
 
+        var activeTokens = await _db.SessionParticipants
+            .AsNoTracking()
+            .Where(p => p.SessionId == sessionId
+                && p.TokenId != null
+                && p.TokenExpiresAt != null
+                && p.TokenExpiresAt > DateTimeOffset.UtcNow)
+            .Select(p => new RevokedTokenRecord(p.TokenId!, sessionId, p.TokenExpiresAt!.Value))
+            .ToListAsync(cancellationToken);
+
+        await _tokenRevocation.RevokeTokensAsync(activeTokens, cancellationToken);
+
         _logger.LogInformation(
-            "Session ended: {SessionId} at {EndedAt}. Summary provided: {HasSummary}",
-            sessionId, session.EndedAt, summary is not null);
+            "Session ended: {SessionId} at {EndedAt}. Revoked {TokenCount} participant token(s). Summary provided: {HasSummary}",
+            sessionId, session.EndedAt, activeTokens.Count, summary is not null);
 
         return new EndSessionResponse(
             SessionId: sessionId,

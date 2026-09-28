@@ -24,6 +24,7 @@ public class AircaneDbContext : DbContext
     public DbSet<Campaign> Campaigns => Set<Campaign>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<SessionParticipant> SessionParticipants => Set<SessionParticipant>();
+    public DbSet<RevokedToken> RevokedTokens => Set<RevokedToken>();
     public DbSet<WatchedFolder> WatchedFolders => Set<WatchedFolder>();
     public DbSet<SourceDocument> SourceDocuments => Set<SourceDocument>();
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
@@ -103,9 +104,27 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.JoinedAt).IsRequired();
             entity.Property(e => e.LastSeenAt).IsRequired();
             entity.Property(e => e.IsApproved).IsRequired();
+            entity.Property(e => e.TokenId).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.TokenExpiresAt).IsRequired(false);
             entity.Property(e => e.CreatedAt).IsRequired();
 
             entity.HasIndex(e => e.SessionId).HasDatabaseName("IX_SessionParticipants_SessionId");
+        });
+
+        // ── RevokedToken ──────────────────────────────────────────────────────
+        modelBuilder.Entity<RevokedToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TokenId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.SessionId).IsRequired();
+            entity.Property(e => e.RevokedAt).IsRequired();
+            entity.Property(e => e.ExpiresAt).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            // Lookups during validation are by TokenId; cleanup filters by ExpiresAt.
+            entity.HasIndex(e => e.TokenId).HasDatabaseName("IX_RevokedTokens_TokenId");
+            entity.HasIndex(e => e.ExpiresAt).HasDatabaseName("IX_RevokedTokens_ExpiresAt");
+            entity.HasIndex(e => e.SessionId).HasDatabaseName("IX_RevokedTokens_SessionId");
         });
 
         // ── Character ─────────────────────────────────────────────────────────

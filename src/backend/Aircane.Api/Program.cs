@@ -3,6 +3,7 @@ using Aircane.Api.Authorization;
 using Aircane.Api.Health;
 using Aircane.Api.Hubs;
 using Aircane.Api.Middleware;
+using Aircane.Api.RateLimiting;
 using Aircane.Application;
 using Aircane.Application.Abstractions;
 using Aircane.Infrastructure;
@@ -79,6 +80,31 @@ if (!string.IsNullOrWhiteSpace(jwtSigningKey))
                     }
                     return Task.CompletedTask;
                 },
+
+                // Enforce token revocation on every [Authorize] request and hub connection, not
+                // just the manual reconnect path. Checks the in-memory session fast path and the
+                // persistent per-token store so a revoked token is rejected even after a restart.
+                OnTokenValidated = async context =>
+                {
+                    var revocation = context.HttpContext.RequestServices
+                        .GetRequiredService<ITokenRevocationService>();
+
+                    var sessionIdClaim = context.Principal?.FindFirst("sid")?.Value;
+                    if (Guid.TryParse(sessionIdClaim, out var sessionId)
+                        && revocation.IsSessionRevoked(sessionId))
+                    {
+                        context.Fail("Session has been revoked.");
+                        return;
+                    }
+
+                    var jti = context.Principal?.FindFirst(
+                        System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
+                    if (!string.IsNullOrEmpty(jti)
+                        && await revocation.IsTokenRevokedAsync(jti, context.HttpContext.RequestAborted))
+                    {
+                        context.Fail("Token has been revoked.");
+                    }
+                },
             };
         });
 }
@@ -112,6 +138,10 @@ builder.Services.AddInfrastructure(builder.Configuration);
 // Register Application-layer services (validators, etc.)
 builder.Services.AddApplication();
 
+// Rate limiting (internet-mode hardening). The limiters are no-ops on the LAN and only
+// throttle once the host enables the Cloudflare tunnel. See RateLimitingExtensions.
+builder.Services.AddAircaneRateLimiting(builder.Configuration);
+
 // Add health checks
 builder.Services.AddHealthChecks();
 
@@ -127,6 +157,9 @@ builder.Services.AddScoped<Aircane.Workers.Seeding.GameSystemDefinitionSeeder>()
 // Background job worker: dequeues import/scan/re-embed jobs and dispatches them to handlers.
 // The queue and handlers themselves are registered by AddInfrastructure.
 builder.Services.AddHostedService<Aircane.Workers.BackgroundJobs.BackgroundJobWorker>();
+
+// Periodic cleanup of expired persistent token-revocation records (runs on startup + daily).
+builder.Services.AddHostedService<Aircane.Workers.BackgroundJobs.RevokedTokenCleanupService>();
 
 var app = builder.Build();
 
@@ -201,6 +234,15 @@ if (app.Environment.IsDevelopment() || trustLocalHost)
 app.UseSourceFileAccessBlocker();
 
 app.UseCors("DevelopmentCors");
+
+// Rate limiting sits ahead of auth so abusive traffic is shed before it reaches
+// authentication/DB work. The limiters self-disable when not in internet mode.
+app.UseRateLimiter();
+
+// CSRF / cross-origin protection for state-mutating requests. Active only in internet
+// mode; adds Vary: Origin to all responses. Runs after CORS so preflight is handled first.
+app.UseCsrfProtection();
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

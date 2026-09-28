@@ -21,7 +21,28 @@ namespace Aircane.IntegrationTests;
 /// </summary>
 public class AircaneWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _dbName = $"AircaneTestDb_{Guid.NewGuid()}";
+    private readonly string _dbName;
+
+    // Single public constructor: xUnit's IClassFixture requires exactly one. Tests that need a
+    // specific (shareable) database name use the SharedDbWebApplicationFactory subclass, which
+    // passes the name through the protected constructor.
+    public AircaneWebApplicationFactory()
+        : this($"AircaneTestDb_{Guid.NewGuid()}")
+    {
+    }
+
+    /// <summary>
+    /// Creates a factory bound to a specific in-memory database name. Two factories sharing
+    /// the same name share the store, which lets a test simulate a server restart (new process,
+    /// same persistent data) — used by the persistent token-revocation tests.
+    /// </summary>
+    protected AircaneWebApplicationFactory(string dbName)
+    {
+        _dbName = dbName;
+    }
+
+    /// <summary>The in-memory database name this factory uses.</summary>
+    public string DatabaseName => _dbName;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -80,6 +101,19 @@ public class AircaneWebApplicationFactory : WebApplicationFactory<Program>
                 options.DefaultChallengeScheme = "TestScheme";
             });
         });
+    }
+}
+
+/// <summary>
+/// A factory bound to a caller-supplied in-memory database name. Two instances created with the
+/// same name share the underlying store, letting a test simulate a server restart (a fresh host
+/// process whose in-memory revocation set is empty, but whose persistent RevokedTokens rows
+/// survive). Has a single public constructor so it remains usable as a plain factory.
+/// </summary>
+public sealed class SharedDbWebApplicationFactory : AircaneWebApplicationFactory
+{
+    public SharedDbWebApplicationFactory(string dbName) : base(dbName)
+    {
     }
 }
 

@@ -21,7 +21,7 @@ public class SessionHostingServiceTests : IDisposable
     private readonly AircaneDbContext _db;
     private readonly SessionHostingService _svc;
     private readonly IValidator<CreateSessionRequest> _validator;
-    private readonly InMemoryTokenRevocationService _tokenRevocation;
+    private readonly FakeTokenRevocationService _tokenRevocation;
 
     public SessionHostingServiceTests()
     {
@@ -30,7 +30,7 @@ public class SessionHostingServiceTests : IDisposable
             .Options;
 
         _db = new AircaneDbContext(options);
-        _tokenRevocation = new InMemoryTokenRevocationService();
+        _tokenRevocation = new FakeTokenRevocationService();
 
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>

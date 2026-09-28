@@ -13,6 +13,7 @@ import { useSessionStore } from './store'
 import { endSession, SessionStatus } from './api'
 import { getRollLog, type RollDto } from '../dice/api'
 import LanJoinScreen from './LanJoinScreen.vue'
+import InternetPlayPanel from './components/InternetPlayPanel.vue'
 import ParticipantApprovalPanel from './ParticipantApprovalPanel.vue'
 import ChatPanel from './ChatPanel.vue'
 import type { ChatMessage } from './ChatPanel.vue'
@@ -62,6 +63,11 @@ const showLanJoin = computed(
 
 const joinUrl = computed(() => store.currentSession?.joinUrl ?? '')
 const inviteCode = computed(() => store.currentSession?.inviteCode ?? '')
+
+// The internet-play panel is offered whenever a live (non-ended) session exists.
+const sessionIsLive = computed(
+  () => !!store.currentSession && store.currentSession.status !== SessionStatus.Ended,
+)
 
 // Available characters - placeholder; a real implementation would fetch from the campaign
 const availableCharacters = ref<{ id: string; name: string }[]>([])
@@ -321,6 +327,9 @@ onUnmounted(async () => {
           :invite-code="inviteCode"
         />
       </div>
+
+      <!-- Internet play (Cloudflare Tunnel) for remote players -->
+      <InternetPlayPanel v-if="sessionIsLive" :session-active="sessionIsLive" />
 
       <!-- Main grid: left column (participants + AI proposals) | right column (chat + rolls) -->
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">

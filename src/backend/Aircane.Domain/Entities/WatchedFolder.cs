@@ -34,22 +34,41 @@ public class WatchedFolder : EntityBase
     public DateTimeOffset? LastScannedAt { get; set; }
 
     /// <summary>
+    /// Glob patterns (e.g. <c>*map*</c>, <c>*token*</c>) whose matching files are flagged as
+    /// likely-not-rules during a scan. Seeded with a sensible default on registration; the host
+    /// can tune per folder (e.g. a maps folder can exclude everything with <c>*</c>).
+    /// Stored as a JSON array in the database.
+    /// </summary>
+    public List<string> ExcludePatterns { get; set; } = [];
+
+    /// <summary>
     /// Navigation property: source documents discovered in this folder.
     /// </summary>
     public ICollection<SourceDocument> SourceDocuments { get; set; } = [];
+
+    /// <summary>
+    /// The default likely-not-rules exclude patterns seeded on folder registration. Mirrors the
+    /// analyzer's built-in signal list (maps, screens, tokens, etc.) in glob form.
+    /// </summary>
+    public static IReadOnlyList<string> DefaultExcludePatterns { get; } =
+    [
+        "*map*", "*screen*", "*token*", "*counter*", "*vtt*", "*poster*", "*handout*",
+    ];
 
     public WatchedFolder(
         string displayName,
         string absolutePath,
         SourceType defaultSourceType,
         string? defaultGameSystem = null,
-        string? defaultRuleset = null)
+        string? defaultRuleset = null,
+        IReadOnlyList<string>? excludePatterns = null)
     {
         DisplayName = displayName;
         AbsolutePath = absolutePath;
         DefaultSourceType = defaultSourceType;
         DefaultGameSystem = defaultGameSystem;
         DefaultRuleset = defaultRuleset;
+        ExcludePatterns = (excludePatterns ?? DefaultExcludePatterns).ToList();
     }
 
     // EF Core constructor

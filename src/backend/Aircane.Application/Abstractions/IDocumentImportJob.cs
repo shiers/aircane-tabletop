@@ -13,6 +13,10 @@ public interface IDocumentImportJob
     /// <c>OcrRequired</c>, or <c>Failed</c>.
     /// </summary>
     /// <param name="documentId">The ID of the <see cref="Domain.Entities.SourceDocument"/> to process.</param>
+    /// <param name="jobId">
+    /// The background job id driving this import, if any. Threaded into <c>ImportStatusUpdated</c>
+    /// events so the frontend can correlate progress to a specific job.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
-    Task ProcessDocumentAsync(Guid documentId, CancellationToken ct = default);
+    Task ProcessDocumentAsync(Guid documentId, Guid? jobId = null, CancellationToken ct = default);
 }

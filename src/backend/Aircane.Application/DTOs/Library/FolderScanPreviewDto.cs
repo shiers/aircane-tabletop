@@ -29,6 +29,13 @@ public enum ScanCandidateFlag
 
     /// <summary>The filename looks like a non-rules asset (map pack, DM screen, tokens, etc.).</summary>
     LikelyNotRules,
+
+    /// <summary>
+    /// The file's content hash exactly matches an already-indexed document — a stronger signal
+    /// than <see cref="AlreadyImported"/>/<see cref="DuplicateVariant"/> (same bytes, possibly a
+    /// different filename).
+    /// </summary>
+    ExactDuplicate,
 }
 
 /// <summary>

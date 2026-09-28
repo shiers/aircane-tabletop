@@ -322,9 +322,53 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
                 """;
         }
 
+        // System-specific framing. Only the system-specific sections change; the staged
+        // generation pipeline is identical across systems.
+        if (IsPathfinder2e(request))
+        {
+            prompt += """
+
+
+                Pathfinder 2e (Remaster) system guidance:
+                - Action economy: characters have three actions and one reaction per turn (not
+                  action / bonus action / reaction). Frame tactics around spending three actions,
+                  the multiple-attack penalty (-5 on the second attack, -10 on the third), and
+                  reactions.
+                - Resolution: use the four degrees of success (critical success / success /
+                  failure / critical failure). Beating a DC by 10+ is a critical success; missing
+                  by 10+ is a critical failure. Frame skill challenges and hazards in these terms,
+                  never as binary pass/fail.
+                - Encounters: rate creatures by their level relative to the party level, not by a
+                  challenge rating. Use PF2e difficulty tiers: Trivial, Low, Moderate, Severe,
+                  Extreme.
+                - Conditions: use PF2e condition names (e.g. Off-Guard, Frightened, Clumsy,
+                  Enfeebled, Sickened, Slowed, Stunned, Prone, Grabbed, Dying, Wounded). Do NOT use
+                  D&D 5e conditions or advantage/disadvantage.
+                """;
+        }
+
         prompt += "\n\nAlways respond with valid JSON only. No markdown, no explanation, just the JSON object or array.";
 
         return prompt;
+    }
+
+    /// <summary>
+    /// Detects whether generation is for a Pathfinder 2e (Remaster) campaign, based on the
+    /// request's game-system identifier or ruleset name (tolerant of common variants).
+    /// </summary>
+    internal static bool IsPathfinder2e(GenerateAdventureRequest request)
+        => MatchesPathfinder2e(request.GameSystem) || MatchesPathfinder2e(request.Ruleset);
+
+    private static bool MatchesPathfinder2e(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized is "pathfinder-2e-remaster"
+            || normalized.Contains("pathfinder 2")
+            || normalized.Contains("pathfinder second")
+            || normalized is "pf2e" or "pf2" or "pf2e remaster";
     }
 
     private static string BuildPitchPrompt(GenerateAdventureRequest request)
@@ -417,7 +461,7 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
             - "name": NPC name
             - "role": one of "quest giver", "villain", "ally", "neutral", "merchant", "informant"
             - "personality": brief personality description (1-2 sentences)
-            - "statsSummary": brief stat reference (e.g., "CR 2 Bandit Captain", "Commoner")
+            - "statsSummary": brief stat reference ({(IsPathfinder2e(request) ? "PF2e creature level, e.g. \"Level 2 Bandit\", \"Level 0 Commoner\"" : "e.g., \"CR 2 Bandit Captain\", \"Commoner\"")})
             - "sceneIds": array of scene IDs where this NPC appears
             - "faction": optional faction name (null if none)
 
@@ -434,6 +478,35 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         var combatScenes = scenes.Where(s =>
             s.SceneType.Equals("combat", StringComparison.OrdinalIgnoreCase)).ToList();
         var sceneList = string.Join("\n", combatScenes.Select(s => $"- {s.SceneId}: {s.Title}"));
+
+        if (IsPathfinder2e(request))
+        {
+            return $"""
+                Based on this adventure:
+                Title: {pitch.Title}
+                Party: {request.PartySize} level {request.AverageLevel} character(s)
+                Difficulty: {request.Difficulty}
+
+                Combat scenes:
+                {sceneList}
+
+                Generate encounters as a JSON array (Pathfinder 2e). Each encounter should have:
+                - "title": encounter title
+                - "sceneId": which scene this encounter belongs to
+                - "enemies": array of objects with "name", "count" (integer), and
+                  "challengeRating" set to the creature's LEVEL relative to the party (e.g. "3",
+                  "Level 5", or a level such as "-1" for weak foes) — PF2e rates creatures by level,
+                  not challenge rating.
+                - "difficulty": "{request.Difficulty}" (a PF2e tier: Trivial, Low, Moderate, Severe, or Extreme)
+                - "tactics": suggested enemy tactics using the three-action economy and the
+                  multiple-attack penalty (1-2 sentences)
+                - "environment": terrain or environmental features (optional)
+
+                Budget encounters by creature level vs party level for {request.PartySize} level
+                {request.AverageLevel} characters at {request.Difficulty} threat. Prefer a mix of
+                creature levels rather than many equal-level foes.
+                """;
+        }
 
         return $"""
             Based on this adventure:
@@ -463,6 +536,28 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         IReadOnlyList<GeneratedEncounter> encounters)
     {
         var sceneIds = string.Join(", ", scenes.Select(s => s.SceneId));
+
+        if (IsPathfinder2e(request))
+        {
+            return $"""
+                Based on this adventure:
+                Title: {pitch.Title}
+                Party: {request.PartySize} level {request.AverageLevel} character(s)
+                Scenes: {sceneIds}
+
+                Generate treasure as a JSON object (Pathfinder 2e) with:
+                - "goldTotal": total currency (in gp) appropriate for a level {request.AverageLevel}
+                  party, following the PF2e treasure-by-level guidelines for a full adventure.
+                - "items": array of mundane/consumable items, each with "name", "description",
+                  "sceneId", "value"
+                - "magicItems": array of permanent items, each with "name", "description",
+                  "sceneId", "value". Include item levels appropriate to a level
+                  {request.AverageLevel} party (roughly party level to party level + 2).
+
+                Distribute treasure across scenes following the PF2e treasure-by-level table for a
+                party of {request.PartySize}.
+                """;
+        }
 
         return $"""
             Based on this adventure:

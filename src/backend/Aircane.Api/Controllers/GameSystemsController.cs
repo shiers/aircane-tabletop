@@ -1,5 +1,7 @@
 using Aircane.Api.Authorization;
+using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.GameSystems;
+using Aircane.Application.DTOs.Library;
 using Aircane.Application.GameSystems;
 using Aircane.Domain.DiceExpressions;
 using Aircane.Domain.Entities.GameSystems;
@@ -21,18 +23,66 @@ public sealed class GameSystemsController : ControllerBase
     private readonly ISystemRegistry _registry;
     private readonly IMechanicResolver _mechanicResolver;
     private readonly ICharacterSchemaEngine _schemaEngine;
+    private readonly IGameSystemAliasService _aliasService;
     private readonly ILogger<GameSystemsController> _logger;
 
     public GameSystemsController(
         ISystemRegistry registry,
         IMechanicResolver mechanicResolver,
         ICharacterSchemaEngine schemaEngine,
+        IGameSystemAliasService aliasService,
         ILogger<GameSystemsController> logger)
     {
         _registry = registry;
         _mechanicResolver = mechanicResolver;
         _schemaEngine = schemaEngine;
+        _aliasService = aliasService;
         _logger = logger;
+    }
+
+    // ── Alias management (Settings → Game Systems) ────────────────────────────
+
+    /// <summary>Lists the custom aliases for a game-system definition.</summary>
+    [HttpGet("{id:guid}/aliases")]
+    [Authorize(Policy = AuthorizationPolicies.Authenticated)]
+    [ProducesResponseType(typeof(IReadOnlyList<GameSystemAliasDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListAliases(Guid id, CancellationToken cancellationToken)
+    {
+        var aliases = await _aliasService.ListAsync(id, cancellationToken);
+        return Ok(aliases);
+    }
+
+    /// <summary>Adds a custom alias to a game-system definition.</summary>
+    [HttpPost("{id:guid}/aliases")]
+    [ProducesResponseType(typeof(GameSystemAliasDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AddAlias(
+        Guid id,
+        [FromBody] AddAliasBody body,
+        CancellationToken cancellationToken)
+    {
+        if (body is null || string.IsNullOrWhiteSpace(body.Alias))
+            return BadRequest(new ProblemDetails { Title = "Alias is required.", Status = 400 });
+
+        try
+        {
+            var dto = await _aliasService.AddAsync(id, body.Alias, cancellationToken);
+            return CreatedAtAction(nameof(ListAliases), new { id }, dto);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
+    /// <summary>Removes a custom alias by id.</summary>
+    [HttpDelete("{id:guid}/aliases/{aliasId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> RemoveAlias(Guid id, Guid aliasId, CancellationToken cancellationToken)
+    {
+        await _aliasService.RemoveAsync(aliasId, cancellationToken);
+        return NoContent();
     }
 
     // ── CRUD Endpoints ────────────────────────────────────────────────────────
@@ -487,3 +537,6 @@ public sealed record ValidationResultDto(
 public sealed record ValidationErrorDto(
     string PropertyName,
     string ErrorMessage);
+
+/// <summary>Request body for adding a game-system alias.</summary>
+public sealed record AddAliasBody(string Alias);

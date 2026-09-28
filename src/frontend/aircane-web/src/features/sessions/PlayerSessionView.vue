@@ -15,6 +15,8 @@ import { rollDice, RollVisibility, type RollDto } from '../dice/api'
 import ManualRollForm from '../dice/ManualRollForm.vue'
 import ChatPanel from './ChatPanel.vue'
 import type { ChatMessage } from './ChatPanel.vue'
+import CombatTracker from './CombatTracker.vue'
+import { getEncounter, type EncounterStateDto, type CombatTurnChangedNotification } from './combat'
 
 // ---------------------------------------------------------------------------
 // Route / store
@@ -61,6 +63,9 @@ const pendingRollRequests = ref<RollRequest[]>([])
 // Active tab on mobile
 const activeTab = ref<'scene' | 'chat' | 'dice' | 'character'>('scene')
 
+// Live combat encounter (read-only for players).
+const encounter = ref<EncounterStateDto | null>(null)
+
 // ---------------------------------------------------------------------------
 // Computed
 // ---------------------------------------------------------------------------
@@ -73,6 +78,9 @@ const myParticipant = computed(() =>
 const hasCharacter = computed(() => !!myParticipant.value?.characterId)
 
 const isConnected = computed(() => hubConnection.value !== null)
+
+/** The player's own character id, used so the combat tracker reveals full HP only for it. */
+const ownCharacterId = computed(() => myParticipant.value?.characterId ?? null)
 
 // ---------------------------------------------------------------------------
 // SignalR connection
@@ -111,10 +119,15 @@ async function connectHub(): Promise<void> {
 
   connection.on('StateUpdated', async () => {
     await store.fetchParticipants(sessionId)
+    await refreshEncounter()
   })
 
   connection.on('SceneChanged', async () => {
     await store.fetchSession(sessionId)
+  })
+
+  connection.on('CombatTurnChanged', async (_n: CombatTurnChangedNotification) => {
+    await refreshEncounter()
   })
 
   try {
@@ -124,6 +137,14 @@ async function connectHub(): Promise<void> {
     hubError.value = null
   } catch (err) {
     hubError.value = err instanceof Error ? err.message : 'Could not connect to session hub.'
+  }
+}
+
+async function refreshEncounter(): Promise<void> {
+  try {
+    encounter.value = await getEncounter(sessionId)
+  } catch {
+    // Non-critical; players see the last known encounter until the next update.
   }
 }
 
@@ -208,6 +229,7 @@ onMounted(async () => {
   await Promise.all([
     store.fetchSession(sessionId),
     store.fetchParticipants(sessionId),
+    refreshEncounter(),
   ])
   await connectHub()
 })
@@ -287,6 +309,14 @@ onUnmounted(async () => {
         </button>
       </div>
     </div>
+
+    <!-- Combat tracker (read-only for players; shown whenever an encounter is active) -->
+    <CombatTracker
+      v-if="encounter?.isActive"
+      :encounter="encounter"
+      :readonly="true"
+      :own-character-id="ownCharacterId"
+    />
 
     <!-- Mobile tab bar -->
     <nav

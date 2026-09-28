@@ -267,6 +267,24 @@ export async function reindexDocument(id: string): Promise<void> {
   await apiClient.post(`/api/library/documents/${id}/reindex`)
 }
 
+/** Response returned when a long-running library operation is enqueued as a background job. */
+export interface JobAcceptedResponse {
+  jobId: string
+  jobType: string
+}
+
+/** Re-run OCR/import on a single OCR-required document. Returns the enqueued job. */
+export async function reOcrDocument(id: string): Promise<JobAcceptedResponse> {
+  const response = await apiClient.post<JobAcceptedResponse>(`/api/library/documents/${id}/reocr`)
+  return response.data
+}
+
+/** Re-run OCR/import on every OCR-required document. Returns the enqueued job. */
+export async function reOcrAll(): Promise<JobAcceptedResponse> {
+  const response = await apiClient.post<JobAcceptedResponse>(`/api/library/documents/reocr-all`)
+  return response.data
+}
+
 /** Update the classification metadata for a document. */
 export async function updateClassification(
   id: string,

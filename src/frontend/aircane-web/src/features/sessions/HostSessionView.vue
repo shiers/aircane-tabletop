@@ -16,6 +16,17 @@ import LanJoinScreen from './LanJoinScreen.vue'
 import ParticipantApprovalPanel from './ParticipantApprovalPanel.vue'
 import ChatPanel from './ChatPanel.vue'
 import type { ChatMessage } from './ChatPanel.vue'
+import CombatTracker from './CombatTracker.vue'
+import {
+  getEncounter,
+  advanceTurn,
+  applyDamage as apiApplyDamage,
+  applyHealing as apiApplyHealing,
+  applyCondition as apiApplyCondition,
+  removeCondition as apiRemoveCondition,
+  type EncounterStateDto,
+  type CombatTurnChangedNotification,
+} from './combat'
 
 // ---------------------------------------------------------------------------
 // Route / store
@@ -36,6 +47,9 @@ const hubConnection = ref<signalR.HubConnection | null>(null)
 const hubError = ref<string | null>(null)
 const endingSession = ref(false)
 const endError = ref<string | null>(null)
+
+// Live combat encounter (null when no encounter is active).
+const encounter = ref<EncounterStateDto | null>(null)
 
 // Invite info is only available immediately after session creation.
 // The host view reads it from the store (set by startSession action).
@@ -94,6 +108,14 @@ async function connectHub(): Promise<void> {
 
   connection.on('StateUpdated', async () => {
     await store.fetchSession(sessionId)
+    // Campaign state changed (which may include combat) — refresh the encounter.
+    await refreshEncounter()
+  })
+
+  // The turn-changed event carries only round/turn/active-id; re-fetch the full encounter so
+  // HP and conditions stay current.
+  connection.on('CombatTurnChanged', async (_n: CombatTurnChangedNotification) => {
+    await refreshEncounter()
   })
 
   try {
@@ -104,6 +126,38 @@ async function connectHub(): Promise<void> {
   } catch (err) {
     hubError.value = err instanceof Error ? err.message : 'Could not connect to session hub.'
   }
+}
+
+// ---------------------------------------------------------------------------
+// Combat
+// ---------------------------------------------------------------------------
+
+async function refreshEncounter(): Promise<void> {
+  try {
+    encounter.value = await getEncounter(sessionId)
+  } catch {
+    // Non-critical; leave the last known encounter in place.
+  }
+}
+
+async function handleAdvanceTurn(): Promise<void> {
+  encounter.value = await advanceTurn(sessionId)
+}
+
+async function handleApplyDamage(targetId: string, amount: number): Promise<void> {
+  encounter.value = await apiApplyDamage(sessionId, targetId, amount)
+}
+
+async function handleApplyHealing(targetId: string, amount: number): Promise<void> {
+  encounter.value = await apiApplyHealing(sessionId, targetId, amount)
+}
+
+async function handleApplyCondition(targetId: string, conditionName: string): Promise<void> {
+  encounter.value = await apiApplyCondition(sessionId, targetId, conditionName)
+}
+
+async function handleRemoveCondition(targetId: string, conditionName: string): Promise<void> {
+  encounter.value = await apiRemoveCondition(sessionId, targetId, conditionName)
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +235,7 @@ onMounted(async () => {
     }).catch(() => {
       // Roll log is non-critical; ignore errors on load
     }),
+    refreshEncounter(),
   ])
   await connectHub()
 })
@@ -292,8 +347,20 @@ onUnmounted(async () => {
           </div>
         </div>
 
-        <!-- Right: Chat + Roll log -->
+        <!-- Right: Combat tracker + Chat + Roll log -->
         <div class="space-y-6">
+          <!-- Combat tracker (only rendered when an encounter is active) -->
+          <CombatTracker
+            v-if="encounter?.isActive"
+            :encounter="encounter"
+            :readonly="false"
+            @advance-turn="handleAdvanceTurn"
+            @apply-damage="handleApplyDamage"
+            @apply-healing="handleApplyHealing"
+            @apply-condition="handleApplyCondition"
+            @remove-condition="handleRemoveCondition"
+          />
+
           <!-- Chat -->
           <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-6 flex flex-col" style="height: 400px;">
             <ChatPanel

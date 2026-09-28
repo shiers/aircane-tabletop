@@ -1,5 +1,6 @@
 using Aircane.Api.Authorization;
 using Aircane.Application.Abstractions;
+using Aircane.Application.Abstractions.BackgroundJobs;
 using Aircane.Application.DTOs.Library;
 using Aircane.Application.Validation;
 using Aircane.Api.Extensions;
@@ -23,6 +24,7 @@ public sealed class LibraryFoldersController : ControllerBase
 {
     private readonly ILibraryService _libraryService;
     private readonly IFolderScanJob _folderScanJob;
+    private readonly IBackgroundJobQueue _jobQueue;
     private readonly IValidator<RegisterFolderRequest> _registerValidator;
     private readonly IValidator<UpdateFolderRequest> _updateValidator;
     private readonly IValidator<FolderImportSelectionRequest> _importSelectionValidator;
@@ -30,12 +32,14 @@ public sealed class LibraryFoldersController : ControllerBase
     public LibraryFoldersController(
         ILibraryService libraryService,
         IFolderScanJob folderScanJob,
+        IBackgroundJobQueue jobQueue,
         IValidator<RegisterFolderRequest> registerValidator,
         IValidator<UpdateFolderRequest> updateValidator,
         IValidator<FolderImportSelectionRequest> importSelectionValidator)
     {
         _libraryService = libraryService;
         _folderScanJob = folderScanJob;
+        _jobQueue = jobQueue;
         _registerValidator = registerValidator;
         _updateValidator = updateValidator;
         _importSelectionValidator = importSelectionValidator;
@@ -160,19 +164,20 @@ public sealed class LibraryFoldersController : ControllerBase
     /// The response includes a summary of files found, new, updated, and skipped.
     /// </remarks>
     [HttpPost("{id:guid}/scan")]
-    [ProducesResponseType(typeof(FolderScanResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(JobAcceptedResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ScanFolder(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            var result = await _folderScanJob.ScanFolderAsync(id, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException)
-        {
+        // Verify the folder exists up front so a missing folder still yields a 404 even though
+        // the scan itself now runs on the background worker.
+        var folder = await _libraryService.GetFolderAsync(id, cancellationToken);
+        if (folder is null)
             return NotFound();
-        }
+
+        var job = new FolderScanJobMessage(id);
+        await _jobQueue.EnqueueAsync(job, cancellationToken);
+
+        return Accepted(new JobAcceptedResponse(job.JobId, job.JobType));
     }
 
     /// <summary>
@@ -206,7 +211,7 @@ public sealed class LibraryFoldersController : ControllerBase
     /// are skipped.
     /// </summary>
     [HttpPost("{id:guid}/scan/import")]
-    [ProducesResponseType(typeof(FolderScanResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(FolderScanResultDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ImportSelection(
@@ -230,8 +235,10 @@ public sealed class LibraryFoldersController : ControllerBase
 
         try
         {
+            // Record creation is fast; each selected file's import is enqueued as a background
+            // job, so the response is 202 (imports proceed asynchronously).
             var result = await _folderScanJob.ImportSelectionAsync(request, cancellationToken);
-            return Ok(result);
+            return Accepted(result);
         }
         catch (KeyNotFoundException)
         {

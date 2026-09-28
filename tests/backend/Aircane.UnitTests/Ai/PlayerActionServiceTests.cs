@@ -72,6 +72,8 @@ public class PlayerActionServiceTests : IDisposable
             _aiProvider,
             outputParser,
             _commandExecutor,
+            new Aircane.UnitTests.TestDoubles.UnboundSystemRegistry(),
+            new Aircane.Application.GameSystems.AiContextAdapter(),
             _db,
             NullLogger<PlayerActionService>.Instance);
     }

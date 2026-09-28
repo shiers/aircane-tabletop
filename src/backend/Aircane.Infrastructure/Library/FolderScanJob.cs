@@ -1,4 +1,6 @@
 using Aircane.Application.Abstractions;
+using Aircane.Application.Abstractions;
+using Aircane.Application.Abstractions.BackgroundJobs;
 using Aircane.Application.DTOs.Library;
 using Aircane.Application.Library;
 using Aircane.Application.Validation;
@@ -18,7 +20,7 @@ public sealed class FolderScanJob : IFolderScanJob
 {
     private readonly IDocumentSource _documentSource;
     private readonly ILibraryService _libraryService;
-    private readonly IDocumentImportJob _documentImportJob;
+    private readonly IDocumentImportService _documentImportService;
     private readonly IScanCandidateAnalyzer _analyzer;
     private readonly AircaneDbContext _db;
     private readonly ILogger<FolderScanJob> _logger;
@@ -26,14 +28,14 @@ public sealed class FolderScanJob : IFolderScanJob
     public FolderScanJob(
         IDocumentSource documentSource,
         ILibraryService libraryService,
-        IDocumentImportJob documentImportJob,
+        IDocumentImportService documentImportService,
         IScanCandidateAnalyzer analyzer,
         AircaneDbContext db,
         ILogger<FolderScanJob> logger)
     {
         _documentSource = documentSource;
         _libraryService = libraryService;
-        _documentImportJob = documentImportJob;
+        _documentImportService = documentImportService;
         _analyzer = analyzer;
         _db = db;
         _logger = logger;
@@ -108,7 +110,7 @@ public sealed class FolderScanJob : IFolderScanJob
                 existingDoc.UpdatedAt = DateTimeOffset.UtcNow;
                 await _db.SaveChangesAsync(ct);
 
-                await _documentImportJob.ProcessDocumentAsync(existingDoc.Id, ct);
+                await _documentImportService.EnqueueImportJobAsync(existingDoc.Id, ct);
                 updatedFiles++;
             }
             else
@@ -124,7 +126,7 @@ public sealed class FolderScanJob : IFolderScanJob
                     overrides: null,
                     ct);
 
-                await _documentImportJob.ProcessDocumentAsync(newDoc.Id, ct);
+                await _documentImportService.EnqueueImportJobAsync(newDoc.Id, ct);
                 newFiles++;
             }
         }
@@ -201,7 +203,24 @@ public sealed class FolderScanJob : IFolderScanJob
                 existingDedupKeys.Add(key);
         }
 
-        var candidates = _analyzer.Analyze(files, existingDedupKeys);
+        // Content-based duplicate detection: hash each discovered file and compare against the
+        // content hashes already indexed in the library (cross-folder exact-duplicate detection).
+        var existingContentHashes = new HashSet<string>(
+            (await _db.SourceDocuments
+                .AsNoTracking()
+                .Where(d => d.ContentHash != null)
+                .Select(d => d.ContentHash!)
+                .ToListAsync(ct)),
+            StringComparer.OrdinalIgnoreCase);
+
+        var fileContentHashes = await ComputeContentHashesAsync(files, ct);
+
+        var candidates = _analyzer.Analyze(
+            files,
+            existingDedupKeys,
+            fileContentHashes,
+            existingContentHashes,
+            folder.ExcludePatterns);
 
         _logger.LogInformation(
             "Folder preview complete. FolderId={FolderId}, FilesFound={FilesFound}", folderId, files.Count);
@@ -211,6 +230,36 @@ public sealed class FolderScanJob : IFolderScanJob
             FilesFound: files.Count,
             Candidates: candidates,
             AnalyzedAt: DateTimeOffset.UtcNow);
+    }
+
+    /// <summary>
+    /// Computes SHA-256 content hashes (lowercase hex) for the discovered files, keyed by source
+    /// path. Files that cannot be opened are skipped (no hash entry). Best-effort so a single
+    /// unreadable file does not fail the whole preview.
+    /// </summary>
+    private async Task<Dictionary<string, string>> ComputeContentHashesAsync(
+        IReadOnlyList<DocumentSourceFile> files,
+        CancellationToken ct)
+    {
+        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await using var stream = await _documentSource.OpenStreamAsync(file.SourcePath, ct);
+                using var sha = System.Security.Cryptography.SHA256.Create();
+                var bytes = await sha.ComputeHashAsync(stream, ct);
+                hashes[file.SourcePath] = Convert.ToHexString(bytes).ToLowerInvariant();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex,
+                    "Could not hash file during preview; skipping content-duplicate check for {SourcePath}.",
+                    file.SourcePath);
+            }
+        }
+        return hashes;
     }
 
     /// <inheritdoc />
@@ -281,7 +330,7 @@ public sealed class FolderScanJob : IFolderScanJob
             var newDoc = await _libraryService.CreateDocumentFromFolderAsync(
                 request.FolderId, file.SourcePath, file.FileName, overrides, ct);
 
-            await _documentImportJob.ProcessDocumentAsync(newDoc.Id, ct);
+            await _documentImportService.EnqueueImportJobAsync(newDoc.Id, ct);
             newFiles++;
         }
 

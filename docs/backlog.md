@@ -24,6 +24,17 @@ the priority lists below with full detail; this section records *why* they were 
 
 ## Priority 1 - High Impact / Frequently Requested
 
+> **Implementation update:** The actionable P1 items below have now been implemented — the
+> in-process background job infrastructure (channel queue + hosted worker + `GET /api/jobs/{id}`),
+> combat automation surfacing (combat REST endpoints, `CombatTracker.vue` for host + player, and a
+> live combat block in the AI DM prompt), the PF2e adapter (`Pf2eEncounterValidator` + validator
+> selector, PF2e-aware generation prompts, elite/weak templates), configurable embedding dimensions
+> with OpenAI/Azure OpenAI cloud embedding providers, library import UX (content-hash `ExactDuplicate`
+> detection, game-system aliases, per-folder exclude patterns), and OCR follow-ups (full-page
+> rasterization via Docnet/PDFium, opt-in tessdata download, and re-OCR endpoints + UI). The
+> maintainer-gated items (real PF2e ORC text, internet tunnel, desktop wrapper, app license, PF1e
+> content) remain as noted. The "Still outstanding" notes in the sections below predate this update.
+
 ### Pathfinder 2e Adapter
 **Delivered:** A built-in `Pathfinder2eRemasterSeed` game-system definition captures the PF2e mechanics — four degrees of success (margin vs DC), three-action economy with multiple attack penalty, creature-level encounter budget, PF2e conditions, and proficiency ranks — and validates against `GameSystemDefinitionValidator`. A new `GameSystemDefinitionSeeder` persists all built-in definitions (D&D 5e, Freeform, PF2e Remaster) into `GameSystemDefinitions` on startup (this also fixed a gap where the built-in definitions were referenced by the migration service but never actually inserted).
 

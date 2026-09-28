@@ -77,3 +77,64 @@ Restart the backend after changing these values.
 The OCR wrapper (`TesseractOCR`) and the Tesseract engine are Apache-2.0 licensed. Language
 `traineddata` files carry their own licenses from the Tesseract project — review them if you
 redistribute the app with bundled data.
+
+## Full-page rasterization (scanned PDFs without embedded images)
+
+Some scanned PDFs draw each page as vectors/curves rather than as an embedded raster image.
+The default OCR path only sees embedded raster images, so it recovers nothing from these
+pages. Full-page rasterization renders the whole page to a bitmap and OCRs that instead.
+
+This is **opt-in** and adds a native dependency (PDFium via the MIT-licensed
+[`Docnet.Core`](https://github.com/GowenGit/docnet) package). Enable it alongside OCR:
+
+```json
+"Ocr": {
+  "Enabled": true,
+  "FullPageRasterization": true,
+  "RasterizationDpi": 200
+}
+```
+
+| Setting | Meaning |
+|---------|---------|
+| `FullPageRasterization` | When `true` (and `Enabled`), pages with little text AND no embedded raster images are rendered to a bitmap and OCR'd. |
+| `RasterizationDpi` | Render resolution. Higher improves accuracy at the cost of memory/time. Default 200. |
+
+### PDFium native dependency
+
+`Docnet.Core` ships the PDFium native binary for common runtimes (`win-x64`, `linux`,
+`osx`). Docnet supports **x64 only**. If the native binary can't be loaded, the rasterizer
+reports itself unavailable and the app logs a warning — full-page rasterization is skipped
+and the rest of OCR (embedded-image path) still works. On AnyCPU builds you may need to set
+the `DocnetRuntime` MSBuild property to force the correct native binary.
+
+## Auto-downloading tessdata (opt-in)
+
+Instead of placing `eng.traineddata` manually, you can let the app fetch it on first run:
+
+```json
+"Ocr": {
+  "Enabled": true,
+  "AutoDownloadTessdata": true
+}
+```
+
+When `AutoDownloadTessdata` is `true`, OCR is enabled, and `TessdataPath` is empty, the app
+downloads `eng.traineddata` from the official Tesseract release to a local app-data
+directory (`%LOCALAPPDATA%/Aircane/tessdata` on Windows, the platform equivalent elsewhere)
+and points `TessdataPath` at it automatically. This is best-effort: if the download fails,
+OCR simply stays unavailable and the logs explain that tessdata is missing. Leave it `false`
+(the default) if your environment has no outbound internet or you prefer to manage tessdata
+yourself.
+
+## Re-running OCR after enabling it
+
+Documents imported while OCR was off are marked `OcrRequired`. After you enable OCR you can
+process them without re-importing:
+
+- **Single document:** `POST /api/library/documents/{id}/reocr` (or the "Re-run OCR" button
+  next to an OCR-required document in the library UI).
+- **All at once:** `POST /api/library/documents/reocr-all`.
+
+Both run as background jobs (they return `202 Accepted` with a job id) and re-enqueue the
+import pipeline for each OCR-required document, which retries OCR now that it's available.

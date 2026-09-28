@@ -19,6 +19,7 @@ public sealed class LibraryService : ILibraryService
     private readonly IFileStorageService _fileStorage;
     private readonly IEmbeddingProvider _embeddingProvider;
     private readonly IGameSystemCanonicalizer _gameSystemCanonicalizer;
+    private readonly IDocumentImportService _documentImportService;
     private readonly ILogger<LibraryService> _logger;
 
     public LibraryService(
@@ -26,12 +27,14 @@ public sealed class LibraryService : ILibraryService
         IFileStorageService fileStorage,
         IEmbeddingProvider embeddingProvider,
         IGameSystemCanonicalizer gameSystemCanonicalizer,
+        IDocumentImportService documentImportService,
         ILogger<LibraryService> logger)
     {
         _db = db;
         _fileStorage = fileStorage;
         _embeddingProvider = embeddingProvider;
         _gameSystemCanonicalizer = gameSystemCanonicalizer;
+        _documentImportService = documentImportService;
         _logger = logger;
     }
 
@@ -108,6 +111,9 @@ public sealed class LibraryService : ILibraryService
 
         if (request.DefaultRuleset is not null)
             folder.DefaultRuleset = request.DefaultRuleset;
+
+        if (request.ExcludePatterns is not null)
+            folder.ExcludePatterns = request.ExcludePatterns.ToList();
 
         await _db.SaveChangesAsync(cancellationToken);
 
@@ -245,6 +251,10 @@ public sealed class LibraryService : ILibraryService
             "Document '{Title}' uploaded successfully. Id={Id}, StoragePath={StoragePath}",
             document.Title, document.Id, storagePath);
 
+        // Enqueue the import job so text extraction/chunking/embedding runs in the background
+        // instead of blocking the upload request.
+        await _documentImportService.EnqueueImportJobAsync(document.Id, cancellationToken);
+
         return MapToDto(document);
     }
 
@@ -327,8 +337,9 @@ public sealed class LibraryService : ILibraryService
 
         await _db.SaveChangesAsync(cancellationToken);
 
+        await _documentImportService.EnqueueImportJobAsync(documentId, cancellationToken);
+
         _logger.LogInformation("Document {DocumentId} queued for reindex.", documentId);
-        // Background job enqueue will be wired in task 2.3+.
     }
 
     /// <inheritdoc />
@@ -576,7 +587,8 @@ public sealed class LibraryService : ILibraryService
             DefaultGameSystem: folder.DefaultGameSystem,
             DefaultRuleset: folder.DefaultRuleset,
             LastScannedAt: folder.LastScannedAt,
-            CreatedAt: folder.CreatedAt);
+            CreatedAt: folder.CreatedAt,
+            ExcludePatterns: folder.ExcludePatterns);
 
     private static SourceDocumentDto MapToDto(SourceDocument doc) =>
         new(

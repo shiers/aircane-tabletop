@@ -61,6 +61,61 @@ public sealed class GameSystemDefinitionSeeder
                     definition.Identifier);
             }
         }
+
+        try
+        {
+            await SeedAliasesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GameSystemDefinitionSeeder: failed to seed game-system aliases.");
+        }
+    }
+
+    /// <summary>
+    /// Seeds common short-hand aliases for the built-in definitions (idempotent). Only aliases
+    /// that don't already exist for a definition are added, so hosts can add custom aliases
+    /// without them being removed on the next startup.
+    /// </summary>
+    private async Task SeedAliasesAsync(CancellationToken ct)
+    {
+        var aliasesByDefinition = new Dictionary<Guid, string[]>
+        {
+            [DnD5e2014Seed.DefinitionId] =
+                ["D&D 5e", "DnD 5e", "5e", "D&D5e", "DnD5", "D&D 5th Edition"],
+            [Pathfinder2eRemasterSeed.DefinitionId] =
+                ["Pathfinder 2e", "PF2e", "Pf2", "Pathfinder Second Edition"],
+        };
+
+        foreach (var (definitionId, aliases) in aliasesByDefinition)
+        {
+            var definitionExists = await _db.GameSystemDefinitions.AnyAsync(d => d.Id == definitionId, ct);
+            if (!definitionExists)
+                continue;
+
+            var existing = await _db.GameSystemAliases
+                .Where(a => a.GameSystemDefinitionId == definitionId)
+                .Select(a => a.Alias)
+                .ToListAsync(ct);
+            var existingSet = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+
+            var added = 0;
+            foreach (var alias in aliases)
+            {
+                if (existingSet.Contains(alias))
+                    continue;
+                _db.GameSystemAliases.Add(new GameSystemAlias(definitionId, alias));
+                added++;
+            }
+
+            if (added > 0)
+            {
+                await _db.SaveChangesAsync(ct);
+                _logger.LogInformation(
+                    "GameSystemDefinitionSeeder: seeded {Count} alias(es) for definition {DefinitionId}.",
+                    added, definitionId);
+            }
+        }
     }
 
     private async Task SeedOneAsync(GameSystemDefinition definition, CancellationToken ct)

@@ -8,6 +8,7 @@ const store = useLibraryStore()
 
 const deletingId = ref<string | null>(null)
 const reindexingId = ref<string | null>(null)
+const reOcrId = ref<string | null>(null)
 const togglingId = ref<string | null>(null)
 
 /** Tailwind classes for a license badge by license key. */
@@ -65,6 +66,15 @@ async function handleDelete(doc: SourceDocumentDto): Promise<void> {
     await store.deleteDocument(doc.id)
   } finally {
     deletingId.value = null
+  }
+}
+
+async function handleReOcr(doc: SourceDocumentDto): Promise<void> {
+  reOcrId.value = doc.id
+  try {
+    await store.reOcrDocument(doc.id)
+  } finally {
+    reOcrId.value = null
   }
 }
 
@@ -223,6 +233,18 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
                   >
                     <span v-if="reindexingId === doc.id">Re-indexing…</span>
                     <span v-else>Re-index</span>
+                  </button>
+
+                  <!-- Re-run OCR button - shown for OCR-required docs (use after enabling OCR) -->
+                  <button
+                    v-if="doc.importStatus === ImportStatus.OcrRequired"
+                    :disabled="reOcrId === doc.id"
+                    :aria-label="`Re-run OCR for ${doc.title}`"
+                    class="rounded px-2 py-1 text-xs font-medium text-yellow-400 hover:bg-gray-800 hover:text-yellow-300 focus:outline-none focus:ring-2 focus:ring-yellow-500 disabled:opacity-50"
+                    @click="handleReOcr(doc)"
+                  >
+                    <span v-if="reOcrId === doc.id">Re-running OCR…</span>
+                    <span v-else>Re-run OCR</span>
                   </button>
 
                   <!-- Built-in: Disable/Enable toggle (built-in content cannot be deleted) -->

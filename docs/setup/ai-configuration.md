@@ -224,3 +224,75 @@ curl -X POST http://localhost:5000/api/ai/settings/test-connection \
   -H "Content-Type: application/json" \
   -d '{"activeProvider": 4, "ollama": {"baseUrl": "http://localhost:11434", "model": "llama3.2:3b"}}'
 ```
+
+---
+
+## Embeddings (Retrieval / RAG)
+
+Embeddings power semantic (vector) search over your imported rules and adventures. They are
+configured separately from the chat provider and are selected **at startup** via configuration.
+
+### Available embedding providers
+
+| Provider | Config value (`Embeddings:Provider`) | Model (default) | Dimensions |
+|----------|--------------------------------------|-----------------|------------|
+| **Fake** | `Fake` (default) | `fake-deterministic` | 768 |
+| **Ollama** | `Ollama` | `nomic-embed-text` | 768 |
+| **OpenAI** | `OpenAI` | `text-embedding-3-small` | 1536 |
+| **Azure OpenAI** | `AzureOpenAI` | your deployment | 1536 |
+
+### Enabling OpenAI embeddings
+
+Set the following (environment variables or user secrets), reusing your existing OpenAI key:
+
+```
+Embeddings__Provider=OpenAI
+Ai__OpenAi__ApiKey=sk-...            # reused from the chat provider
+Embeddings__OpenAi__Model=text-embedding-3-small   # optional
+Embeddings__OpenAi__Dimensions=1536                # optional; must match the model
+```
+
+### Enabling Azure OpenAI embeddings
+
+```
+Embeddings__Provider=AzureOpenAI
+Ai__AzureOpenAi__Endpoint=https://<resource>.openai.azure.com
+Ai__AzureOpenAi__ApiKey=<key>
+Ai__AzureOpenAi__ApiVersion=2024-02-01
+Embeddings__AzureOpenAi__DeploymentName=<embedding-deployment>
+Embeddings__AzureOpenAi__Dimensions=1536           # optional
+```
+
+### Embedding dimension and the migration path
+
+The pgvector `embedding` column has a **fixed dimension** (default `vector(768)`), configured via
+`Embeddings:ColumnDimension`. The built-in Fake and Ollama providers are 768-dimensional and work
+out of the box. Cloud providers such as OpenAI produce **1536**-dimensional vectors, which do not
+fit the 768 column.
+
+**What happens on a mismatch:** at startup the app compares the active provider's dimension to the
+column dimension. If they differ, it logs a clear warning and **disables vector (semantic) search**;
+keyword search continues to work. No data is lost and the app still runs.
+
+**Supported migration path (manual):**
+
+1. Change the provider config as above (e.g. to OpenAI).
+2. Migrate the column to the new dimension in PostgreSQL:
+   ```sql
+   ALTER TABLE document_chunks ALTER COLUMN embedding TYPE vector(1536) USING NULL;
+   ```
+3. Set `Embeddings__ColumnDimension=1536` so the app knows vector search is available again.
+4. Restart the backend, then re-embed the library so every chunk is re-generated with the new
+   provider:
+   ```
+   POST /api/library/documents/reembed-all
+   ```
+   (This runs as a background job — see the job status via `GET /api/jobs/{id}`.)
+
+> Automated column migration is a future (P3) enhancement. Until then, the manual `ALTER TABLE` +
+> re-embed above is the supported path. The `Embeddings:ColumnDimension` setting exists so operators
+> can align the app with the actual column type after migrating.
+
+Embedding provenance (provider, model, dimension) is recorded per chunk, so if you switch providers
+without re-embedding, the old chunks are simply excluded from vector results (and logged) rather
+than returning meaningless matches.

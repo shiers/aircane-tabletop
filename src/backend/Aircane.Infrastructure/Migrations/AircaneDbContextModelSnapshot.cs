@@ -374,6 +374,31 @@ namespace Aircane.Infrastructure.Migrations
                     b.ToTable("GameStateSnapshots");
                 });
 
+            modelBuilder.Entity("Aircane.Domain.Entities.GameSystems.GameSystemAlias", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Alias")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("GameSystemDefinitionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GameSystemDefinitionId")
+                        .HasDatabaseName("IX_GameSystemAliases_GameSystemDefinitionId");
+
+                    b.ToTable("GameSystemAliases");
+                });
+
             modelBuilder.Entity("Aircane.Domain.Entities.GameSystems.GameSystemDefinition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -683,6 +708,10 @@ namespace Aircane.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("ContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -756,6 +785,9 @@ namespace Aircane.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ContentHash")
+                        .HasDatabaseName("IX_SourceDocuments_ContentHash");
+
                     b.HasIndex("WatchedFolderId")
                         .HasDatabaseName("IX_SourceDocuments_WatchedFolderId");
 
@@ -794,6 +826,10 @@ namespace Aircane.Infrastructure.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
+                    b.Property<string>("ExcludePatterns")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<DateTimeOffset?>("LastScannedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -825,6 +861,17 @@ namespace Aircane.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("GameSystemDefinitionId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("GameSystemDefinition");
+                });
+
+            modelBuilder.Entity("Aircane.Domain.Entities.GameSystems.GameSystemAlias", b =>
+                {
+                    b.HasOne("Aircane.Domain.Entities.GameSystems.GameSystemDefinition", "GameSystemDefinition")
+                        .WithMany()
+                        .HasForeignKey("GameSystemDefinitionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("GameSystemDefinition");
                 });

@@ -53,6 +53,7 @@ public class BuiltInContentTests : IDisposable
             new NoopFileStorage(),
             new FakeEmbeddingProvider(),
             new Aircane.Infrastructure.GameSystems.GameSystemCanonicalizer(_db),
+            new Aircane.UnitTests.TestDoubles.NoOpDocumentImportService(),
             NullLogger<LibraryService>.Instance);
 
     /// <summary>

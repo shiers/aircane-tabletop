@@ -13,4 +13,5 @@ public sealed record WatchedFolderDto(
     string? DefaultGameSystem,
     string? DefaultRuleset,
     DateTimeOffset? LastScannedAt,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<string> ExcludePatterns);

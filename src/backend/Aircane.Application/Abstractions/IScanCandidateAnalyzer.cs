@@ -21,7 +21,24 @@ public interface IScanCandidateAnalyzer
     /// Dedup keys (see <see cref="ScanCandidateDto.DedupKey"/>) already represented in the library,
     /// compared case-insensitively. Used to set <see cref="ScanCandidateDto.AlreadyImported"/>.
     /// </param>
+    /// <param name="fileContentHashes">
+    /// Optional map of source path → SHA-256 content hash for the discovered files. When provided
+    /// together with <paramref name="existingContentHashes"/>, files whose hash matches an
+    /// already-indexed document are flagged <see cref="ScanCandidateFlag.ExactDuplicate"/>.
+    /// </param>
+    /// <param name="existingContentHashes">
+    /// Content hashes already present in the library, compared case-insensitively. Used together
+    /// with <paramref name="fileContentHashes"/> to detect exact (byte-for-byte) duplicates.
+    /// </param>
+    /// <param name="excludePatterns">
+    /// Optional per-folder glob patterns (e.g. <c>*map*</c>, <c>*token*</c>). Files whose name
+    /// matches any pattern are flagged <see cref="ScanCandidateFlag.LikelyNotRules"/>. When null,
+    /// a built-in default signal list is used.
+    /// </param>
     IReadOnlyList<ScanCandidateDto> Analyze(
         IReadOnlyList<DocumentSourceFile> files,
-        IReadOnlySet<string> existingDedupKeys);
+        IReadOnlySet<string> existingDedupKeys,
+        IReadOnlyDictionary<string, string>? fileContentHashes = null,
+        IReadOnlySet<string>? existingContentHashes = null,
+        IReadOnlyList<string>? excludePatterns = null);
 }

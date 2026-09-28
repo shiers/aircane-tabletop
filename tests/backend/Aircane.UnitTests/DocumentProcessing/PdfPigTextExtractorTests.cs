@@ -168,6 +168,91 @@ public class PdfPigTextExtractorTests
         Assert.Equal(14, page.CharacterCount);
     }
 
+    // ── Full-page rasterization OCR (B5.1) ────────────────────────────────────
+
+    [Fact]
+    public async Task ExtractTextAsync_FullPageRasterizationEnabled_RasterizesLowTextPageWithNoImages()
+    {
+        var rasterizer = new RecordingRasterizer { Available = true };
+        var ocr = new StubOcrEngine
+        {
+            RecognizedText =
+                "Recovered scanned text from the rendered page. This is enough text to clear the OCR threshold.",
+        };
+        var options = new Aircane.Application.DocumentProcessing.OcrOptions
+        {
+            Enabled = true,
+            FullPageRasterization = true,
+        };
+        var extractor = new PdfPigTextExtractor(
+            NullLogger<PdfPigTextExtractor>.Instance,
+            ocr,
+            PdfPigTextExtractor.DefaultOcrThresholdCharsPerPage,
+            rasterizer,
+            options);
+
+        using var stream = CreateMinimalPdf();
+        var result = await extractor.ExtractTextAsync(stream);
+
+        // The minimal PDF's single page has no text and no embedded images, so the extractor must
+        // fall back to rasterizing the whole page and OCR the bitmap.
+        Assert.True(rasterizer.RasterizeCallCount > 0);
+        Assert.Contains(result.Pages, p => p.Text.Contains("Recovered scanned text"));
+        Assert.False(result.IsOcrRequired);
+    }
+
+    [Fact]
+    public async Task ExtractTextAsync_FullPageRasterizationDisabled_DoesNotRasterize()
+    {
+        var rasterizer = new RecordingRasterizer { Available = true };
+        var ocr = new StubOcrEngine { RecognizedText = "should not be used" };
+        var options = new Aircane.Application.DocumentProcessing.OcrOptions
+        {
+            Enabled = true,
+            FullPageRasterization = false, // disabled
+        };
+        var extractor = new PdfPigTextExtractor(
+            NullLogger<PdfPigTextExtractor>.Instance,
+            ocr,
+            PdfPigTextExtractor.DefaultOcrThresholdCharsPerPage,
+            rasterizer,
+            options);
+
+        using var stream = CreateMinimalPdf();
+        var result = await extractor.ExtractTextAsync(stream);
+
+        Assert.Equal(0, rasterizer.RasterizeCallCount);
+        Assert.True(result.IsOcrRequired);
+    }
+
+    // ── Test doubles ──────────────────────────────────────────────────────────
+
+    private sealed class RecordingRasterizer : Aircane.Application.Abstractions.IPdfRasterizer
+    {
+        public bool Available { get; init; }
+        public int RasterizeCallCount { get; private set; }
+
+        public bool IsAvailable => Available;
+
+        public byte[]? RasterizePage(byte[] pdfBytes, int pageNumber, CancellationToken ct = default)
+        {
+            RasterizeCallCount++;
+            // Return a non-empty placeholder bitmap; the stub OCR engine ignores the bytes.
+            return [0x42, 0x4D, 0x01, 0x02];
+        }
+    }
+
+    private sealed class StubOcrEngine : Aircane.Application.Abstractions.IOcrEngine
+    {
+        public string RecognizedText { get; init; } = string.Empty;
+        public bool IsAvailable => true;
+        public string StatusDescription => "StubOcrEngine";
+
+        public Task<Aircane.Application.Abstractions.OcrResult> RecognizeAsync(
+            byte[] imageBytes, CancellationToken ct = default)
+            => Task.FromResult(new Aircane.Application.Abstractions.OcrResult(RecognizedText, 0.95f));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static PdfPigTextExtractor CreateExtractor(int threshold = PdfPigTextExtractor.DefaultOcrThresholdCharsPerPage)

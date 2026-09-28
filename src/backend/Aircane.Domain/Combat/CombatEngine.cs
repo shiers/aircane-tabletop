@@ -30,6 +30,19 @@ public static class CombatEngine
         };
 
     /// <summary>
+    /// Ends the encounter, deactivating it and clearing turn state. Combatants are retained for
+    /// post-combat reference (final HP, conditions) but the encounter no longer advances turns.
+    /// </summary>
+    public static EncounterState EndEncounter(EncounterState state) =>
+        state with
+        {
+            IsActive = false,
+            Round = 0,
+            TurnIndex = -1,
+            InitiativeOrder = [],
+        };
+
+    /// <summary>
     /// Sets initiative values for combatants (by id) and activates the encounter, ordering turns
     /// highest-first. Combatants not present in <paramref name="initiativeById"/> keep their
     /// existing initiative. Ties break by descending initiative then by insertion order.

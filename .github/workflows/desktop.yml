@@ -14,6 +14,17 @@ on:
       - 'src/frontend/**'
       - 'VERSION'
       - '.github/workflows/desktop.yml'
+  # Validate the desktop build on PRs that touch the wrapper, backend, or
+  # frontend, so the 3-platform Rust/Tauri build is checked before merge (the
+  # only place it runs pre-merge, since Rust isn't compiled in local dev).
+  # Path-scoped to avoid running these heavy builds on unrelated PRs.
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'src/backend/**'
+      - 'src/frontend/**'
+      - 'VERSION'
+      - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
 jobs:

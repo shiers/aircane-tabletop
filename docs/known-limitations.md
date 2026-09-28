@@ -14,7 +14,7 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 - **No HTTPS on LAN.** Traffic between players and the host is unencrypted. This is acceptable for trusted home networks but not suitable for public networks.
 - **No persistent user accounts.** Players are identified by short-lived session tokens, not login credentials.
 - **No mobile-optimized UI.** The Vue frontend works in mobile browsers but is not designed for small screens. Players connecting via phone or tablet get a functional but cramped experience. A responsive redesign is planned (P3).
-- **No native mobile app.** There is no iOS or Android companion app. Players use a browser to connect. A native player companion app (push notifications, offline character sheet, dice roller, QR join) is planned for after the main app stabilises.
+- **No native mobile app.** There is no iOS or Android companion app. Players use a browser to connect. A native Flutter player companion app (iOS + Android, push notifications via FCM, offline character sheet, haptic dice roller, QR join) is planned for after the desktop wrapper and internet tunnel stabilise. Technology decided: Flutter with Riverpod, `signalr_netcore`, and `dio`; no backend changes required.
 
 ## Game Systems
 

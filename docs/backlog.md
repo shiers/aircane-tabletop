@@ -98,7 +98,20 @@ tablet. The host always runs the desktop app; this is purely the player-side vie
 Planned features: push notifications for turn prompts and roll requests, offline character
 sheet viewing, native dice roller with haptics, QR code scanner for session join, and
 background session persistence. Built against the existing SignalR and REST API — no
-backend changes required. Technology TBD (React Native, Flutter, or Swift/Kotlin native).
+backend changes required.
+
+**Technology decision: Flutter.**
+- Single codebase for both iOS and Android.
+- Dart is close enough to TypeScript that the learning curve is shallow.
+- Flutter compiles to native ARM — smooth animations and haptics without a JS bridge.
+- Riverpod for state management (similar mental model to Pinia).
+- SignalR: `signalr_netcore` community Dart client, or raw WebSocket against the existing hub.
+- HTTP: `dio` (equivalent to axios).
+- Push notifications: Firebase Cloud Messaging (FCM) — works for both platforms.
+- QR scanner: `mobile_scanner`.
+- Token storage: `flutter_secure_storage`.
+- No backend changes required — the companion app consumes the existing REST + SignalR API.
+
 Planned for after the main app (desktop wrapper + internet tunnel) stabilises and real
 player feedback is available.
 
@@ -144,4 +157,4 @@ Localize the UI and support non-English source documents.
 
 ---
 
-*Last updated: 2026-09-28 — Desktop wrapper (Tauri v2) delivered and moved to Completed P1 Work; internet tunnel decision made (Cloudflare); native mobile companion app in P3.*
+*Last updated: 2026-09-29 — Native mobile companion app technology decided: Flutter (iOS + Android, single codebase, Riverpod, FCM, signalr_netcore).*

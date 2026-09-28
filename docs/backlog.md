@@ -86,6 +86,19 @@ The "ship text, embed on first run" contract is delivered and documented in `doc
 ### Background Job Infrastructure
 The app has no real background-job runner yet: `DocumentImportJob`, `FolderScanJob`, reindex, and the re-embed endpoints all execute **synchronously** on the request thread, and `IDocumentImportService` (enqueue/status) is defined but unimplemented. Introduce a single background-job mechanism — either Hangfire/Quartz (per the tech steering) or a lightweight in-process hosted-service + channel queue for local-first mode — and route document import, folder scan, reindex, and re-embed through it with a shared job-status/progress surface. This is a cross-cutting foundation; several features (large-library import, `reembed-all`, folder rescans) want it, so build it once rather than per-feature.
 
+### Library Import UX (duplicate safeguards, suggestions, canonicalization)
+**Delivered:**
+- **Review-before-import for watched folders.** "Review & import" analyzes a folder and opens a modal listing every discovered file with a suggested title/ruleset, duplicate grouping, and advisory flags (possible duplicate, already imported, likely-not-rules). Nothing is imported until the host confirms a selection, and nothing is pre-selected among duplicate variants (the host always picks the copy to keep). Backend is the source of truth: `GET /api/library/folders/{id}/scan/preview` and `POST /api/library/folders/{id}/scan/import` back the flow (`IScanCandidateAnalyzer`, `FilenameNormalizer`, `IFolderScanJob.PreviewFolderAsync` / `ImportSelectionAsync`).
+- **Quick import (Option B).** A clearly-labeled secondary action imports all clean, unflagged files in one step, skipping anything flagged (duplicates, already-imported, likely-not-rules) and telling the host to use "Review & import" for those. It never auto-picks a duplicate winner.
+- **Filename-based title & ruleset suggestions** on upload (strip extension + qualifiers, expand common abbreviations, detect a year for the ruleset).
+- **Game-system canonicalization** on write (upload, classification update, folder scan) against known Game System Definitions, plus a datalist of known systems/rulesets on the upload form to prevent free-text drift.
+- **SourceType enum alignment fix** — the frontend `SourceType` numeric values were off-by-one vs the backend, so all documents (including the built-in rulebooks) displayed the wrong "Type"; corrected so the API's integer enum maps correctly.
+
+**Still outstanding:**
+- **Content-based duplicate detection.** Dedup is filename-heuristic only (no content hash / unique constraint on `SourceDocument`). Add a content hash column + a cross-folder duplicate check if same-content-different-name detection is wanted; would need an EF migration + backfill.
+- **Game-system alias table.** Canonicalization matches definition name/identifier only. A small alias/synonym map (e.g. "D&D 5e" → the D&D definition) would catch common short-hands that don't match a definition name.
+- **Configurable not-useful signals.** The likely-not-rules filename list is a small hardcoded set; consider making it an editable per-folder setting.
+
 ---
 
 ## Priority 2 - Significant Enhancements

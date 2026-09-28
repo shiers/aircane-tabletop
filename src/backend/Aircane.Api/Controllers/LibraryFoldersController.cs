@@ -25,17 +25,20 @@ public sealed class LibraryFoldersController : ControllerBase
     private readonly IFolderScanJob _folderScanJob;
     private readonly IValidator<RegisterFolderRequest> _registerValidator;
     private readonly IValidator<UpdateFolderRequest> _updateValidator;
+    private readonly IValidator<FolderImportSelectionRequest> _importSelectionValidator;
 
     public LibraryFoldersController(
         ILibraryService libraryService,
         IFolderScanJob folderScanJob,
         IValidator<RegisterFolderRequest> registerValidator,
-        IValidator<UpdateFolderRequest> updateValidator)
+        IValidator<UpdateFolderRequest> updateValidator,
+        IValidator<FolderImportSelectionRequest> importSelectionValidator)
     {
         _libraryService = libraryService;
         _folderScanJob = folderScanJob;
         _registerValidator = registerValidator;
         _updateValidator = updateValidator;
+        _importSelectionValidator = importSelectionValidator;
     }
 
     /// <summary>
@@ -164,6 +167,70 @@ public sealed class LibraryFoldersController : ControllerBase
         try
         {
             var result = await _folderScanJob.ScanFolderAsync(id, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
+    /// <summary>
+    /// Analyzes the folder and returns a review preview of discovered files without importing
+    /// anything. Each candidate carries a suggested title/ruleset, a dedup grouping key, and
+    /// advisory flags (duplicate variant, already imported, likely-not-rules).
+    /// </summary>
+    /// <remarks>
+    /// This endpoint performs no writes. The host reviews the preview and then confirms a selection
+    /// via <see cref="ImportSelection"/>.
+    /// </remarks>
+    [HttpGet("{id:guid}/scan/preview")]
+    [ProducesResponseType(typeof(FolderScanPreviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> PreviewScan(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var preview = await _folderScanJob.PreviewFolderAsync(id, cancellationToken);
+            return Ok(preview);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
+    /// <summary>
+    /// Imports the host-selected files from a folder-scan preview, applying any per-file
+    /// classification overrides. Only files marked for import are indexed; already-indexed files
+    /// are skipped.
+    /// </summary>
+    [HttpPost("{id:guid}/scan/import")]
+    [ProducesResponseType(typeof(FolderScanResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ImportSelection(
+        Guid id,
+        [FromBody] FolderImportSelectionRequestBody body,
+        CancellationToken cancellationToken)
+    {
+        var request = new FolderImportSelectionRequest(
+            FolderId: id,
+            Items: body.Items.Select(i => new FolderImportSelectionItem(
+                SourcePath: i.SourcePath,
+                Import: i.Import,
+                Title: i.Title,
+                SourceType: i.SourceType,
+                GameSystem: i.GameSystem,
+                Ruleset: i.Ruleset)).ToList());
+
+        var validation = await _importSelectionValidator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+            return ValidationProblem(validation.ToValidationProblemDetails());
+
+        try
+        {
+            var result = await _folderScanJob.ImportSelectionAsync(request, cancellationToken);
             return Ok(result);
         }
         catch (KeyNotFoundException)
@@ -325,4 +392,35 @@ public sealed class UpdateFolderRequestBody
 
     /// <summary>New default ruleset tag.</summary>
     public string? DefaultRuleset { get; set; }
+}
+
+/// <summary>
+/// Request body for POST /api/library/folders/{id}/scan/import. The folder id comes from the route.
+/// </summary>
+public sealed class FolderImportSelectionRequestBody
+{
+    /// <summary>Per-file import decisions and optional classification overrides.</summary>
+    public List<FolderImportSelectionItemBody> Items { get; set; } = [];
+}
+
+/// <summary>A single file's import decision with optional overrides.</summary>
+public sealed class FolderImportSelectionItemBody
+{
+    /// <summary>Absolute path of the discovered file (matches a preview candidate).</summary>
+    public string SourcePath { get; set; } = string.Empty;
+
+    /// <summary>True to import this file; false to skip it.</summary>
+    public bool Import { get; set; }
+
+    /// <summary>Optional title override. Null falls back to the filename-derived title.</summary>
+    public string? Title { get; set; }
+
+    /// <summary>Optional source type override. Null falls back to the folder default.</summary>
+    public SourceType? SourceType { get; set; }
+
+    /// <summary>Optional game system override. Null falls back to the folder default.</summary>
+    public string? GameSystem { get; set; }
+
+    /// <summary>Optional ruleset override. Null falls back to the folder default.</summary>
+    public string? Ruleset { get; set; }
 }

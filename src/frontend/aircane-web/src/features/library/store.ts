@@ -13,6 +13,8 @@ import {
   registerFolder,
   deleteFolder,
   scanFolder,
+  previewFolderScan,
+  importFolderSelection,
   ImportStatus,
   type SourceDocumentDto,
   type ImportStatusDto,
@@ -21,6 +23,9 @@ import {
   type WatchedFolderDto,
   type RegisterFolderRequest,
   type FolderScanResultDto,
+  type FolderScanPreviewDto,
+  type FolderImportSelectionItem,
+  type FolderScanResultSummaryDto,
 } from './api'
 
 // ---------------------------------------------------------------------------
@@ -378,6 +383,98 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
+  /**
+   * Analyze a folder and return a review preview without importing anything. Marks the folder as
+   * scanning while the analysis runs so the UI can show progress.
+   */
+  async function previewFolderScanAction(id: string): Promise<FolderScanPreviewDto> {
+    foldersError.value = null
+    const ids = new Set(scanningFolderIds.value)
+    ids.add(id)
+    scanningFolderIds.value = ids
+    try {
+      return await previewFolderScan(id)
+    } catch (err) {
+      foldersError.value = extractMessage(err)
+      throw err
+    } finally {
+      const ids2 = new Set(scanningFolderIds.value)
+      ids2.delete(id)
+      scanningFolderIds.value = ids2
+    }
+  }
+
+  /**
+   * Option B "Quick import": analyze the folder and import every candidate that has NO advisory
+   * flags (i.e. not a duplicate variant, not already imported, not likely-non-rules), using the
+   * suggested title/ruleset. Flagged files are intentionally left for the review modal — we never
+   * auto-pick a duplicate winner. Returns the import summary plus how many flagged files were
+   * skipped so the caller can nudge the user toward the review flow.
+   */
+  async function quickImportFolderAction(
+    id: string,
+  ): Promise<{ result: FolderScanResultSummaryDto; skippedFlagged: number }> {
+    foldersError.value = null
+    const ids = new Set(scanningFolderIds.value)
+    ids.add(id)
+    scanningFolderIds.value = ids
+    try {
+      const preview = await previewFolderScan(id)
+
+      const items: FolderImportSelectionItem[] = preview.candidates.map((c) => {
+        const clean = c.flags.length === 0
+        return {
+          sourcePath: c.sourcePath,
+          import: clean,
+          title: c.suggestedTitle || undefined,
+          ruleset: c.suggestedRuleset ?? undefined,
+        }
+      })
+
+      const skippedFlagged = preview.candidates.filter((c) => c.flags.length > 0).length
+      const result = await importFolderSelection(id, items)
+
+      const folder = folders.value.find((f) => f.id === id)
+      if (folder) folder.lastScannedAt = result.scannedAt
+      await fetchDocuments()
+
+      return { result, skippedFlagged }
+    } catch (err) {
+      foldersError.value = extractMessage(err)
+      throw err
+    } finally {
+      const ids2 = new Set(scanningFolderIds.value)
+      ids2.delete(id)
+      scanningFolderIds.value = ids2
+    }
+  }
+
+  /**
+   * Import the host-selected files from a folder-scan preview, then refresh the document list and
+   * the folder's lastScannedAt.
+   */
+  async function importFolderSelectionAction(
+    id: string,
+    items: FolderImportSelectionItem[],
+  ): Promise<FolderScanResultSummaryDto> {
+    foldersError.value = null
+    try {
+      const result = await importFolderSelection(id, items)
+
+      const folder = folders.value.find((f) => f.id === id)
+      if (folder) {
+        folder.lastScannedAt = result.scannedAt
+      }
+
+      // Refresh documents to pick up the newly imported files.
+      await fetchDocuments()
+      return result
+    } catch (err) {
+      foldersError.value = extractMessage(err)
+      throw err
+    }
+  }
+
   return {
     // State
     documents,
@@ -404,5 +501,8 @@ export const useLibraryStore = defineStore('library', () => {
     registerFolder: registerFolderAction,
     deleteFolder: deleteFolderAction,
     scanFolder: scanFolderAction,
+    previewFolderScan: previewFolderScanAction,
+    importFolderSelection: importFolderSelectionAction,
+    quickImportFolder: quickImportFolderAction,
   }
 })

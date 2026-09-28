@@ -33,6 +33,7 @@ public class FolderDocumentInheritanceTests : IDisposable
             _db,
             new NoOpFileStorageService(),
             new Aircane.Infrastructure.Embeddings.FakeEmbeddingProvider(),
+            new Aircane.Infrastructure.GameSystems.GameSystemCanonicalizer(_db),
             NullLogger<LibraryService>.Instance);
     }
 

@@ -4,13 +4,57 @@
 > full project context. Claude uses it to have productive design/planning conversations, then
 > Shawn hands implementation work to AWS Kiro. Update this file after each significant session.
 >
-> **Last updated:** 2026-09-25 (late — Priority-1 backlog session)
+> **Last updated:** 2026-09-28 (Library import UX session)
 > **MVP status:** ✅ Complete — all 9 phases shipped.
 > **Phase 10 (Built-in Rules Content Bundle):** ✅ Complete — 10.1–10.8 done & verified
 > (embedded bundles, license metadata, `LicensesController`, attribution UI, tests).
-> **Priority-1 backlog:** ✅ All 6 items delivered this session (see "Latest Session" below).
-> Work is on branch `dev` (pushed); commits `e12e1ad → 11a37c4`. Backend suite green:
-> **1826 unit + 18 integration.**
+> **Priority-1 backlog:** ✅ All 6 items delivered (see "Priority-1 Backlog" session below).
+> **Latest work:** Library import UX — see "Latest Session" immediately below.
+
+---
+
+## Latest Session — Library Import UX
+
+Focused on making document import safer and less duplicate-prone. All changes verified green
+(frontend `vue-tsc` + full vitest suite; full backend unit suite).
+
+1. **`SourceType` enum fix.** The frontend `SourceType` enum values were off-by-one vs the
+   backend, so every document (including the built-in D&D 5e SRD and PF2e rulebooks) showed the
+   wrong "Type" in the library — the built-ins displayed "Unknown" instead of "Rules". The DB and
+   backend were correct; the fix realigned the frontend enum to the backend's serialized integer
+   values.
+
+2. **Game-system canonicalization.** Free-text "Game System" values are now canonicalized on
+   every write (upload, classification update, folder scan) against known Game System Definitions
+   by name/identifier (case/whitespace-insensitive) via a new `IGameSystemCanonicalizer`. Unmatched
+   input is preserved. The upload form now offers a datalist of known systems. This stops
+   "Pathfinder 2e" vs "Pf2e" from creating two systems for the same thing. *No alias table* — only
+   name/identifier matches (deliberate, per decision).
+
+3. **Filename → title & ruleset suggestions.** On upload, the title is suggested from the filename
+   (strip extension + parenthetical qualifiers like `(Color OCR)`, expand `DnD`/`Pf2e`), and a
+   4-digit year in the name is suggested into the Ruleset. Ruleset is a load-bearing exact-match
+   RAG filter, so the form also offers a datalist of rulesets already used by the selected system.
+   Shared logic lives in `filenameSuggestions.ts` (frontend) and `FilenameNormalizer` (backend).
+
+4. **Review-before-import for watched folders (Option A).** "Scan Now" is now "Review & import":
+   it analyzes the folder (`GET .../scan/preview`) and opens `FolderScanReviewModal`, listing every
+   discovered file with a suggested title/ruleset, **duplicate grouping** (files whose names
+   normalize to the same work — e.g. `(BnW OCR)` vs `(Color OCR)`, and bare-word variants like
+   `Deluxe`/`Revised`/`OCR`), an **already-in-library** flag, and a **likely-not-rules** flag
+   (maps/screens/tokens/…). Nothing is imported until the host confirms; nothing is pre-selected
+   among duplicates (host always picks). Import applies per-file title/type/ruleset overrides
+   (`POST .../scan/import`) and is path-idempotent. Backend is the source of truth
+   (`IScanCandidateAnalyzer`, `IFolderScanJob.PreviewFolderAsync` / `ImportSelectionAsync`).
+
+5. **Quick import (Option B).** A clearly-labeled secondary action imports all clean, unflagged
+   files in one step, skipping anything flagged and nudging the host to "Review & import" for those.
+   Never auto-picks a duplicate winner.
+
+**Known limitations (documented):** dedup is filename-heuristic only (no content hash); the
+not-useful signal list is a small hardcoded set; canonicalization has no alias table. See
+`docs/known-limitations.md` and the "Library Import UX" backlog item for follow-ups (content-hash
+dedup, alias table, configurable signals).
 
 ---
 

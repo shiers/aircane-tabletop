@@ -48,7 +48,12 @@ public class BuiltInContentTests : IDisposable
             NullLogger<Aircane.Infrastructure.DocumentSources.EmbeddedResourceDocumentSource>.Instance);
 
     private LibraryService CreateLibraryService() =>
-        new(_db, new NoopFileStorage(), new FakeEmbeddingProvider(), NullLogger<LibraryService>.Instance);
+        new(
+            _db,
+            new NoopFileStorage(),
+            new FakeEmbeddingProvider(),
+            new Aircane.Infrastructure.GameSystems.GameSystemCanonicalizer(_db),
+            NullLogger<LibraryService>.Instance);
 
     /// <summary>
     /// Mirrors the retrieval-eligibility filter used by <c>RetrievalService.BuildFilteredQuery</c>:

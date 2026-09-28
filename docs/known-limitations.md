@@ -44,6 +44,9 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 
 - **Source documents are never copied.** If the host moves or deletes a file from a registered folder, the app marks it as "source unavailable." Re-indexing requires the file to be accessible again.
 - **No cloud/upload mode yet.** Documents must exist on the host's local filesystem in registered folders.
+- **Duplicate/asset detection is filename-based, not content-based.** The folder-scan review step groups likely duplicates and flags likely-non-rules assets (maps, screens, tokens) using filename heuristics only — it never hashes file contents. Two genuinely different files with similar names may be grouped, and an unusually-named map pack may not be flagged. The host always confirms the final selection, so these are advisory hints, not automatic decisions. Duplicate grouping recognizes bracketed qualifiers (e.g. `(Color OCR)`) and a small list of bare-word variant qualifiers (Deluxe, Revised, OCR, Special Edition, …); other naming conventions may not group.
+- **Title and ruleset suggestions are best-effort.** On upload, the app suggests a cleaned-up title from the filename and, when a year is present, a ruleset — but it cannot infer an edition that isn't written in the filename (e.g. a "Dungeon Master's Guide" with no year). The host confirms both.
+- **Game system canonicalization only matches known definitions.** Free-text game-system values are canonicalized against existing Game System Definitions by name/identifier (case/whitespace-insensitive). Short-hand or alias spellings that don't match a definition name (e.g. "D&D 5e" vs a definition named "Dungeons & Dragons 5th Edition (2014)") are stored as typed; there is no alias table.
 
 ## Platform
 

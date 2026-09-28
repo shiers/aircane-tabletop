@@ -89,16 +89,19 @@ public class AiSettingsController : ControllerBase
     }
 
     /// <summary>
-    /// Lists available models for the currently configured provider.
-    /// For OpenAI/Grok, fetches from the API using the stored key.
-    /// Returns a curated list of chat-capable models.
+    /// Lists available models for a provider.
+    /// By default uses the currently configured provider; pass <paramref name="provider"/>
+    /// to list models for a provider the host is considering but has not saved yet.
+    /// For OpenAI/Ollama, fetches live from the API/daemon when possible; otherwise
+    /// returns a curated list of chat-capable models.
     /// </summary>
     [HttpGet("models")]
-    public async Task<IActionResult> ListModels(CancellationToken ct)
+    public async Task<IActionResult> ListModels([FromQuery] AiProviderType? provider, CancellationToken ct)
     {
         var config = _settingsService.GetCurrentConfig();
+        var target = provider ?? config.ActiveProvider;
 
-        switch (config.ActiveProvider)
+        switch (target)
         {
             case AiProviderType.OpenAi:
             {
@@ -132,9 +135,15 @@ public class AiSettingsController : ControllerBase
             }
 
             case AiProviderType.Grok:
-            {
-                return Ok(new { models = new[] { "grok-3-mini", "grok-3", "grok-2" } });
-            }
+                return Ok(new { models = GetDefaultGrokModels() });
+
+            case AiProviderType.AzureOpenAi:
+                // Azure serves models via user-defined deployment names, so we can't
+                // enumerate them. Offer the common base model names as suggestions.
+                return Ok(new { models = GetDefaultOpenAiModels() });
+
+            case AiProviderType.AwsBedrock:
+                return Ok(new { models = GetDefaultBedrockModels() });
 
             default:
                 return Ok(new { models = Array.Empty<string>() });
@@ -148,6 +157,24 @@ public class AiSettingsController : ControllerBase
         "gpt-4-turbo",
         "gpt-4",
         "gpt-3.5-turbo",
+    ];
+
+    private static string[] GetDefaultGrokModels() =>
+    [
+        "grok-3-mini",
+        "grok-3",
+        "grok-2",
+    ];
+
+    private static string[] GetDefaultBedrockModels() =>
+    [
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "anthropic.claude-3-5-haiku-20241022-v1:0",
+        "anthropic.claude-3-sonnet-20240229-v1:0",
+        "anthropic.claude-3-haiku-20240307-v1:0",
+        "amazon.titan-text-premier-v1:0",
+        "meta.llama3-1-70b-instruct-v1:0",
+        "mistral.mistral-large-2407-v1:0",
     ];
 
     private static async Task<string[]> FetchOpenAiModelsAsync(string apiKey, CancellationToken ct)

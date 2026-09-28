@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   AiProviderType,
   getAiConfig,
@@ -12,6 +12,7 @@ import {
   type ProviderInfo,
 } from './api'
 import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
+import ModelSelect from '@/shared/components/ModelSelect.vue'
 
 const licensesModalOpen = ref(false)
 const loading = ref(false)
@@ -80,13 +81,19 @@ async function loadProviders() {
 async function fetchModels() {
   loadingModels.value = true
   try {
-    availableModels.value = await getAvailableModels()
+    availableModels.value = await getAvailableModels(activeProvider.value)
   } catch {
     availableModels.value = []
   } finally {
     loadingModels.value = false
   }
 }
+
+// Refetch the model list whenever the host switches providers so the dropdown
+// always reflects the currently selected provider's options.
+watch(activeProvider, () => {
+  fetchModels()
+})
 
 async function loadConfig() {
   loading.value = true
@@ -317,26 +324,24 @@ function isKeyMasked(value: string): boolean {
         </div>
 
         <div>
-          <label for="openai-model" class="block text-sm font-medium text-gray-300 mb-1">Model</label>
-          <select
-            v-if="availableModels.length > 0"
+          <div class="flex items-center justify-between mb-1">
+            <label for="openai-model" class="block text-sm font-medium text-gray-300">Model</label>
+            <button
+              type="button"
+              class="text-xs font-medium text-aircane-400 hover:text-aircane-300 disabled:opacity-50"
+              :disabled="loadingModels"
+              @click="fetchModels"
+            >
+              {{ loadingModels ? 'Refreshing...' : 'Refresh' }}
+            </button>
+          </div>
+          <ModelSelect
             id="openai-model"
             v-model="openAiModel"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
-          >
-            <option v-for="model in availableModels" :key="model" :value="model">
-              {{ model }}
-            </option>
-          </select>
-          <input
-            v-else
-            id="openai-model"
-            v-model="openAiModel"
-            type="text"
+            :models="availableModels"
+            :loading="loadingModels"
             placeholder="gpt-4o-mini"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
-          <p v-if="loadingModels" class="text-xs text-gray-500 mt-1">Loading available models...</p>
         </div>
       </fieldset>
 
@@ -372,13 +377,16 @@ function isKeyMasked(value: string): boolean {
 
         <div>
           <label for="azure-deployment" class="block text-sm font-medium text-gray-300 mb-1">Deployment Name</label>
-          <input
+          <ModelSelect
             id="azure-deployment"
             v-model="azureDeploymentName"
-            type="text"
+            :models="availableModels"
+            :loading="loadingModels"
             placeholder="gpt-4o-mini"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
+          <p class="text-xs text-gray-500 mt-1">
+            Enter the deployment name you created in Azure. The list shows common base models as suggestions.
+          </p>
         </div>
 
         <div>
@@ -437,12 +445,12 @@ function isKeyMasked(value: string): boolean {
 
         <div>
           <label for="aws-model" class="block text-sm font-medium text-gray-300 mb-1">Model ID</label>
-          <input
+          <ModelSelect
             id="aws-model"
             v-model="awsModelId"
-            type="text"
+            :models="availableModels"
+            :loading="loadingModels"
             placeholder="anthropic.claude-3-sonnet-20240229-v1:0"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
       </fieldset>
@@ -467,14 +475,27 @@ function isKeyMasked(value: string): boolean {
         </div>
 
         <div>
-          <label for="ollama-model" class="block text-sm font-medium text-gray-300 mb-1">Model</label>
-          <input
+          <div class="flex items-center justify-between mb-1">
+            <label for="ollama-model" class="block text-sm font-medium text-gray-300">Model</label>
+            <button
+              type="button"
+              class="text-xs font-medium text-aircane-400 hover:text-aircane-300 disabled:opacity-50"
+              :disabled="loadingModels"
+              @click="fetchModels"
+            >
+              {{ loadingModels ? 'Refreshing...' : 'Refresh' }}
+            </button>
+          </div>
+          <ModelSelect
             id="ollama-model"
             v-model="ollamaModel"
-            type="text"
+            :models="availableModels"
+            :loading="loadingModels"
             placeholder="llama3"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
+          <p class="text-xs text-gray-500 mt-1">
+            Models are read from your running Ollama instance. Pull models with <code>ollama pull &lt;name&gt;</code>.
+          </p>
         </div>
       </fieldset>
 
@@ -500,12 +521,12 @@ function isKeyMasked(value: string): boolean {
 
         <div>
           <label for="grok-model" class="block text-sm font-medium text-gray-300 mb-1">Model</label>
-          <input
+          <ModelSelect
             id="grok-model"
             v-model="grokModel"
-            type="text"
+            :models="availableModels"
+            :loading="loadingModels"
             placeholder="grok-3-mini"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
           />
         </div>
       </fieldset>

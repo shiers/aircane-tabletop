@@ -93,8 +93,10 @@ export interface ModelsResponse {
   models: string[]
 }
 
-export async function getAvailableModels(): Promise<string[]> {
-  const response = await apiClient.get<ModelsResponse>('/api/ai/settings/models')
+export async function getAvailableModels(provider?: AiProviderType): Promise<string[]> {
+  const response = await apiClient.get<ModelsResponse>('/api/ai/settings/models', {
+    params: provider !== undefined ? { provider } : undefined,
+  })
   return response.data.models
 }
 

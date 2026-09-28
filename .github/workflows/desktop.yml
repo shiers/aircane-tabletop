@@ -36,9 +36,9 @@ jobs:
           - os: windows-latest
             build: pwsh ./build.ps1
           - os: macos-latest
-            build: ./build.sh
+            build: bash ./build.sh
           - os: ubuntu-latest
-            build: ./build.sh
+            build: bash ./build.sh
 
     runs-on: ${{ matrix.os }}
 

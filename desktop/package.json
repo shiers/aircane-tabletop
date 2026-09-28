@@ -1,0 +1,19 @@
+{
+  "name": "aircane-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tauri desktop wrapper for Aircane Tabletop. Hosts the ASP.NET Core backend as a managed sidecar and opens the Vue frontend in a native webview.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icon": "tauri icon icons/icon.png"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0"
+  }
+}

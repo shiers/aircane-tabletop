@@ -1,0 +1,26 @@
+{
+  "identifier": "default",
+  "description": "Core capabilities for the Aircane Tabletop desktop wrapper: run the ASP.NET Core sidecar, open external URLs in the system browser, and use the clipboard for LAN join URLs.",
+  "windows": ["main", "qr"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-title",
+    "core:webview:allow-webview-navigate",
+    "core:event:default",
+    "opener:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/aircane-server",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
+    "shell:allow-kill"
+  ]
+}

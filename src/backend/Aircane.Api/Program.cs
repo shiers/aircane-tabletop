@@ -91,7 +91,13 @@ else
 
 // Register participant-based authorization policies (HostOnly, DmOrHost, Authenticated).
 // In Development, policies are permissive to allow local UI testing without tokens.
-builder.Services.AddParticipantAuthorization(isDevelopment: builder.Environment.IsDevelopment());
+// The local-first desktop wrapper sets Aircane:TrustLocalHost=true so the single
+// local host can drive host-only surfaces (AI settings, session creation) without
+// first obtaining a session-scoped token. A shared/hosted deployment must leave it unset.
+var trustLocalHost = builder.Configuration.GetValue<bool>("Aircane:TrustLocalHost");
+builder.Services.AddParticipantAuthorization(
+    isDevelopment: builder.Environment.IsDevelopment(),
+    trustLocalHost: trustLocalHost);
 
 // Configure EF Core with PostgreSQL
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
@@ -124,10 +130,12 @@ builder.Services.AddHostedService<Aircane.Workers.BackgroundJobs.BackgroundJobWo
 
 var app = builder.Build();
 
-// Apply EF Core migrations automatically in Development so the schema (and the
-// pgvector extension created by the migrations) is present on first run.
-// Production deployments should apply migrations explicitly as a deploy step.
-if (app.Environment.IsDevelopment())
+// Apply EF Core migrations automatically in Development, and also for the
+// local-first desktop wrapper (Aircane:TrustLocalHost=true), so the schema (and
+// the pgvector extension created by the migrations) is present on first run
+// without a separate deploy step. Shared/hosted Production deployments leave the
+// flag unset and apply migrations explicitly as a deploy step.
+if (app.Environment.IsDevelopment() || trustLocalHost)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AircaneDbContext>();

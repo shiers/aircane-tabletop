@@ -93,44 +93,44 @@ function buildHubUrl(): string {
 }
 
 async function connectHub(): Promise<void> {
-  const connection = new signalR.HubConnectionBuilder()
-    .withUrl(buildHubUrl())
-    .withAutomaticReconnect()
-    .configureLogging(signalR.LogLevel.Warning)
-    .build()
-
-  connection.on('ChatMessageReceived', (senderName: string, text: string, timestamp: string, senderId: string) => {
-    chatMessages.value.push({
-      id: `${senderId}-${timestamp}`,
-      senderName,
-      text,
-      timestamp,
-      isOwn: senderId === participantId.value,
-    })
-  })
-
-  connection.on('RollRecorded', (roll: RollDto) => {
-    rollLog.value.unshift(roll)
-  })
-
-  connection.on('RollRequested', (request: RollRequest) => {
-    pendingRollRequests.value.push(request)
-  })
-
-  connection.on('StateUpdated', async () => {
-    await store.fetchParticipants(sessionId)
-    await refreshEncounter()
-  })
-
-  connection.on('SceneChanged', async () => {
-    await store.fetchSession(sessionId)
-  })
-
-  connection.on('CombatTurnChanged', async (_n: CombatTurnChangedNotification) => {
-    await refreshEncounter()
-  })
-
   try {
+    const connection = new signalR.HubConnectionBuilder()
+      .withUrl(buildHubUrl())
+      .withAutomaticReconnect()
+      .configureLogging(signalR.LogLevel.Warning)
+      .build()
+
+    connection.on('ChatMessageReceived', (senderName: string, text: string, timestamp: string, senderId: string) => {
+      chatMessages.value.push({
+        id: `${senderId}-${timestamp}`,
+        senderName,
+        text,
+        timestamp,
+        isOwn: senderId === participantId.value,
+      })
+    })
+
+    connection.on('RollRecorded', (roll: RollDto) => {
+      rollLog.value.unshift(roll)
+    })
+
+    connection.on('RollRequested', (request: RollRequest) => {
+      pendingRollRequests.value.push(request)
+    })
+
+    connection.on('StateUpdated', async () => {
+      await store.fetchParticipants(sessionId)
+      await refreshEncounter()
+    })
+
+    connection.on('SceneChanged', async () => {
+      await store.fetchSession(sessionId)
+    })
+
+    connection.on('CombatTurnChanged', async (_n: CombatTurnChangedNotification) => {
+      await refreshEncounter()
+    })
+
     await connection.start()
     await connection.invoke('JoinSession', sessionId)
     hubConnection.value = connection

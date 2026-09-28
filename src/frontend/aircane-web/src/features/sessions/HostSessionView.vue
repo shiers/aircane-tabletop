@@ -77,48 +77,48 @@ function buildHubUrl(): string {
 }
 
 async function connectHub(): Promise<void> {
-  const connection = new signalR.HubConnectionBuilder()
-    .withUrl(buildHubUrl())
-    .withAutomaticReconnect()
-    .configureLogging(signalR.LogLevel.Warning)
-    .build()
-
-  // Server → client handlers
-  connection.on('ChatMessageReceived', (senderName: string, text: string, timestamp: string, senderId: string) => {
-    chatMessages.value.push({
-      id: `${senderId}-${timestamp}`,
-      senderName,
-      text,
-      timestamp,
-      isOwn: false,
-    })
-  })
-
-  connection.on('RollRecorded', (roll: RollDto) => {
-    rollLog.value.unshift(roll)
-  })
-
-  connection.on('ParticipantJoined', async () => {
-    await store.fetchParticipants(sessionId)
-  })
-
-  connection.on('ParticipantLeft', async () => {
-    await store.fetchParticipants(sessionId)
-  })
-
-  connection.on('StateUpdated', async () => {
-    await store.fetchSession(sessionId)
-    // Campaign state changed (which may include combat) — refresh the encounter.
-    await refreshEncounter()
-  })
-
-  // The turn-changed event carries only round/turn/active-id; re-fetch the full encounter so
-  // HP and conditions stay current.
-  connection.on('CombatTurnChanged', async (_n: CombatTurnChangedNotification) => {
-    await refreshEncounter()
-  })
-
   try {
+    const connection = new signalR.HubConnectionBuilder()
+      .withUrl(buildHubUrl())
+      .withAutomaticReconnect()
+      .configureLogging(signalR.LogLevel.Warning)
+      .build()
+
+    // Server → client handlers
+    connection.on('ChatMessageReceived', (senderName: string, text: string, timestamp: string, senderId: string) => {
+      chatMessages.value.push({
+        id: `${senderId}-${timestamp}`,
+        senderName,
+        text,
+        timestamp,
+        isOwn: false,
+      })
+    })
+
+    connection.on('RollRecorded', (roll: RollDto) => {
+      rollLog.value.unshift(roll)
+    })
+
+    connection.on('ParticipantJoined', async () => {
+      await store.fetchParticipants(sessionId)
+    })
+
+    connection.on('ParticipantLeft', async () => {
+      await store.fetchParticipants(sessionId)
+    })
+
+    connection.on('StateUpdated', async () => {
+      await store.fetchSession(sessionId)
+      // Campaign state changed (which may include combat) — refresh the encounter.
+      await refreshEncounter()
+    })
+
+    // The turn-changed event carries only round/turn/active-id; re-fetch the full encounter so
+    // HP and conditions stay current.
+    connection.on('CombatTurnChanged', async (_n: CombatTurnChangedNotification) => {
+      await refreshEncounter()
+    })
+
     await connection.start()
     await connection.invoke('JoinSession', sessionId)
     hubConnection.value = connection

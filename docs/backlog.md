@@ -43,9 +43,9 @@ The `pf2e_remaster` built-in bundle currently ships a small placeholder (2 chunk
 The remaining work is documentation: update the README (currently "License TBD") and add a `LICENSE` file reflecting the proprietary terms. The in-app About / Credits panel (`/about`) already points users at the README for the app license. (The compliance surface itself — ORC Notice, CC BY / OGL attributions, ORC-Content-vs-Reserved-Material downstream declaration, and trademark note — is delivered in the About panel.)
 
 ### Internet Tunnel / Remote Play
-> **Not auto-built — security-sensitive; maintainer decision.** See the decision table at the top of this file.
+> **Decision made — Cloudflare Tunnel; implementation in progress.** See the decision table at the top of this file and `kiro-task-internet-tunnel.md`.
 
-Allow players to connect over the internet without router port forwarding. Options include Cloudflare Tunnel, ngrok, or a custom relay service. Requires HTTPS, rate limiting, CSRF protection, and persistent token revocation.
+Allow players to connect over the internet without router port forwarding. **Cloudflare Tunnel** was chosen as the provider (over ngrok or a custom relay). Security hardening — HTTPS, rate limiting, CSRF protection, and persistent token revocation — is a hard prerequisite and is included in the implementation task. This item will move to "Completed P1 Work" once the tunnel task is verified complete.
 
 ---
 

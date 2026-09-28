@@ -4,12 +4,13 @@
 > full project context. Claude uses it to have productive design/planning conversations, then
 > Shawn hands implementation work to AWS Kiro. Update this file after each significant session.
 >
-> **Last updated:** 2026-09-28 (P1 backlog completion session)
+> **Last updated:** 2026-09-28 (decisions logged: Tauri desktop wrapper delivered, Proprietary app license, Cloudflare internet tunnel in progress, native mobile companion app added to P3)
 > **MVP status:** ✅ Complete — all 9 phases shipped.
 > **Phase 10 (Built-in Rules Content Bundle):** ✅ Complete — 10.1–10.8 done & verified
 > (embedded bundles, license metadata, `LicensesController`, attribution UI, tests).
-> **Priority-1 backlog:** ✅ All actionable engineering items delivered; only **maintainer-gated**
-> items remain (real PF2e ORC text, internet tunnel, desktop wrapper, app source-code license).
+> **Priority-1 backlog:** Desktop wrapper (**Tauri**) delivered and app license decided
+> (**Proprietary**). Internet tunnel (**Cloudflare**) is in progress in a separate stream. Only
+> the real PF2e ORC rules text remains fully maintainer-gated.
 > **Latest work:** P1 backlog completion (background jobs, combat surfacing, PF2e generation,
 > cloud embeddings, library UX + OCR follow-ups) — see "Latest Session" immediately below.
 
@@ -409,7 +410,7 @@ User-facing guidance is in `docs/setup/ai-configuration.md` and `docs/known-limi
 - **Combat automation** — engine + command pipeline, host/player **combat tracker UI**, and live
   combat state **fed into the AI DM prompt** are all delivered. *Still open (lower priority):*
   concentration checks and out-of-turn action enforcement.
-- **LAN only** — no HTTPS on LAN, no internet tunnel yet, no persistent user accounts.
+- **LAN today; internet tunnel in progress** — no HTTPS on LAN, no persistent user accounts. Internet play via **Cloudflare Tunnel** is being built in a separate stream (with rate limiting, CSRF, and persistent token revocation as prerequisites).
 - **In-memory token revocation** — lost on server restart.
 - **Chat providers:** OpenAI + Ollama fully wired; Azure/Bedrock/Grok fall back to Fake.
   **Embedding providers:** Ollama + Fake (768-dim) plus **OpenAI and Azure OpenAI** (1536-dim).
@@ -424,7 +425,8 @@ User-facing guidance is in `docs/setup/ai-configuration.md` and `docs/known-limi
 - **Background jobs run in-process** — a channel-queue + hosted-worker runner handles import/
   folder-scan/re-embed/re-OCR asynchronously (`GET /api/jobs/{id}` for status); no persistent
   runner (Hangfire) yet, but the seam is reserved.
-- **No cloud/upload mode, no desktop wrapper, no mobile UI, PostgreSQL required (no SQLite).**
+- **Desktop wrapper delivered (Tauri v2)** — one-click launch runs the backend as a managed sidecar with a native webview + LAN URL/QR in the tray. Still requires a reachable PostgreSQL+pgvector (no bundled DB); builds are unsigned with no auto-update yet.
+- **No cloud/upload mode, no mobile-optimized UI, PostgreSQL required (no SQLite).** A native player companion app (iOS/Android) is a new P3 item, planned after the desktop wrapper + internet tunnel stabilise.
 
 ---
 
@@ -439,10 +441,10 @@ are removed from the active backlog and recorded under "Completed P1 Work"):
 - ✅ Library import UX — review/quick import, canonicalization, content-hash dedup, aliases, exclude patterns
 - ✅ OCR pipeline — Tesseract + full-page rasterization + tessdata auto-download + re-OCR endpoints/UI
 - ✅ Open-content compliance — About/Credits panel + attribution surface
+- ✅ Desktop wrapper — **decided: Tauri v2**; delivered (backend sidecar, native webview, LAN URL/QR tray, Ollama awareness)
+- ✅ App source-code license — **decided: Proprietary** (Shawn Walter Joseph Shiers); `LICENSE` file added + README updated
+- 🚧 Internet tunnel / remote play — **decided: Cloudflare Tunnel**; implementation in progress in a separate stream (hardening: rate limiting, CSRF, persistent token revocation)
 - ⛔ PF2e Remaster real ORC **rules text** — *not auto-built: content/licensing (maintainer action)*
-- ⛔ Internet tunnel / remote play — *not auto-built: security-sensitive (maintainer decision)*
-- ⛔ Desktop wrapper (Tauri/Electron) — *not auto-built: new toolchain (maintainer decision)*
-- ⛔ App source-code license — *not auto-built: owner decision (README "License TBD")*
 
 **P2:**
 - Map / battlemap support
@@ -454,6 +456,7 @@ are removed from the active backlog and recorded under "Completed P1 Work"):
 **P3:**
 - Streaming AI narration
 - Mobile-optimized UI
+- Native player companion app (iOS/Android) — player-side view; push notifications, offline sheet, dice roller, QR join; no backend changes
 - Automatic folder watching (file-system watcher)
 - Advanced PDF layout parsing
 - D&D Beyond / VTT import

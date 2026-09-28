@@ -55,7 +55,6 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 - **Desktop wrapper does not bundle a database.** A Tauri desktop wrapper now provides a one-click launch that runs the backend as a managed sidecar (see [desktop setup](setup/desktop.md)), but it still requires a reachable PostgreSQL+pgvector instance — the installer does not bundle or embed one. For now the host must start the `postgres` service (`docker compose up postgres -d`) before launching the desktop app. Embedding a zero-dependency database is tracked in the backlog (SQLite option / bundled DB).
 - **Desktop wrapper: no code signing or auto-update yet.** Builds are unsigned (Gatekeeper/SmartScreen will warn on first run; documented workarounds in [desktop setup](setup/desktop.md)) and there is no in-app updater. Both are deferred until a distribution plan exists.
 - **Desktop wrapper: sidecar can be orphaned on a hard crash.** The backend is stopped on window close, app exit, and before restart, but if the wrapper process is force-killed or panics the backend can linger holding the port; the next launch detects the conflict and shows an actionable error. Tying the child's lifetime to the parent (Windows Job Object / Unix process group) is future hardening.
-- **No mobile-optimized UI.** The frontend works on mobile browsers but is not specifically designed for small screens.
 - **PostgreSQL required.** There is no SQLite option for lightweight installations. Docker is needed to run the database.
 
 ## Security

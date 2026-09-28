@@ -1,4 +1,5 @@
 using Aircane.Application.Abstractions;
+using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Library;
 using Aircane.Domain.Entities;
 using Aircane.Domain.Enums;
@@ -17,17 +18,20 @@ public sealed class LibraryService : ILibraryService
     private readonly AircaneDbContext _db;
     private readonly IFileStorageService _fileStorage;
     private readonly IEmbeddingProvider _embeddingProvider;
+    private readonly IGameSystemCanonicalizer _gameSystemCanonicalizer;
     private readonly ILogger<LibraryService> _logger;
 
     public LibraryService(
         AircaneDbContext db,
         IFileStorageService fileStorage,
         IEmbeddingProvider embeddingProvider,
+        IGameSystemCanonicalizer gameSystemCanonicalizer,
         ILogger<LibraryService> logger)
     {
         _db = db;
         _fileStorage = fileStorage;
         _embeddingProvider = embeddingProvider;
+        _gameSystemCanonicalizer = gameSystemCanonicalizer;
         _logger = logger;
     }
 
@@ -200,13 +204,17 @@ public sealed class LibraryService : ILibraryService
             throw new InvalidOperationException("Failed to save the uploaded file. Please try again.", ex);
         }
 
-        // ── 6. Create SourceDocument record ───────────────────────────────────
+        // ── 6. Canonicalize the game system to avoid duplicate spellings ──────
+        var canonicalGameSystem = await _gameSystemCanonicalizer.CanonicalizeAsync(
+            request.GameSystem, cancellationToken);
+
+        // ── 7. Create SourceDocument record ───────────────────────────────────
         var document = new SourceDocument(
             title: request.Title,
             originalFileName: sanitizedOriginalName,
             sourceType: request.SourceType,
             sourceMode: SourceMode.Upload,
-            gameSystem: request.GameSystem,
+            gameSystem: canonicalGameSystem,
             ruleset: request.Ruleset,
             sourcePath: storagePath,
             watchedFolderId: null,
@@ -481,7 +489,8 @@ public sealed class LibraryService : ILibraryService
             document.SourceType = request.SourceType.Value;
 
         if (request.GameSystem is not null)
-            document.GameSystem = request.GameSystem;
+            document.GameSystem = await _gameSystemCanonicalizer.CanonicalizeAsync(
+                request.GameSystem, cancellationToken);
 
         if (request.Ruleset is not null)
             document.Ruleset = request.Ruleset;
@@ -507,6 +516,7 @@ public sealed class LibraryService : ILibraryService
         Guid folderId,
         string sourcePath,
         string originalFileName,
+        FolderDocumentOverrides? overrides = null,
         CancellationToken cancellationToken = default)
     {
         var folder = await _db.WatchedFolders
@@ -516,16 +526,28 @@ public sealed class LibraryService : ILibraryService
 
         var sanitizedFileName = FileValidationHelper.SanitizeFileName(originalFileName);
 
-        // Derive a human-readable title from the filename (strip extension).
-        var title = Path.GetFileNameWithoutExtension(sanitizedFileName);
+        // Title: explicit override wins; otherwise derive a human-readable title from the filename.
+        var overrideTitle = overrides?.Title;
+        var title = !string.IsNullOrWhiteSpace(overrideTitle)
+            ? overrideTitle.Trim()
+            : Path.GetFileNameWithoutExtension(sanitizedFileName);
+
+        var sourceType = overrides?.SourceType ?? folder.DefaultSourceType;
+        var ruleset = overrides?.Ruleset ?? folder.DefaultRuleset ?? string.Empty;
+
+        // Canonicalize the game system (override or folder default) so folder-scanned documents
+        // converge on the same system name as uploaded ones.
+        var gameSystemInput = overrides?.GameSystem ?? folder.DefaultGameSystem ?? string.Empty;
+        var canonicalGameSystem = await _gameSystemCanonicalizer.CanonicalizeAsync(
+            gameSystemInput, cancellationToken);
 
         var document = new SourceDocument(
             title: title,
             originalFileName: sanitizedFileName,
-            sourceType: folder.DefaultSourceType,
+            sourceType: sourceType,
             sourceMode: SourceMode.FolderWatch,
-            gameSystem: folder.DefaultGameSystem ?? string.Empty,
-            ruleset: folder.DefaultRuleset ?? string.Empty,
+            gameSystem: canonicalGameSystem,
+            ruleset: ruleset,
             sourcePath: sourcePath,
             watchedFolderId: folderId,
             visibility: ContentVisibility.DMOnly,

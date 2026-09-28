@@ -1,9 +1,42 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useLibraryStore } from '../store'
 import { SourceType, ContentVisibility } from '../api'
+import { useGameSystemStore } from '@/features/game-systems/stores/useGameSystemStore'
+import { suggestTitleFromFilename, detectRulesetYear } from '../filenameSuggestions'
 
 const store = useLibraryStore()
+const gameSystemStore = useGameSystemStore()
+
+// Known game system display names, used to guide the free-text Game System field toward
+// canonical values and prevent duplicate spellings (e.g. "Pf2e" vs "Pathfinder 2e").
+// The field stays free text so systems without a definition can still be entered; the
+// backend canonicalizes the value on save regardless.
+const gameSystemSuggestions = computed(() =>
+  gameSystemStore.definitions.map((d) => d.name),
+)
+
+// Ruleset suggestions are tied to the selected game system: we surface the distinct rulesets
+// already used by documents of that system so users converge on existing values (e.g. "2014")
+// instead of inventing new spellings. Ruleset is a load-bearing retrieval filter, so keeping it
+// consistent matters. The field stays free text; this only guides.
+const rulesetSuggestions = computed<string[]>(() => {
+  const system = form.gameSystem.trim().toLowerCase()
+  const seen = new Set<string>()
+  for (const doc of store.documents) {
+    if (!doc.ruleset) continue
+    // When a system is chosen, only show rulesets for that system; otherwise show all known.
+    if (system && doc.gameSystem.trim().toLowerCase() !== system) continue
+    seen.add(doc.ruleset)
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b))
+})
+
+onMounted(() => {
+  if (gameSystemStore.definitions.length === 0) {
+    gameSystemStore.fetchAll()
+  }
+})
 
 const fileInput = ref<HTMLInputElement | null>(null)
 
@@ -39,9 +72,19 @@ function onFileChange(event: Event): void {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] ?? null
   form.file = file
-  if (file && !form.title) {
-    // Pre-fill title from filename (strip extension)
-    form.title = file.name.replace(/\.[^.]+$/, '')
+  if (!file) return
+
+  // Suggest a cleaned-up title from the filename (strip extension + qualifiers like
+  // "(Color OCR)", expand common abbreviations). Only when the user hasn't typed one.
+  if (!form.title) {
+    form.title = suggestTitleFromFilename(file.name)
+  }
+
+  // If the filename contains an explicit year (e.g. "...2014.pdf"), suggest it as the ruleset.
+  // We never infer an edition that isn't written in the filename.
+  if (!form.ruleset) {
+    const year = detectRulesetYear(file.name)
+    if (year) form.ruleset = year
   }
 }
 
@@ -166,9 +209,21 @@ async function handleSubmit(): Promise<void> {
             id="doc-game-system"
             v-model="form.gameSystem"
             type="text"
+            list="doc-game-system-options"
+            autocomplete="off"
             placeholder="e.g. D&D 5e"
             class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
           />
+          <datalist id="doc-game-system-options">
+            <option
+              v-for="name in gameSystemSuggestions"
+              :key="name"
+              :value="name"
+            />
+          </datalist>
+          <p class="mt-1 text-xs text-gray-500">
+            Pick an existing system to avoid duplicates, or type a new one.
+          </p>
         </div>
 
         <div>
@@ -179,9 +234,21 @@ async function handleSubmit(): Promise<void> {
             id="doc-ruleset"
             v-model="form.ruleset"
             type="text"
+            list="doc-ruleset-options"
+            autocomplete="off"
             placeholder="e.g. 2014"
             class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
           />
+          <datalist id="doc-ruleset-options">
+            <option
+              v-for="ruleset in rulesetSuggestions"
+              :key="ruleset"
+              :value="ruleset"
+            />
+          </datalist>
+          <p class="mt-1 text-xs text-gray-500">
+            The edition/version (e.g. 2014). Pick an existing value to keep rules lookups consistent.
+          </p>
         </div>
       </div>
 

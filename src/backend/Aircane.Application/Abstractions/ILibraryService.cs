@@ -149,9 +149,29 @@ public interface ILibraryService
     /// <param name="originalFileName">Original filename (used for the document title and metadata).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The persisted <see cref="SourceDocumentDto"/> with inherited classification defaults.</returns>
+    /// <param name="overrides">
+    /// Optional per-file overrides (title, source type, game system, ruleset). Any field left null
+    /// falls back to the folder default or the filename-derived value. Used by the folder-scan
+    /// review flow so the host can correct classification before import.
+    /// </param>
     Task<SourceDocumentDto> CreateDocumentFromFolderAsync(
         Guid folderId,
         string sourcePath,
         string originalFileName,
+        FolderDocumentOverrides? overrides = null,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Optional per-file overrides applied when creating a document from a folder scan. A null field
+/// means "use the folder default / filename-derived value".
+/// </summary>
+/// <param name="Title">Overrides the filename-derived title.</param>
+/// <param name="SourceType">Overrides the folder's default source type.</param>
+/// <param name="GameSystem">Overrides the folder's default game system.</param>
+/// <param name="Ruleset">Overrides the folder's default ruleset.</param>
+public sealed record FolderDocumentOverrides(
+    string? Title = null,
+    Aircane.Domain.Enums.SourceType? SourceType = null,
+    string? GameSystem = null,
+    string? Ruleset = null);

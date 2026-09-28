@@ -3,6 +3,7 @@ using Aircane.Application.AiRuntime;
 using Aircane.Application.AiRuntime.Validators;
 using Aircane.Application.Characters;
 using Aircane.Application.GameSystems;
+using Aircane.Application.Library;
 using Aircane.Infrastructure.Adventures;
 using Aircane.Infrastructure.Ai;
 using Aircane.Infrastructure.Campaigns;
@@ -127,6 +128,8 @@ public static class DependencyInjection
         // Game System Definition - registry and migration (scoped, uses DbContext)
         services.AddScoped<ISystemRegistry, SystemRegistry>();
         services.AddScoped<IGameSystemMigrationService, GameSystemMigrationService>();
+        services.AddScoped<IGameSystemCanonicalizer, GameSystemCanonicalizer>();
+        services.AddSingleton<IScanCandidateAnalyzer, ScanCandidateAnalyzer>();
 
         return services;
     }

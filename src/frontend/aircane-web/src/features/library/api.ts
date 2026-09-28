@@ -5,14 +5,16 @@ import type { AxiosProgressEvent } from 'axios'
 // Enums
 // ---------------------------------------------------------------------------
 
+// NOTE: These numeric values MUST match the backend Aircane.Domain.Enums.SourceType
+// declaration order, because the API serializes the enum as its integer value.
 export enum SourceType {
-  Unknown = 0,
-  Rules = 1,
-  Adventure = 2,
-  Solo = 3,
-  Character = 4,
-  Homebrew = 5,
-  Generated = 6,
+  Rules = 0,
+  Adventure = 1,
+  Solo = 2,
+  Character = 3,
+  Homebrew = 4,
+  Generated = 5,
+  Unknown = 6,
 }
 
 export enum ImportStatus {
@@ -67,6 +69,61 @@ export interface FolderScanResultDto {
   updatedDocuments: number
   unchangedDocuments: number
   errors: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Folder scan review (preview-before-import)
+// ---------------------------------------------------------------------------
+
+/**
+ * Advisory flags on a scan candidate. Values match the backend ScanCandidateFlag enum by ordinal:
+ * 0 = DuplicateVariant, 1 = AlreadyImported, 2 = LikelyNotRules.
+ */
+export enum ScanCandidateFlag {
+  DuplicateVariant = 0,
+  AlreadyImported = 1,
+  LikelyNotRules = 2,
+}
+
+/** A single analyzed file discovered during a folder scan preview. */
+export interface ScanCandidateDto {
+  sourcePath: string
+  fileName: string
+  suggestedTitle: string
+  suggestedRuleset: string | null
+  sizeBytes: number | null
+  dedupKey: string
+  flags: ScanCandidateFlag[]
+  reason: string | null
+  alreadyImported: boolean
+}
+
+/** Result of analyzing a folder without importing anything. */
+export interface FolderScanPreviewDto {
+  folderId: string
+  filesFound: number
+  candidates: ScanCandidateDto[]
+  analyzedAt: string
+}
+
+/** A single file's import decision, with optional classification overrides. */
+export interface FolderImportSelectionItem {
+  sourcePath: string
+  import: boolean
+  title?: string
+  sourceType?: SourceType
+  gameSystem?: string
+  ruleset?: string
+}
+
+/** Backend result summary for a folder scan / selection import. */
+export interface FolderScanResultSummaryDto {
+  folderId: string
+  filesFound: number
+  newFiles: number
+  updatedFiles: number
+  skippedFiles: number
+  scannedAt: string
 }
 
 export interface SourceDocumentDto {
@@ -258,6 +315,31 @@ export async function scanFolder(id: string): Promise<FolderScanResultDto> {
     `/api/library/folders/${id}/scan`,
     undefined,
     { timeout: 0 }, // No timeout — scans can take minutes for large folders
+  )
+  return response.data
+}
+
+/**
+ * Analyze a watched folder and return a review preview of discovered files (no writes).
+ * The host reviews the candidates and then confirms a selection via importFolderSelection.
+ */
+export async function previewFolderScan(id: string): Promise<FolderScanPreviewDto> {
+  const response = await apiClient.get<FolderScanPreviewDto>(
+    `/api/library/folders/${id}/scan/preview`,
+    { timeout: 0 }, // Enumeration + analysis can take a moment for large folders
+  )
+  return response.data
+}
+
+/** Import the host-selected files from a folder-scan preview, with per-file overrides. */
+export async function importFolderSelection(
+  id: string,
+  items: FolderImportSelectionItem[],
+): Promise<FolderScanResultSummaryDto> {
+  const response = await apiClient.post<FolderScanResultSummaryDto>(
+    `/api/library/folders/${id}/scan/import`,
+    { items },
+    { timeout: 0 }, // Imports can take minutes for large selections
   )
   return response.data
 }

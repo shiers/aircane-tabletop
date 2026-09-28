@@ -22,4 +22,28 @@ public interface IFolderScanJob
     /// <returns>A <see cref="FolderScanResultDto"/> summarising the scan outcome.</returns>
     /// <exception cref="KeyNotFoundException">Thrown when no folder with <paramref name="folderId"/> exists.</exception>
     Task<FolderScanResultDto> ScanFolderAsync(Guid folderId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Analyzes the folder and returns a <see cref="FolderScanPreviewDto"/> describing each
+    /// discovered file (suggested title/ruleset, dedup grouping, and advisory flags) WITHOUT
+    /// creating any records or enqueuing imports. Files already imported (by path) are still
+    /// included so the host sees the full picture.
+    /// </summary>
+    /// <param name="folderId">ID of the <see cref="Domain.Entities.WatchedFolder"/> to analyze.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="KeyNotFoundException">Thrown when no folder with <paramref name="folderId"/> exists.</exception>
+    Task<FolderScanPreviewDto> PreviewFolderAsync(Guid folderId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Imports the host-selected files from a folder-scan preview, applying per-file classification
+    /// overrides. Only items with <see cref="FolderImportSelectionItem.Import"/> set to true are
+    /// imported; files already indexed at the same path are skipped (idempotent). Enqueues an import
+    /// job for each newly created document.
+    /// </summary>
+    /// <param name="request">The host's import selection and overrides.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="KeyNotFoundException">Thrown when no folder with the given ID exists.</exception>
+    Task<FolderScanResultDto> ImportSelectionAsync(
+        FolderImportSelectionRequest request,
+        CancellationToken ct = default);
 }

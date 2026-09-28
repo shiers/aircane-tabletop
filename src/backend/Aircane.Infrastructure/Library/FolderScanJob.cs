@@ -1,5 +1,6 @@
 using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Library;
+using Aircane.Application.Library;
 using Aircane.Application.Validation;
 using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Persistence;
@@ -18,6 +19,7 @@ public sealed class FolderScanJob : IFolderScanJob
     private readonly IDocumentSource _documentSource;
     private readonly ILibraryService _libraryService;
     private readonly IDocumentImportJob _documentImportJob;
+    private readonly IScanCandidateAnalyzer _analyzer;
     private readonly AircaneDbContext _db;
     private readonly ILogger<FolderScanJob> _logger;
 
@@ -25,12 +27,14 @@ public sealed class FolderScanJob : IFolderScanJob
         IDocumentSource documentSource,
         ILibraryService libraryService,
         IDocumentImportJob documentImportJob,
+        IScanCandidateAnalyzer analyzer,
         AircaneDbContext db,
         ILogger<FolderScanJob> logger)
     {
         _documentSource = documentSource;
         _libraryService = libraryService;
         _documentImportJob = documentImportJob;
+        _analyzer = analyzer;
         _db = db;
         _logger = logger;
     }
@@ -117,6 +121,7 @@ public sealed class FolderScanJob : IFolderScanJob
                     folderId,
                     file.SourcePath,
                     sanitizedFileName,
+                    overrides: null,
                     ct);
 
                 await _documentImportJob.ProcessDocumentAsync(newDoc.Id, ct);
@@ -163,6 +168,136 @@ public sealed class FolderScanJob : IFolderScanJob
             FilesFound: files.Count,
             NewFiles: newFiles,
             UpdatedFiles: updatedFiles,
+            SkippedFiles: skippedFiles,
+            ScannedAt: scannedAt);
+    }
+
+    /// <inheritdoc />
+    public async Task<FolderScanPreviewDto> PreviewFolderAsync(Guid folderId, CancellationToken ct = default)
+    {
+        var folder = await _db.WatchedFolders
+            .AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Id == folderId, ct)
+            ?? throw new KeyNotFoundException($"Watched folder {folderId} not found.");
+
+        _logger.LogInformation(
+            "Previewing folder scan. FolderId={FolderId}, Path={Path}", folderId, folder.AbsolutePath);
+
+        // Enumerate discoverable files (supported extensions, within-boundary) — read only.
+        var files = await _documentSource.ListFilesAsync(folder.AbsolutePath, ct);
+
+        // Compute the set of dedup keys already represented in the library so the analyzer can flag
+        // re-imports. Derived from every existing document's original filename.
+        var existingFileNames = await _db.SourceDocuments
+            .AsNoTracking()
+            .Select(d => d.OriginalFileName)
+            .ToListAsync(ct);
+
+        var existingDedupKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in existingFileNames)
+        {
+            var key = FilenameNormalizer.ComputeDedupKey(name);
+            if (!string.IsNullOrEmpty(key))
+                existingDedupKeys.Add(key);
+        }
+
+        var candidates = _analyzer.Analyze(files, existingDedupKeys);
+
+        _logger.LogInformation(
+            "Folder preview complete. FolderId={FolderId}, FilesFound={FilesFound}", folderId, files.Count);
+
+        return new FolderScanPreviewDto(
+            FolderId: folderId,
+            FilesFound: files.Count,
+            Candidates: candidates,
+            AnalyzedAt: DateTimeOffset.UtcNow);
+    }
+
+    /// <inheritdoc />
+    public async Task<FolderScanResultDto> ImportSelectionAsync(
+        FolderImportSelectionRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var folder = await _db.WatchedFolders
+            .FirstOrDefaultAsync(f => f.Id == request.FolderId, ct)
+            ?? throw new KeyNotFoundException($"Watched folder {request.FolderId} not found.");
+
+        _logger.LogInformation(
+            "Importing folder selection. FolderId={FolderId}, ItemCount={ItemCount}",
+            request.FolderId, request.Items.Count);
+
+        // Re-enumerate the folder so we only act on files that currently exist and are within the
+        // folder boundary — the preview the host acted on may be slightly stale.
+        var discovered = await _documentSource.ListFilesAsync(folder.AbsolutePath, ct);
+        var discoveredByPath = discovered.ToDictionary(f => f.SourcePath, StringComparer.OrdinalIgnoreCase);
+
+        // Existing documents for this folder, keyed by path, to preserve idempotency.
+        var existingByPath = (await _db.SourceDocuments
+                .Where(d => d.WatchedFolderId == request.FolderId)
+                .ToListAsync(ct))
+            .ToDictionary(d => d.SourcePath, StringComparer.OrdinalIgnoreCase);
+
+        int newFiles = 0;
+        int skippedFiles = 0;
+
+        foreach (var item in request.Items)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (!item.Import)
+            {
+                skippedFiles++;
+                continue;
+            }
+
+            // Ignore selections for files that no longer exist or escaped the folder boundary.
+            if (!discoveredByPath.TryGetValue(item.SourcePath, out var file) ||
+                !FolderPathValidator.IsFileWithinFolder(item.SourcePath, folder.AbsolutePath))
+            {
+                _logger.LogWarning(
+                    "Selected file is no longer available or outside the folder; skipping. SourcePath={SourcePath}",
+                    item.SourcePath);
+                skippedFiles++;
+                continue;
+            }
+
+            // Idempotency: never create a second record for an already-indexed path.
+            if (existingByPath.ContainsKey(item.SourcePath))
+            {
+                _logger.LogDebug(
+                    "Selected file already indexed; skipping. SourcePath={SourcePath}", item.SourcePath);
+                skippedFiles++;
+                continue;
+            }
+
+            var overrides = new FolderDocumentOverrides(
+                Title: item.Title,
+                SourceType: item.SourceType,
+                GameSystem: item.GameSystem,
+                Ruleset: item.Ruleset);
+
+            var newDoc = await _libraryService.CreateDocumentFromFolderAsync(
+                request.FolderId, file.SourcePath, file.FileName, overrides, ct);
+
+            await _documentImportJob.ProcessDocumentAsync(newDoc.Id, ct);
+            newFiles++;
+        }
+
+        var scannedAt = DateTimeOffset.UtcNow;
+        folder.LastScannedAt = scannedAt;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Folder selection import complete. FolderId={FolderId}, New={New}, Skipped={Skipped}",
+            request.FolderId, newFiles, skippedFiles);
+
+        return new FolderScanResultDto(
+            FolderId: request.FolderId,
+            FilesFound: discovered.Count,
+            NewFiles: newFiles,
+            UpdatedFiles: 0,
             SkippedFiles: skippedFiles,
             ScannedAt: scannedAt);
     }

@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useLibraryStore } from '../store'
-import { SourceType, type WatchedFolderDto } from '../api'
+import { SourceType, type WatchedFolderDto, type FolderScanPreviewDto } from '../api'
 import RegisterFolderForm from './RegisterFolderForm.vue'
+import FolderScanReviewModal from './FolderScanReviewModal.vue'
 
 const store = useLibraryStore()
 
 const deletingId = ref<string | null>(null)
+
+// Folder-scan review modal state.
+const reviewOpen = ref(false)
+const reviewFolderId = ref<string | null>(null)
+const reviewFolderName = ref('')
+const reviewPreview = ref<FolderScanPreviewDto | null>(null)
+
+// Transient per-folder result message shown after a quick import.
+const quickImportMessage = ref<{ folderId: string; text: string } | null>(null)
 
 const sourceTypeLabel: Record<SourceType, string> = {
   [SourceType.Unknown]: 'Unknown',
@@ -56,7 +66,53 @@ function isScanningFolder(id: string): boolean {
 }
 
 async function handleScan(folder: WatchedFolderDto): Promise<void> {
-  await store.scanFolder(folder.id)
+  // Option A: scanning always opens the review modal. Nothing is imported until the host confirms
+  // a selection. We open the modal immediately (showing an "analyzing" state) and fill it once the
+  // preview arrives.
+  reviewFolderId.value = folder.id
+  reviewFolderName.value = folder.displayName
+  reviewPreview.value = null
+  reviewOpen.value = true
+  try {
+    reviewPreview.value = await store.previewFolderScan(folder.id)
+  } catch {
+    // Error surfaces via store.foldersError; close the modal so the user can retry.
+    reviewOpen.value = false
+  }
+}
+
+function closeReview(): void {
+  reviewOpen.value = false
+  reviewPreview.value = null
+  reviewFolderId.value = null
+}
+
+/**
+ * Option B: import all clean (unflagged) files without opening the review modal. Duplicates and
+ * flagged files are intentionally skipped — the user is told to use "Review & import" for those.
+ */
+async function handleQuickImport(folder: WatchedFolderDto): Promise<void> {
+  if (
+    !confirm(
+      `Quick import from "${folder.displayName}"?\n\nThis imports all clean files automatically. ` +
+        `Possible duplicates, already-imported files, and non-rules assets are skipped — use ` +
+        `"Review & import" to handle those.`,
+    )
+  )
+    return
+
+  try {
+    const { result, skippedFlagged } = await store.quickImportFolder(folder.id)
+    const parts = [`Imported ${result.newFiles} file${result.newFiles === 1 ? '' : 's'}.`]
+    if (skippedFlagged > 0) {
+      parts.push(
+        `${skippedFlagged} flagged file${skippedFlagged === 1 ? '' : 's'} skipped — use "Review & import" to include ${skippedFlagged === 1 ? 'it' : 'them'}.`,
+      )
+    }
+    quickImportMessage.value = { folderId: folder.id, text: parts.join(' ') }
+  } catch {
+    // Error surfaces via store.foldersError.
+  }
 }
 
 async function handleDelete(folder: WatchedFolderDto): Promise<void> {
@@ -222,6 +278,15 @@ async function handleDelete(folder: WatchedFolderDto): Promise<void> {
                 · {{ store.scanResultMap[folder.id].errors.length }} error(s)
               </span>
             </div>
+
+            <!-- Quick import result -->
+            <div
+              v-if="quickImportMessage && quickImportMessage.folderId === folder.id"
+              class="mt-2 text-xs text-green-400"
+              aria-live="polite"
+            >
+              {{ quickImportMessage.text }}
+            </div>
           </div>
 
           <!-- Actions -->
@@ -268,7 +333,17 @@ async function handleDelete(folder: WatchedFolderDto): Promise<void> {
                   clip-rule="evenodd"
                 />
               </svg>
-              {{ isScanningFolder(folder.id) ? 'Scanning…' : 'Scan Now' }}
+              {{ isScanningFolder(folder.id) ? 'Scanning…' : 'Review & import' }}
+            </button>
+
+            <button
+              :disabled="isScanningFolder(folder.id)"
+              :aria-label="`Quick import unflagged files from ${folder.displayName}`"
+              title="Import all clean, unflagged files without reviewing. Duplicates and flagged files are skipped."
+              class="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-green-400 hover:bg-gray-800 hover:text-green-300 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+              @click="handleQuickImport(folder)"
+            >
+              {{ isScanningFolder(folder.id) ? 'Working…' : 'Quick import' }}
             </button>
 
             <button
@@ -286,5 +361,15 @@ async function handleDelete(folder: WatchedFolderDto): Promise<void> {
 
     <!-- Register folder form -->
     <RegisterFolderForm />
+
+    <!-- Folder scan review modal (Option A: the only import path for folder scans) -->
+    <FolderScanReviewModal
+      :open="reviewOpen"
+      :folder-id="reviewFolderId"
+      :folder-name="reviewFolderName"
+      :preview="reviewPreview"
+      @close="closeReview"
+      @imported="closeReview"
+    />
   </section>
 </template>

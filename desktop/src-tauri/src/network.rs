@@ -17,6 +17,10 @@ use crate::config::DesktopConfig;
 pub struct NetworkInfo {
     pub local_url: Option<String>,
     pub lan_url: Option<String>,
+    // Part of the endpoint's response contract; deserialized for completeness but
+    // not consumed on the Rust side (the tray/title only use the URLs). The
+    // endpoint always returns null here anyway — invite codes are creation-only.
+    #[allow(dead_code)]
     pub invite_code: Option<String>,
 }
 

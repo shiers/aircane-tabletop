@@ -15,15 +15,13 @@ use crate::network;
 
 pub const TRAY_ID: &str = "aircane-tray";
 
-/// The monochrome tray icon, embedded at compile time. Falls back to the app's
-/// default window icon if decoding fails.
-fn tray_icon(app: &AppHandle) -> tauri::image::Image<'static> {
+/// The monochrome tray icon, embedded at compile time and decoded into an owned
+/// (`'static`) image. The bytes are compiled into the binary, so decoding cannot
+/// fail at runtime for a valid committed PNG.
+fn tray_icon() -> tauri::image::Image<'static> {
     const TRAY_PNG: &[u8] = include_bytes!("../icons/tray.png");
-    tauri::image::Image::from_bytes(TRAY_PNG).unwrap_or_else(|_| {
-        app.default_window_icon()
-            .cloned()
-            .expect("no default window icon available for the tray")
-    })
+    tauri::image::Image::from_bytes(TRAY_PNG)
+        .expect("embedded tray icon (icons/tray.png) must be a valid PNG")
 }
 
 pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -35,7 +33,7 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&copy_url, &show_qr, &open, &quit])?;
 
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(tray_icon(app))
+        .icon(tray_icon())
         .tooltip("Aircane Tabletop")
         .menu(&menu)
         .show_menu_on_left_click(false)

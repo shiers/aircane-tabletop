@@ -13,6 +13,7 @@ import {
 } from './api'
 import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
 import ModelSelect from '@/shared/components/ModelSelect.vue'
+import { isDesktop, invoke, openExternal } from '@/shared/tauri/bridge'
 
 const licensesModalOpen = ref(false)
 const loading = ref(false)
@@ -47,6 +48,43 @@ const awsModelId = ref('')
 const ollamaBaseUrl = ref('http://localhost:11434')
 const ollamaModel = ref('llama3')
 
+// Ollama live status: 'unknown' before a check, 'running' / 'not-running' after.
+const ollamaStatus = ref<'unknown' | 'running' | 'not-running' | 'checking'>('unknown')
+
+// URL of the AI configuration guide. In the desktop app it opens in the system
+// browser (docs live in the repo / GitHub); in a plain browser we link directly.
+const setupGuideUrl =
+  'https://github.com/aircane/aircane-tabletop/blob/main/docs/setup/ai-configuration.md'
+
+/**
+ * Checks whether Ollama is reachable.
+ * - Desktop: asks the Rust side (avoids a cross-origin request to :11434).
+ * - Browser: infers reachability from the backend's model list — the backend
+ *   queries the Ollama daemon server-side, so a non-empty list means it's up.
+ */
+async function checkOllamaStatus() {
+  ollamaStatus.value = 'checking'
+  try {
+    if (isDesktop()) {
+      const running = await invoke<boolean>('check_ollama_status')
+      ollamaStatus.value = running ? 'running' : 'not-running'
+      return
+    }
+    const models = await getAvailableModels(AiProviderType.Ollama)
+    ollamaStatus.value = models.length > 0 ? 'running' : 'not-running'
+  } catch {
+    ollamaStatus.value = 'not-running'
+  }
+}
+
+function openSetupGuide() {
+  if (isDesktop()) {
+    openExternal(setupGuideUrl)
+  } else {
+    window.open(setupGuideUrl, '_blank', 'noopener')
+  }
+}
+
 // Grok fields
 const grokApiKey = ref('')
 const grokModel = ref('grok-3-mini')
@@ -60,6 +98,9 @@ onMounted(async () => {
   await loadConfig()
   await loadProviders()
   await fetchModels()
+  if (activeProvider.value === AiProviderType.Ollama) {
+    checkOllamaStatus()
+  }
 })
 
 async function loadProviders() {
@@ -91,8 +132,12 @@ async function fetchModels() {
 
 // Refetch the model list whenever the host switches providers so the dropdown
 // always reflects the currently selected provider's options.
-watch(activeProvider, () => {
+watch(activeProvider, (provider) => {
   fetchModels()
+  // Refresh the Ollama status indicator when Ollama is (re)selected.
+  if (provider === AiProviderType.Ollama) {
+    checkOllamaStatus()
+  }
 })
 
 async function loadConfig() {
@@ -461,6 +506,51 @@ function isKeyMasked(value: string): boolean {
         class="border border-surface-700/50 rounded-md p-4 space-y-4"
       >
         <legend class="text-sm font-medium text-gray-300 px-2">Ollama Configuration</legend>
+
+        <!-- Live status indicator + setup guide -->
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2 text-sm">
+            <span
+              class="inline-block h-2.5 w-2.5 rounded-full"
+              :class="{
+                'bg-green-400': ollamaStatus === 'running',
+                'bg-amber-400': ollamaStatus === 'not-running',
+                'bg-gray-500 animate-pulse': ollamaStatus === 'checking',
+                'bg-gray-600': ollamaStatus === 'unknown',
+              }"
+              aria-hidden="true"
+            ></span>
+            <span
+              :class="{
+                'text-green-400': ollamaStatus === 'running',
+                'text-amber-400': ollamaStatus === 'not-running',
+                'text-gray-400': ollamaStatus === 'checking' || ollamaStatus === 'unknown',
+              }"
+            >
+              <template v-if="ollamaStatus === 'running'">Ollama is running</template>
+              <template v-else-if="ollamaStatus === 'not-running'">
+                Ollama not detected at localhost:11434
+              </template>
+              <template v-else-if="ollamaStatus === 'checking'">Checking Ollama…</template>
+              <template v-else>Status unknown</template>
+            </span>
+            <button
+              type="button"
+              class="text-xs font-medium text-aircane-400 hover:text-aircane-300 disabled:opacity-50"
+              :disabled="ollamaStatus === 'checking'"
+              @click="checkOllamaStatus"
+            >
+              Test connection
+            </button>
+          </div>
+          <button
+            type="button"
+            class="text-xs font-medium text-aircane-400 hover:text-aircane-300 hover:underline"
+            @click="openSetupGuide"
+          >
+            Setup guide
+          </button>
+        </div>
 
         <div>
           <label for="ollama-url" class="block text-sm font-medium text-gray-300 mb-1">Base URL</label>

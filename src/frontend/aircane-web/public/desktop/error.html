@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aircane Tabletop — Startup Error</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b1020;
+        color: #e5e7eb;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      .wrap {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        padding: 2rem;
+        box-sizing: border-box;
+        text-align: center;
+      }
+      .mark {
+        width: 64px;
+        height: 64px;
+        border-radius: 16px;
+        background: #7f1d1d;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 34px;
+        color: #fecaca;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.3rem;
+      }
+      p {
+        margin: 0;
+        max-width: 34rem;
+        color: #cbd5e1;
+        line-height: 1.5;
+      }
+      .detail {
+        font-size: 0.85rem;
+        color: #94a3b8;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .row {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 0.5rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.55rem 1.1rem;
+        border-radius: 8px;
+        border: 1px solid #334155;
+        background: #1e293b;
+        color: #e2e8f0;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #4f46e5;
+        border-color: #4f46e5;
+        color: #fff;
+      }
+      button:hover {
+        filter: brightness(1.1);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="mark">!</div>
+      <h1 id="title">The local server did not start</h1>
+      <p id="message">
+        Aircane Tabletop could not reach its backend. This can happen if the
+        server took too long to start or another program is using the port.
+      </p>
+      <p class="detail" id="detail"></p>
+      <p class="detail" id="hint" style="display: none"></p>
+      <div class="row">
+        <button class="primary" id="retry">Retry</button>
+        <button id="logs">View logs</button>
+      </div>
+    </div>
+
+    <script type="module">
+      // The Rust side navigates here with query params describing what went wrong:
+      //   ?reason=timeout            → generic timeout
+      //   ?reason=port-conflict      → something else is on the port
+      //   &detail=<url-encoded text> → extra detail for the log line
+      const params = new URLSearchParams(window.location.search);
+      const reason = params.get("reason") ?? "timeout";
+      const detail = params.get("detail") ?? "";
+
+      const title = document.getElementById("title");
+      const message = document.getElementById("message");
+      const detailEl = document.getElementById("detail");
+      const hintEl = document.getElementById("hint");
+
+      if (reason === "port-conflict") {
+        title.textContent = "Port is already in use";
+        message.textContent =
+          "Another application is already using this port. Close that app, or " +
+          "launch Aircane on a different port, then retry.";
+        // The backend isn't running, so we can't open in-app settings here.
+        // Give the user an actionable, out-of-band way to change the port.
+        hintEl.textContent =
+          "To use a different port, set the AIRCANE_PORT environment variable " +
+          "(for example AIRCANE_PORT=5010) before launching Aircane.";
+        hintEl.style.display = "block";
+      }
+      if (detail) detailEl.textContent = detail;
+
+      // Tauri v2 exposes the invoke API on window.__TAURI__ when withGlobalTauri
+      // is enabled in tauri.conf.json.
+      async function invoke(cmd, args) {
+        const core = window.__TAURI__?.core;
+        if (!core) return;
+        return core.invoke(cmd, args);
+      }
+
+      document.getElementById("retry").addEventListener("click", () => {
+        invoke("retry_startup");
+      });
+      document.getElementById("logs").addEventListener("click", () => {
+        invoke("open_logs");
+      });
+    </script>
+  </body>
+</html>

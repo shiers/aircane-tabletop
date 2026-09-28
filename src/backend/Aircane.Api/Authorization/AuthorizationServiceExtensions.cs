@@ -13,14 +13,21 @@ public static class AuthorizationServiceExtensions
     /// </summary>
     public static IServiceCollection AddParticipantAuthorization(
         this IServiceCollection services,
-        bool isDevelopment = false)
+        bool isDevelopment = false,
+        bool trustLocalHost = false)
     {
         services.AddSingleton<IAuthorizationHandler, ParticipantRoleAuthorizationHandler>();
 
-        if (isDevelopment)
+        // "Trust local host" makes the host-only policies permissive, exactly like
+        // Development. It exists for the local-first desktop wrapper: the single
+        // user running the app on their own machine IS the host, so requiring a
+        // session-scoped Host token before they can create a session is a
+        // chicken-and-egg problem. The desktop sidecar opts in explicitly via
+        // Aircane:TrustLocalHost=true; a shared/hosted deployment must NOT set it.
+        if (isDevelopment || trustLocalHost)
         {
-            // In development, allow all requests through without authentication.
-            // This enables local UI testing without needing to create a session first.
+            // Allow all requests through without authentication so the local host
+            // can drive host-only surfaces without first joining a session.
             services.AddAuthorizationBuilder()
                 .AddPolicy(AuthorizationPolicies.HostOnly, policy =>
                 {

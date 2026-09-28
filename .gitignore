@@ -100,6 +100,20 @@ test-fixtures/
 docker-compose.override.yml
 
 # ============================================================
+# Tauri desktop wrapper (Rust build artifacts + generated sidecar binaries)
+# ============================================================
+desktop/src-tauri/target/
+# Sidecar binaries are produced by `dotnet publish` during the build; never commit them.
+desktop/src-tauri/binaries/*
+!desktop/src-tauri/binaries/README.md
+# Generated Tauri gen/ (schemas, Android/iOS scaffolding) — recreated by the CLI.
+desktop/src-tauri/gen/
+# Vendored at build time from the frontend's qrcode dependency (next to the
+# wrapper's QR page in public/desktop and copied into dist/desktop).
+src/frontend/aircane-web/public/desktop/qrcode.min.js
+src/frontend/aircane-web/dist/desktop/qrcode.min.js
+
+# ============================================================
 # Kiro
 # ============================================================
 .kiro/

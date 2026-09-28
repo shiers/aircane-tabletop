@@ -9,6 +9,18 @@
     <UserSecretsId>3736f50c-50b9-4cf2-9740-fa5e3e54eacf</UserSecretsId>
   </PropertyGroup>
 
+  <!--
+    Single source of truth for the app version: the repo-root VERSION file.
+    scripts/bump-version.(sh|ps1) edits only that file; this target reads it so
+    the published binary always carries the shared version. Falls back to 0.0.0
+    if the file is missing (e.g. building the project in isolation).
+  -->
+  <PropertyGroup>
+    <_VersionFile>$(MSBuildThisFileDirectory)..\..\..\VERSION</_VersionFile>
+    <Version Condition="Exists('$(_VersionFile)')">$([System.IO.File]::ReadAllText('$(_VersionFile)').Trim())</Version>
+    <Version Condition="!Exists('$(_VersionFile)')">0.0.0</Version>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0">

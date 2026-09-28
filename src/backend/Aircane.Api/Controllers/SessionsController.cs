@@ -375,6 +375,88 @@ public sealed class SessionsController : ControllerBase
             });
         }
     }
+
+    /// <summary>
+    /// Returns network information for reaching this host: the loopback URL and,
+    /// when available, the LAN URL other devices on the same network can use.
+    /// Consumed by the desktop wrapper (window title, tray menu, QR code) and by
+    /// the in-app session screen.
+    /// </summary>
+    /// <remarks>
+    /// Anonymous: this endpoint exposes only the host's own reachable URLs (no
+    /// session data, no secrets), and the desktop wrapper calls it during startup
+    /// before any participant token exists. The plaintext invite code is never
+    /// returned here — it is available only once, at session creation.
+    /// </remarks>
+    [HttpGet("api/sessions/network-info")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(NetworkInfoDto), StatusCodes.Status200OK)]
+    public ActionResult<NetworkInfoDto> GetNetworkInfo()
+    {
+        // Derive the port from the current request so the URLs match however the
+        // host launched the backend (ASPNETCORE_URLS, launchSettings, etc.).
+        var port = Request.Host.Port ?? 5000;
+        var localUrl = $"http://localhost:{port}";
+
+        var lanIp = TryGetLanIpv4();
+        var lanUrl = lanIp is null ? null : $"http://{lanIp}:{port}";
+
+        return Ok(new NetworkInfoDto(localUrl, lanUrl, InviteCode: null));
+    }
+
+    /// <summary>
+    /// Best-effort discovery of the machine's primary LAN IPv4 address.
+    /// Returns null if none can be determined (offline, loopback-only, etc.).
+    /// </summary>
+    private static string? TryGetLanIpv4()
+    {
+        try
+        {
+            // Opening a UDP socket to a routable address lets the OS pick the
+            // outbound interface without actually sending any packets.
+            using var socket = new System.Net.Sockets.Socket(
+                System.Net.Sockets.AddressFamily.InterNetwork,
+                System.Net.Sockets.SocketType.Dgram,
+                System.Net.Sockets.ProtocolType.Udp);
+            socket.Connect("8.8.8.8", 65530);
+            if (socket.LocalEndPoint is System.Net.IPEndPoint endpoint
+                && !System.Net.IPAddress.IsLoopback(endpoint.Address))
+            {
+                return endpoint.Address.ToString();
+            }
+        }
+        catch
+        {
+            // Fall through to the interface scan below.
+        }
+
+        try
+        {
+            // Fallback: scan active non-loopback interfaces for a private IPv4.
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up)
+                    continue;
+                if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                    continue;
+
+                foreach (var addr in ni.GetIPProperties().UnicastAddresses)
+                {
+                    if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                        && !System.Net.IPAddress.IsLoopback(addr.Address))
+                    {
+                        return addr.Address.ToString();
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // No LAN address determinable.
+        }
+
+        return null;
+    }
 }
 
 /// <summary>

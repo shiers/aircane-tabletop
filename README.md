@@ -51,6 +51,7 @@ See the [full setup guide](docs/setup/getting-started.md) for prerequisites and 
 | [Getting Started](docs/setup/getting-started.md) | Prerequisites, installation, first run |
 | [AI Configuration](docs/setup/ai-configuration.md) | Configure OpenAI, Azure, Bedrock, Ollama, or Grok |
 | [LAN Hosting](docs/setup/lan-hosting.md) | Host a session for local network players |
+| [Desktop Wrapper](docs/setup/desktop.md) | Build the installable Tauri desktop app (backend as a sidecar) |
 | [Docker Environment](docs/setup/docker.md) | Docker Compose services and commands |
 | [Architecture Overview](docs/architecture/overview.md) | Tech stack, data flows, project structure |
 | [Known Limitations](docs/known-limitations.md) | Current MVP boundaries |
@@ -117,4 +118,18 @@ docker compose up postgres -d
 
 ## License
 
-License TBD.
+**Proprietary.** The Aircane Tabletop application source code is proprietary. All rights are
+reserved by the copyright holder. You may not copy, modify, distribute, sublicense, or use the
+source code except as expressly permitted in writing by the copyright holder. See the
+[`LICENSE`](LICENSE) file for the full terms.
+
+This application license is **distinct from the licenses covering bundled content**. The
+built-in rules text bundles are distributed under their own open-content licenses and are **not**
+affected by the proprietary application license:
+
+- **D&D 5e SRD** — [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- **Pathfinder 2e Remaster** — [ORC License](https://paizo.com/orclicense)
+
+See [`docs/licensing/open-content-compliance.md`](docs/licensing/open-content-compliance.md) for
+the full content attribution and compliance details. Content you import yourself (your own PDFs,
+characters, and homebrew) remains yours and is governed by its own terms.

@@ -4,16 +4,85 @@
 > full project context. Claude uses it to have productive design/planning conversations, then
 > Shawn hands implementation work to AWS Kiro. Update this file after each significant session.
 >
-> **Last updated:** 2026-09-28 (Library import UX session)
+> **Last updated:** 2026-09-28 (P1 backlog completion session)
 > **MVP status:** ✅ Complete — all 9 phases shipped.
 > **Phase 10 (Built-in Rules Content Bundle):** ✅ Complete — 10.1–10.8 done & verified
 > (embedded bundles, license metadata, `LicensesController`, attribution UI, tests).
-> **Priority-1 backlog:** ✅ All 6 items delivered (see "Priority-1 Backlog" session below).
-> **Latest work:** Library import UX — see "Latest Session" immediately below.
+> **Priority-1 backlog:** ✅ All actionable engineering items delivered; only **maintainer-gated**
+> items remain (real PF2e ORC text, internet tunnel, desktop wrapper, app source-code license).
+> **Latest work:** P1 backlog completion (background jobs, combat surfacing, PF2e generation,
+> cloud embeddings, library UX + OCR follow-ups) — see "Latest Session" immediately below.
 
 ---
 
-## Latest Session — Library Import UX
+## Latest Session — Priority-1 Backlog Completion
+
+Autonomous session finishing the remaining actionable P1 items. Committed in logical green groups
+and pushed to `feature/library-import-ux`. Verified: backend build clean (0 errors), full backend
+suite green (**1963 unit + 24 integration**), frontend **208 tests** + `vue-tsc` clean. The
+completed items were **removed from the active list in `docs/backlog.md`** and recorded under a
+"Completed P1 Work" reference section.
+
+1. **Background Job Infrastructure (foundation).** In-process `IBackgroundJobQueue`
+   (`ChannelBackgroundJobQueue`, unbounded channel, singleton) + a `BackgroundJobWorker`
+   `BackgroundService` in `Aircane.Workers` that dequeues and dispatches to `IJobHandler<T>` in a
+   fresh DI scope per job, plus an in-memory `IBackgroundJobStatusStore` and `GET /api/jobs/{id}`.
+   Document import, folder scan, and re-embed now **enqueue and return `202 Accepted`** (via
+   `IDocumentImportService`, now implemented); `ImportStatusUpdated` carries the `jobId`. A
+   `BackgroundJobs:Runner` config switch is reserved for a future Hangfire swap without touching
+   callers.
+
+2. **Advanced Combat Automation — surfaced end-to-end.** New `CombatController`
+   (`/api/sessions/{id}/combat`: start, roll-initiative, advance-turn, apply-damage/healing,
+   apply/remove-condition, death-save, end, apply-elite/weak) applies host combat commands via
+   `CampaignStateService.ApplyCommandAsync`. New `CombatTracker.vue` — interactive for the host
+   (Next Turn + quick-action bar) and read-only for players (own HP exact, others shown as a rough
+   Healthy/Bloodied/Critical/Down band) — driven by the `CombatTurnChanged` SignalR event.
+   `PlayerActionService` now feeds a compact **live-combat block** into the AI DM prompt via a new
+   `IAiContextAdapter.BuildCombatContext` (round, initiative, HP, conditions, whose turn; action
+   slots hidden for freeform systems). Added `EndEncounter` to the engine/handler.
+
+3. **Pathfinder 2e Adapter — generation logic.** `Pf2eEncounterValidator` (creature-level XP
+   budget: −4→+4 = 10/15/20/30/40/60/80/120/160; Trivial/Low/Moderate/Severe/Extreme tiers scaled
+   by party size) selected per campaign by a new `IEncounterValidatorSelector`. PF2e-aware
+   adventure-generation prompts (three-action economy, four degrees of success, PF2e tiers/
+   conditions, treasure-by-level) branch in `AdventureGenerationService`. `EliteWeakAdjuster`
+   (`Aircane.Domain/Combat/`) + `ApplyEliteTemplate`/`ApplyWeakTemplate` commands. (Mechanics
+   definition shipped earlier; ORC **rules text** stays maintainer-gated.)
+
+4. **Embedding portability — dimensions + cloud providers.** `IEmbeddingCompatibility`/
+   `EmbeddingCompatibility` compares the active provider's dimension to `Embeddings:ColumnDimension`
+   (default 768) at startup; on mismatch it **disables vector search (keyword still works) and logs
+   a clear warning** rather than failing. New `OpenAiEmbeddingProvider` (`text-embedding-3-small`,
+   1536) and `AzureOpenAiEmbeddingProvider` behind `IEmbeddingProvider` (selected via
+   `Embeddings:Provider`). Manual column-migration path documented in
+   `docs/setup/ai-configuration.md`.
+
+5. **Library import UX follow-ups.** `SourceDocument.ContentHash` (SHA-256) + `ExactDuplicate`
+   scan flag (content hashes computed on import + during folder preview). `GameSystemAlias` entity
+   + seeded common aliases (D&D 5e, PF2e) + canonicalizer alias fallback + management API
+   (`/api/game-systems/{id}/aliases`). Configurable per-folder `WatchedFolder.ExcludePatterns`
+   (glob) driving the likely-not-rules signal. EF migration `AddLibraryImportUx`.
+
+6. **OCR follow-ups.** `IPdfRasterizer`/`DocnetPdfRasterizer` (PDFium via Docnet.Core) renders
+   whole pages to a bitmap for OCR when a low-text page has no embedded images — gated by
+   `Ocr:FullPageRasterization`. Opt-in tessdata auto-downloader (`Ocr:AutoDownloadTessdata`).
+   Re-OCR endpoints (`POST /api/library/documents/{id}/reocr` + `/reocr-all`, routed through the
+   job queue) with a "Re-run OCR" button in the library UI. Docs updated in `docs/setup/ocr.md`.
+
+**Also (separate commit):** a provider-aware AI-settings model picker — `GET /api/ai/settings/models`
+now accepts `?provider=`, with a reusable `ModelSelect.vue` (dropdown + custom fallback) across all
+providers. And a test-robustness fix: `connectHub` in both session views now wraps the whole
+SignalR connection setup in try/catch so a torn-down mock can't leak an unhandled rejection.
+
+**Suggested next focus (not started):** Priority-2 items (Map/Battlemap, AWS deploy, File Upload
+source mode, User Accounts, SQLite). None are blocked, but scope should be agreed before starting.
+Remaining P1 is entirely maintainer-gated (PF2e ORC text, internet tunnel, desktop wrapper, app
+license).
+
+---
+
+## Earlier Session — Library Import UX
 
 Focused on making document import safer and less duplicate-prone. All changes verified green
 (frontend `vue-tsc` + full vitest suite; full backend unit suite).
@@ -58,10 +127,12 @@ dedup, alias table, configurable signals).
 
 ---
 
-## Latest Session — Priority-1 Backlog (all 6 delivered)
+## Earlier Session — Priority-1 Backlog (first pass: 6 items)
 
-Autonomous session working the P1 backlog. Each item was committed as a logical green group
-and pushed to `dev`. Full backend suite green after each (1826 unit + 18 integration).
+Autonomous session that first landed the P1 backlog cores. Each item was committed as a logical
+green group and pushed to `dev`. Full backend suite green after each (1826 unit + 18 integration).
+**Note:** the "Deferred" follow-ups called out below were subsequently completed in the "Priority-1
+Backlog Completion" session at the top of this file.
 
 1. **Embedding Provider Portability — core** (`e12e1ad`). Each `DocumentChunk` now records
    `EmbeddingProvider` / `EmbeddingModel` / `EmbeddingDimensions` at generation time (seeder,
@@ -120,11 +191,9 @@ and pushed to `dev`. Full backend suite green after each (1826 unit + 18 integra
    ORC text (licensing — Foundry/Obsidian sources are **not** ORC), Internet Tunnel (security-sensitive),
    Desktop Wrapper (new toolchain), and the app source-code license (owner decision).
 
-**Suggested next focus (not started):** Priority-2 items are larger/architectural (Map/Battlemap,
-AWS deploy, File Upload source mode, User Accounts, SQLite). None are blocked, but scope should be
-agreed before starting. Lower-effort high-value follow-ups from P1: the **frontend combat tracker UI**
-+ feeding combat state into the AI prompt (completes the combat feature end-to-end), and the
-**Background Job Infrastructure** foundation (unblocks async import/reindex/re-embed).
+*(The "deferred" follow-ups above — combat tracker UI + AI-prompt combat state, background jobs,
+PF2e generation/validator + elite/weak, cloud embeddings + flexible dimension, and the OCR
+follow-ups — were all completed in the "Priority-1 Backlog Completion" session at the top.)*
 
 ---
 
@@ -297,23 +366,22 @@ before `CREATE EXTENSION vector` ran, so embedding writes failed — `Program.cs
   license metadata populated. Note: the shipped defaults are unchanged — non-Development `appsettings.json` still
   defaults `Embeddings:Provider=Fake`; Production already defaults to Ollama.
 
-### ⚠️ Embedding provider coupling (mostly addressed — see below)
+### Embedding provider coupling (addressed)
 
 Embeddings are **locked to the provider + model that generated them** — queries must be embedded
-with the same provider/model or retrieval returns wrong/empty results. Today only Ollama
-(`nomic-embed-text`, 768-dim) and a Fake test provider exist; there is **no OpenAI embedding
-provider**, and an AI *chat* key does not enable embeddings.
+with the same provider/model or retrieval returns wrong/empty results. This is handled: each chunk
+records provider/model/dimension, and vector search **guards against provenance mismatch** (skips
+mismatched chunks + logs a re-index warning instead of returning garbage), with first-class
+re-embed endpoints. The "ship text, embed on first run" contract is in
+`docs/architecture/overview.md`.
 
-**Addressed this session (see Latest Session #1):** each chunk now records provider/model/dimension,
-vector search **guards against provenance mismatch** (skips mismatched chunks + logs a re-index
-warning instead of returning garbage), and there are first-class re-embed endpoints. The
-"ship text, embed on first run" contract is documented in `docs/architecture/overview.md`.
-
-**Still open (backlog):** the `DocumentChunk.Embedding` column is still fixed at `vector(768)`, so
-adding a different-dimension provider (e.g. OpenAI `text-embedding-3-small` at 1536) needs a
-configurable/migrated column dimension + a full re-embed. Making re-embed/import/reindex asynchronous
-depends on the new **Background Job Infrastructure** item (no job runner exists yet). User-facing
-warnings are in `docs/setup/ai-configuration.md` and `docs/known-limitations.md`.
+**Now resolved (P1 completion session):** the embedding **dimension is configurable**
+(`Embeddings:ColumnDimension`, default 768) and there are **OpenAI (1536) and Azure OpenAI**
+embedding providers alongside Ollama + Fake. On a provider/column dimension mismatch, a startup
+check disables vector search (keyword search continues) and logs a clear warning; switching to a
+different-dimension provider is a documented manual column migration + a background re-embed. Async
+re-embed/import/folder-scan/re-OCR now run through the in-process **Background Job Infrastructure**.
+User-facing guidance is in `docs/setup/ai-configuration.md` and `docs/known-limitations.md`.
 
 ---
 
@@ -333,41 +401,48 @@ warnings are in `docs/setup/ai-configuration.md` and `docs/known-limitations.md`
 
 ## Known Limitations (Deliberate MVP Scope)
 
-- **OCR is off by default and image-only** — a Tesseract pipeline now exists (`Ocr:Enabled`), but
-  it needs native libs + `tessdata`, gates cleanly to unavailable if they're missing, and only OCRs
-  images already embedded in the PDF (no full-page rasterization yet). Scanned PDFs stay `OcrRequired`
-  when OCR is off/unavailable.
-- **Combat automation is backend-only** — engine (initiative, turns, conditions, HP, death saves) is
-  delivered behind the command pipeline, but there's **no combat tracker UI** and the AI prompt is
-  **not yet fed live combat state**.
+- **OCR is off by default** — a Tesseract pipeline exists (`Ocr:Enabled`) and gates cleanly to
+  unavailable if native libs / `tessdata` are missing. It OCRs embedded page images and, when
+  `Ocr:FullPageRasterization` is enabled, renders whole pages via PDFium (Docnet) for vector-drawn
+  scans; an opt-in tessdata downloader and re-OCR endpoints exist. Scanned PDFs stay `OcrRequired`
+  only when OCR is off/unavailable, and can be re-processed via `POST /api/library/documents/reocr-all`.
+- **Combat automation** — engine + command pipeline, host/player **combat tracker UI**, and live
+  combat state **fed into the AI DM prompt** are all delivered. *Still open (lower priority):*
+  concentration checks and out-of-turn action enforcement.
 - **LAN only** — no HTTPS on LAN, no internet tunnel yet, no persistent user accounts.
 - **In-memory token revocation** — lost on server restart.
-- **Only OpenAI + Ollama fully wired** (chat); **only Ollama + Fake** for embeddings. Azure/Bedrock/Grok
-  fall back to Fake. No OpenAI embedding provider yet (blocked on flexible embedding dimension).
+- **Chat providers:** OpenAI + Ollama fully wired; Azure/Bedrock/Grok fall back to Fake.
+  **Embedding providers:** Ollama + Fake (768-dim) plus **OpenAI and Azure OpenAI** (1536-dim).
+  Switching to a different-dimension provider requires a manual column migration + re-embed
+  (documented); on a mismatch, vector search auto-disables and keyword search continues.
 - **Default provider is Fake** — deterministic placeholder; no real AI without config.
-- **Encounter validation is D&D-5e placeholder logic** — PF2e has a game-system *definition* but no
-  PF2e-specific encounter validator/generation yet.
-- **PF2e Remaster rules text is a 2-chunk stub** — the mechanics definition ships, but real
-  ORC-licensed rules text is still needed (see decision table in `docs/backlog.md`).
+- **PF2e generation is system-aware** — `Pf2eEncounterValidator` (creature-level budget) is selected
+  per campaign and adventure generation uses PF2e terminology. D&D 5e remains the default validator.
+- **PF2e Remaster rules text is a 2-chunk stub** — the mechanics definition + PF2e-aware generation
+  ship, but real ORC-licensed rules *text* is still needed (see decision table in `docs/backlog.md`).
 - **PDF character import is best-effort** — form-fillable + simple text-layer only.
-- **No background job runner** — import/folder-scan/reindex/re-embed run synchronously on the request thread.
+- **Background jobs run in-process** — a channel-queue + hosted-worker runner handles import/
+  folder-scan/re-embed/re-OCR asynchronously (`GET /api/jobs/{id}` for status); no persistent
+  runner (Hangfire) yet, but the seam is reserved.
 - **No cloud/upload mode, no desktop wrapper, no mobile UI, PostgreSQL required (no SQLite).**
 
 ---
 
 ## Post-MVP Backlog
 
-**P1 — status after the latest session** (full detail + "not auto-built" decision table in `docs/backlog.md`):
-- ✅ Pathfinder 2e adapter — *definition delivered; PF2e-specific validation/generation + ORC text still open*
-- ✅ OCR pipeline (Tesseract) — *delivered, off by default; full-page rasterization still open*
-- ✅ Advanced combat automation — *backend delivered; tracker UI + AI-prompt integration still open*
-- ✅ Embedding portability (core) + About/Credits compliance panel
+**P1 — status** (full detail + "not auto-built" decision table in `docs/backlog.md`; delivered items
+are removed from the active backlog and recorded under "Completed P1 Work"):
+- ✅ Background Job Infrastructure — in-process channel queue + hosted worker + `GET /api/jobs/{id}`
+- ✅ Advanced combat automation — engine + combat REST + host/player tracker UI + AI-prompt combat state
+- ✅ Pathfinder 2e adapter — definition + `Pf2eEncounterValidator` + PF2e-aware generation + elite/weak
+- ✅ Embedding portability — provenance + configurable dimension + OpenAI/Azure OpenAI providers
+- ✅ Library import UX — review/quick import, canonicalization, content-hash dedup, aliases, exclude patterns
+- ✅ OCR pipeline — Tesseract + full-page rasterization + tessdata auto-download + re-OCR endpoints/UI
+- ✅ Open-content compliance — About/Credits panel + attribution surface
+- ⛔ PF2e Remaster real ORC **rules text** — *not auto-built: content/licensing (maintainer action)*
 - ⛔ Internet tunnel / remote play — *not auto-built: security-sensitive (maintainer decision)*
 - ⛔ Desktop wrapper (Tauri/Electron) — *not auto-built: new toolchain (maintainer decision)*
 - ⛔ App source-code license — *not auto-built: owner decision (README "License TBD")*
-- 🔜 **Background Job Infrastructure** (new) — single job runner (Hangfire/Quartz or in-process
-  hosted-service + channel queue) for import/folder-scan/reindex/re-embed; unblocks async work above.
-- 🔜 PF2e-specific encounter validator + generation; frontend combat tracker + AI combat-state prompt.
 
 **P2:**
 - Map / battlemap support

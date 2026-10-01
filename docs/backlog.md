@@ -22,6 +22,28 @@ the priority lists below with full detail; this section records *why* they were 
 
 ---
 
+## In Progress (not yet committed)
+
+### In-App "Report a bug" Feedback Feature
+> **🚧 Being implemented via a Kiro plan→implement→review workflow; commit to `dev` is held until the reviewer approves and build/tests are green.** Not shippable yet.
+
+A "Report a bug" button available throughout the app that auto-captures diagnostic context at
+submission time and posts a structured issue to **GitHub Issues** via the GitHub REST API, proxied
+by the backend so the GitHub token never reaches the browser. Backend: unauthenticated,
+rate-limited (`5/IP/hour`, limiting in **every** mode unlike the LAN-no-op `join`/`api` policies)
+`POST /api/feedback` (`FeedbackController` → `IFeedbackService` → `GitHubFeedbackService`), config
+keys `Feedback:GitHubToken`/`GitHubOwner`/`GitHubRepo`, clear **503** when unconfigured, token
+server-side only, HTML-sanitized `summary`/`description`. Frontend: `FeedbackModal.vue`,
+`useFeedbackDiagnostics`, a module-singleton `useFeedbackEventBuffer` (last-20 SignalR events, type +
+short summary only — never narration/character/PDF content), a `console.error`/Vue-errorHandler/
+`unhandledrejection` buffer installed before `createApp()`, a top-nav button, and a Tauri tray item.
+Docs: `docs/setup/feedback.md`. **Known mismatch:** no persistent AI-provider/user-role store yet, so
+`embeddingProvider`/`embeddingModel`/`userRole` are sent as `null` (rendered as dashes). **Maintainer
+setup already done:** `bug` + `beta-feedback` labels exist on the repo, and the feedback GitHub
+secrets are in .NET user-secrets for `Aircane.Api` (token verified against the Issues API).
+
+---
+
 ## Priority 1 - High Impact / Frequently Requested
 
 > **Status:** The actionable P1 engineering items have been **completed and removed** from this
@@ -147,4 +169,4 @@ Localize the UI and support non-English source documents.
 
 ---
 
-*Last updated: 2026-10-01 — Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter.*
+*Last updated: 2026-10-01 — added the in-app "Report a bug" feedback feature as an In Progress item (being built via a Kiro workflow; commit held until reviewed + verified). Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter.*

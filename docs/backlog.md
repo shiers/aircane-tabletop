@@ -82,6 +82,12 @@ Replace short-lived session tokens with full user accounts (local credentials or
 ### SQLite Option for Lightweight Installs
 Allow single-user or desktop installations to run without Docker/PostgreSQL by using SQLite with a compatible vector extension.
 
+### D&D Beyond / VTT Integration
+Import characters directly from D&D Beyond, Foundry VTT, or Roll20 via API or export formats.
+
+### Pathbuilder 2e Character Import
+Import Pathfinder 2e characters built in [Pathbuilder 2e](https://pathbuilder2e.com/app.html?v=110a). Pathbuilder exports a character as JSON (its "Export to JSON" feature), so this maps to the existing JSON character import path: add a Pathbuilder-2e-to-canonical field mapping/adapter and expose it as a source in the import flow. Respect the licensing/Product Identity rules in `docs/licensing/open-content-compliance.md` — import only the user's own character data, not bundled rules content.
+
 ---
 
 ## Priority 3 - Quality of Life
@@ -121,12 +127,6 @@ Add a filesystem watcher that detects new or changed files in registered folders
 ### Advanced PDF Layout Parsing
 Handle multi-column layouts, tables, sidebars, and complex formatting for more accurate text extraction from rulebooks.
 
-### D&D Beyond / VTT Integration
-Import characters directly from D&D Beyond, Foundry VTT, or Roll20 via API or export formats.
-
-### Pathbuilder 2e Character Import
-Import Pathfinder 2e characters built in [Pathbuilder 2e](https://pathbuilder2e.com/app.html?v=110a). Pathbuilder exports a character as JSON (its "Export to JSON" feature), so this maps to the existing JSON character import path: add a Pathbuilder-2e-to-canonical field mapping/adapter and expose it as a source in the import flow. Respect the licensing/Product Identity rules in `docs/licensing/open-content-compliance.md` — import only the user's own character data, not bundled rules content.
-
 ### Multi-Turn AI Memory
 Persistent AI memory across sessions beyond what is stored in campaign state - long-term NPC relationship tracking, world knowledge graphs, and player preference learning.
 
@@ -157,4 +157,4 @@ Localize the UI and support non-English source documents.
 
 ---
 
-*Last updated: 2026-09-29 — Native mobile companion app technology decided: Flutter (iOS + Android, single codebase, Riverpod, FCM, signalr_netcore).*
+*Last updated: 2026-10-01 — Moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2 (character-import enhancements). Earlier (2026-09-29): native mobile companion app technology decided — Flutter (iOS + Android, single codebase, Riverpod, FCM, signalr_netcore).*

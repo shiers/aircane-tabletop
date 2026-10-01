@@ -62,6 +62,25 @@ public static class RateLimitingExtensions
                     });
             });
 
+            // ── feedback: fixed-window per IP, ALWAYS ON ──────────────────────────
+            // Applied to the anonymous POST /api/feedback endpoint via
+            // [EnableRateLimiting("feedback")]. Unlike join/api, this policy does NOT consult
+            // ITunnelStateService: it must throttle in every mode (LAN and internet) because the
+            // endpoint is unauthenticated and each permitted request creates a real GitHub issue.
+            options.AddPolicy(RateLimitingSettings.FeedbackPolicy, httpContext =>
+            {
+                var feedback = settings.Feedback;
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: GetClientIp(httpContext),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = feedback.PermitLimit,
+                        Window = TimeSpan.FromSeconds(feedback.WindowSeconds),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = feedback.QueueLimit,
+                    });
+            });
+
             // ── api: sliding-window per IP ────────────────────────────────────────
             // Also registered as a named policy so it can be referenced explicitly, but it
             // is applied to "all other endpoints" via the global limiter below.

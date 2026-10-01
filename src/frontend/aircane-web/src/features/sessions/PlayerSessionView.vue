@@ -17,6 +17,7 @@ import ChatPanel from './ChatPanel.vue'
 import type { ChatMessage } from './ChatPanel.vue'
 import CombatTracker from './CombatTracker.vue'
 import { getEncounter, type EncounterStateDto, type CombatTurnChangedNotification } from './combat'
+import { pushEvent } from '@/features/feedback/composables/useFeedbackEventBuffer'
 
 // ---------------------------------------------------------------------------
 // Route / store
@@ -101,6 +102,8 @@ async function connectHub(): Promise<void> {
       .build()
 
     connection.on('ChatMessageReceived', (senderName: string, text: string, timestamp: string, senderId: string) => {
+      // Diagnostics: record sender name only, never the message text.
+      pushEvent({ actor: 'Player', eventType: 'ChatMessageReceived', keyField: senderName })
       chatMessages.value.push({
         id: `${senderId}-${timestamp}`,
         senderName,
@@ -111,23 +114,32 @@ async function connectHub(): Promise<void> {
     })
 
     connection.on('RollRecorded', (roll: RollDto) => {
+      pushEvent({
+        actor: 'Player',
+        eventType: 'RollRecorded',
+        keyField: roll.formula ? `${roll.formula} = ${roll.total}` : `total: ${roll.total}`,
+      })
       rollLog.value.unshift(roll)
     })
 
     connection.on('RollRequested', (request: RollRequest) => {
+      pushEvent({ actor: 'AI', eventType: 'RollRequested', keyField: request?.formula })
       pendingRollRequests.value.push(request)
     })
 
     connection.on('StateUpdated', async () => {
+      pushEvent({ actor: 'Host', eventType: 'StateUpdated' })
       await store.fetchParticipants(sessionId)
       await refreshEncounter()
     })
 
     connection.on('SceneChanged', async () => {
+      pushEvent({ actor: 'Host', eventType: 'SceneChanged' })
       await store.fetchSession(sessionId)
     })
 
-    connection.on('CombatTurnChanged', async (_n: CombatTurnChangedNotification) => {
+    connection.on('CombatTurnChanged', async (n: CombatTurnChangedNotification) => {
+      pushEvent({ actor: 'Host', eventType: 'CombatTurnChanged', keyField: `round ${n?.round ?? '?'}` })
       await refreshEncounter()
     })
 

@@ -110,4 +110,5 @@ export const TauriEvents = {
   CopyLanUrl: 'tray://copy-lan-url',
   CopyInternetUrl: 'tray://copy-internet-url',
   NavigateAiSettings: 'navigate://ai-settings',
+  FeedbackReport: 'tray://report-bug',
 } as const

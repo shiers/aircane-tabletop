@@ -6,9 +6,11 @@ import OllamaBanner from '@/shared/components/OllamaBanner.vue'
 import SetupWizard from '@/features/setup/SetupWizard.vue'
 import { useSetupWizard } from '@/features/setup/composables/useSetupWizard'
 import { isDesktop, listen, TauriEvents } from '@/shared/tauri/bridge'
+import { useFeedbackModal } from '@/features/feedback/useFeedbackModal'
 
 const router = useRouter()
 const unlisteners: Array<() => void> = []
+const { openFeedback } = useFeedbackModal()
 
 // First-launch setup wizard. Shown once per device when no AI provider is
 // configured and this isn't a Player browser (see useSetupWizard.checkShouldShow).
@@ -38,6 +40,13 @@ onMounted(async () => {
   unlisteners.push(
     await listen(TauriEvents.NavigateAiSettings, () => {
       router.push({ name: 'ai-settings' })
+    }),
+  )
+
+  // Tray "Report a bug" — open the in-app feedback modal.
+  unlisteners.push(
+    await listen(TauriEvents.FeedbackReport, () => {
+      openFeedback()
     }),
   )
 })

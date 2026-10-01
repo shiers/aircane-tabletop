@@ -3,9 +3,13 @@ import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import HealthStatus from './HealthStatus.vue'
 import AppSidebar from './AppSidebar.vue'
+import FeedbackModal from '@/features/feedback/FeedbackModal.vue'
+import { useFeedbackModal } from '@/features/feedback/useFeedbackModal'
 
 const route = useRoute()
 const sidebarCollapsed = ref(false)
+
+const { isOpen: feedbackOpen, openFeedback, closeFeedback } = useFeedbackModal()
 
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
@@ -35,6 +39,15 @@ function toggleSidebar() {
         </div>
 
         <div class="flex items-center gap-4">
+          <button
+            class="flex items-center gap-1.5 rounded-md border border-surface-700 px-2 py-1 text-sm text-gray-300 hover:bg-surface-800 hover:text-white"
+            title="Report a bug"
+            aria-label="Report a bug"
+            @click="openFeedback"
+          >
+            <span aria-hidden="true">🐛</span>
+            <span class="hidden sm:inline">Report a bug</span>
+          </button>
           <HealthStatus />
         </div>
       </header>
@@ -44,5 +57,8 @@ function toggleSidebar() {
         <slot />
       </main>
     </div>
+
+    <!-- In-app bug report modal (opened from the nav button or the Tauri tray). -->
+    <FeedbackModal v-if="feedbackOpen" @close="closeFeedback" />
   </div>
 </template>

@@ -28,6 +28,7 @@ import {
   type EncounterStateDto,
   type CombatTurnChangedNotification,
 } from './combat'
+import { pushEvent } from '@/features/feedback/composables/useFeedbackEventBuffer'
 
 // ---------------------------------------------------------------------------
 // Route / store
@@ -92,6 +93,8 @@ async function connectHub(): Promise<void> {
 
     // Server → client handlers
     connection.on('ChatMessageReceived', (senderName: string, text: string, timestamp: string, senderId: string) => {
+      // Diagnostics: record sender name only, never the message text.
+      pushEvent({ actor: 'Player', eventType: 'ChatMessageReceived', keyField: senderName })
       chatMessages.value.push({
         id: `${senderId}-${timestamp}`,
         senderName,
@@ -102,18 +105,26 @@ async function connectHub(): Promise<void> {
     })
 
     connection.on('RollRecorded', (roll: RollDto) => {
+      pushEvent({
+        actor: 'Player',
+        eventType: 'RollRecorded',
+        keyField: roll.formula ? `${roll.formula} = ${roll.total}` : `total: ${roll.total}`,
+      })
       rollLog.value.unshift(roll)
     })
 
     connection.on('ParticipantJoined', async () => {
+      pushEvent({ actor: 'Host', eventType: 'ParticipantJoined' })
       await store.fetchParticipants(sessionId)
     })
 
     connection.on('ParticipantLeft', async () => {
+      pushEvent({ actor: 'Host', eventType: 'ParticipantLeft' })
       await store.fetchParticipants(sessionId)
     })
 
     connection.on('StateUpdated', async () => {
+      pushEvent({ actor: 'Host', eventType: 'StateUpdated' })
       await store.fetchSession(sessionId)
       // Campaign state changed (which may include combat) — refresh the encounter.
       await refreshEncounter()
@@ -121,7 +132,8 @@ async function connectHub(): Promise<void> {
 
     // The turn-changed event carries only round/turn/active-id; re-fetch the full encounter so
     // HP and conditions stay current.
-    connection.on('CombatTurnChanged', async (_n: CombatTurnChangedNotification) => {
+    connection.on('CombatTurnChanged', async (n: CombatTurnChangedNotification) => {
+      pushEvent({ actor: 'Host', eventType: 'CombatTurnChanged', keyField: `round ${n?.round ?? '?'}` })
       await refreshEncounter()
     })
 

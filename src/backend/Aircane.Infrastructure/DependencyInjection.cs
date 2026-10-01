@@ -146,7 +146,26 @@ public static class DependencyInjection
 
         RegisterBackgroundJobs(services, configuration);
 
+        RegisterFeedback(services, configuration);
+
         return services;
+    }
+
+    /// <summary>
+    /// Registers the GitHub-backed feedback service, its settings, and the named HttpClient used
+    /// to call the GitHub REST API. The GitHub token is only read inside the service; it is never
+    /// logged or echoed back during registration.
+    /// </summary>
+    private static void RegisterFeedback(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var settings = new Aircane.Application.Configuration.FeedbackSettings();
+        configuration.GetSection(Aircane.Application.Configuration.FeedbackSettings.SectionName).Bind(settings);
+        services.AddSingleton(settings);
+
+        services.AddHttpClient(Feedback.GitHubFeedbackService.HttpClientName);
+        services.AddScoped<Aircane.Application.Feedback.IFeedbackService, Feedback.GitHubFeedbackService>();
     }
 
     /// <summary>

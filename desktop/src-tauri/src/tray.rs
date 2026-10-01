@@ -30,9 +30,13 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         MenuItem::with_id(app, "copy_internet_url", "Copy internet URL", true, None::<&str>)?;
     let show_qr = MenuItem::with_id(app, "show_qr", "Show QR Code", true, None::<&str>)?;
     let open = MenuItem::with_id(app, "open_main", "Open Aircane", true, None::<&str>)?;
+    let report_bug = MenuItem::with_id(app, "report_bug", "Report a bug", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&copy_url, &copy_internet, &show_qr, &open, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&copy_url, &copy_internet, &show_qr, &open, &report_bug, &quit],
+    )?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(tray_icon())
@@ -54,6 +58,11 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 });
             }
             "open_main" => focus_main(app),
+            "report_bug" => {
+                // Bring the window forward and ask the frontend to open the feedback modal.
+                focus_main(app);
+                let _ = tauri::Emitter::emit(app, "tray://report-bug", ());
+            }
             "quit" => {
                 crate::sidecar::stop_sidecar(app);
                 app.exit(0);

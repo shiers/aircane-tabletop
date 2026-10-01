@@ -19,6 +19,13 @@ public sealed class RateLimitingSettings
     public const string ApiPolicy = "api";
 
     /// <summary>
+    /// Policy name for the per-IP limiter on the anonymous feedback endpoint. Unlike
+    /// <see cref="JoinPolicy"/>/<see cref="ApiPolicy"/>, this limiter is always on (it is never a
+    /// no-op on the LAN) because the endpoint is unauthenticated and creates real GitHub issues.
+    /// </summary>
+    public const string FeedbackPolicy = "feedback";
+
+    /// <summary>
     /// Fixed-window limits for sensitive endpoints (join, participant approval, and any
     /// endpoint accepting an invite code or token). Prevents brute-forcing invite codes.
     /// </summary>
@@ -38,6 +45,18 @@ public sealed class RateLimitingSettings
         PermitLimit = 200,
         WindowSeconds = 60,
         SegmentsPerWindow = 6,
+        QueueLimit = 0,
+    };
+
+    /// <summary>
+    /// Fixed-window limits for the anonymous feedback endpoint. Applied in every mode (LAN and
+    /// internet) because the endpoint is unauthenticated and creates real GitHub issues. Defaults
+    /// to 5 submissions per IP per hour.
+    /// </summary>
+    public FixedWindowLimit Feedback { get; set; } = new()
+    {
+        PermitLimit = 5,
+        WindowSeconds = 3600,
         QueueLimit = 0,
     };
 }

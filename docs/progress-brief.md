@@ -4,19 +4,74 @@
 > full project context. Claude uses it to have productive design/planning conversations, then
 > Shawn hands implementation work to AWS Kiro. Update this file after each significant session.
 >
-> **Last updated:** 2026-09-28 (decisions logged: Tauri desktop wrapper delivered, Proprietary app license, Cloudflare internet tunnel in progress, native mobile companion app added to P3)
+> **Last updated:** 2026-10-01 (decisions logged: Tauri desktop wrapper delivered, Proprietary app license, **Cloudflare internet tunnel delivered** with its security-hardening prerequisites, native mobile companion app → Flutter in P3)
 > **MVP status:** ✅ Complete — all 9 phases shipped.
 > **Phase 10 (Built-in Rules Content Bundle):** ✅ Complete — 10.1–10.8 done & verified
 > (embedded bundles, license metadata, `LicensesController`, attribution UI, tests).
-> **Priority-1 backlog:** Desktop wrapper (**Tauri**) delivered and app license decided
-> (**Proprietary**). Internet tunnel (**Cloudflare**) is in progress in a separate stream. Only
-> the real PF2e ORC rules text remains fully maintainer-gated.
-> **Latest work:** P1 backlog completion (background jobs, combat surfacing, PF2e generation,
-> cloud embeddings, library UX + OCR follow-ups) — see "Latest Session" immediately below.
+> **Priority-1 backlog:** Desktop wrapper (**Tauri**), app license (**Proprietary**), and the
+> internet tunnel (**Cloudflare Tunnel**, with rate limiting + CSRF + persistent token revocation)
+> are all delivered. Only the real PF2e ORC rules text remains fully maintainer-gated.
+> **Latest work:** Internet Tunnel / Remote Play via Cloudflare Tunnel + security hardening —
+> see "Latest Session" immediately below.
 
 ---
 
-## Latest Session — Priority-1 Backlog Completion
+## Latest Session — Internet Tunnel / Remote Play (Cloudflare Tunnel)
+
+Delivered internet play plus the security hardening that is a hard prerequisite for exposing the
+app publicly. Committed on `feature/internet-tunnel-remote-play` and opened as PR #6 (base `dev`);
+Desktop CI is green on Windows/macOS/Linux. Verified: backend build clean, **1964 unit + 34
+integration** tests green; frontend `vue-tsc` clean + **108 session tests**; desktop `cargo check`
+clean + **3 tunnel tests**.
+
+**Phase A — security hardening (built first):**
+1. **Rate limiting.** ASP.NET Core `RateLimiter` with a per-IP **fixed-window** policy on the
+   join/approve/reconnect endpoints (brute-force defence) and a global per-IP **sliding-window**
+   policy on everything else. Both are **no-ops on the LAN** and only engage in "internet mode";
+   `429` + `Retry-After`, structured logging, tunable via a `RateLimiting` config section.
+2. **CSRF.** The SPA uses JWT **bearer tokens, not cookies**, so classic antiforgery doesn't apply.
+   Instead, state-changing requests in internet mode must have an `Origin`/`Referer` matching the
+   tunnel URL or localhost, `Content-Type: application/json`, and `X-Requested-With: XMLHttpRequest`;
+   responses carry `Vary: Origin`. Rationale documented in `docs/architecture/security.md`.
+3. **Persistent token revocation.** Replaced the in-memory-only revocation list with a two-layer
+   service: a fast in-memory session set **plus** a `RevokedTokens` table (new `jti` claim on issued
+   tokens). Validation checks the DB after the in-memory set (and the JWT bearer path now enforces
+   revocation too, closing a prior gap), so a **server restart no longer re-admits** revoked
+   participants. Ending a session bulk-inserts every active token's `jti`; a daily
+   `RevokedTokenCleanupService` purges expired rows. EF migration `AddPersistentTokenRevocation`.
+
+**Phase B — Cloudflare Tunnel integration:**
+- `cloudflared` bundled as a **second Tauri sidecar** (`externalBin`), fetched at build time with
+  **SHA256 verification against a pinned `cloudflared-versions.json` (build fails on mismatch)** —
+  binaries gitignored, pin manifest tracked. (CI caught stale darwin-tarball checksums in the
+  release notes; pins corrected to the actual asset hashes.)
+- `desktop/src-tauri/src/tunnel.rs`: `start_tunnel`/`stop_tunnel`, captures the
+  `*.trycloudflare.com` URL from cloudflared output, reports it to the backend, and tears down on
+  window close / app exit. `enable_internet_play` / `disable_internet_play` Tauri commands; tray
+  gains "Copy internet URL".
+- Backend: loopback-only `TunnelController` (`POST`/`DELETE /api/sessions/tunnel-url`) toggles a
+  process-wide `ITunnelStateService` — the single flag that drives "internet mode" for rate
+  limiting + CSRF and surfaces the URL. `GET /api/sessions/network-info` extended with
+  `tunnelUrl` + `tunnelActive`.
+- Frontend: `InternetPlayPanel.vue` (dismissible Cloudflare disclosure with a "Don't show again"
+  localStorage flag + privacy-policy link, start/stop, status, URL copy, QR), `AccessModeToggle.vue`
+  (LAN vs Internet, Internet disabled outside the desktop app), and a reusable `QRCode.vue`.
+
+**Phase C — verification:** `docs/setup/internet-play.md` (setup + manual smoke-test checklist) and
+10 new integration tests (`InternetPlayIntegrationTests`: rate-limit 429 vs LAN no-limit, CSRF
+foreign/tunnel/localhost origin, revocation in DB+memory + survives restart, cleanup job, network
+info tunnel active/inactive).
+
+**Notes / deviations:** avoided a `regex` crate in `tunnel.rs` (manual URL parser); used a runtime
+`ITunnelStateService` flag rather than a static `TunnelSettings:Enabled` config key (the tunnel is
+toggled at runtime); `TunnelController` is **loopback-only** since it flips a security switch;
+source-code license unchanged (proprietary). `AccessModeToggle.vue` is built/exported but not yet
+wired into a session-creation screen — the primary surface (`InternetPlayPanel`) lives in the host
+session view.
+
+---
+
+## Earlier Session — Priority-1 Backlog Completion
 
 Autonomous session finishing the remaining actionable P1 items. Committed in logical green groups
 and pushed to `feature/library-import-ux`. Verified: backend build clean (0 errors), full backend
@@ -410,8 +465,8 @@ User-facing guidance is in `docs/setup/ai-configuration.md` and `docs/known-limi
 - **Combat automation** — engine + command pipeline, host/player **combat tracker UI**, and live
   combat state **fed into the AI DM prompt** are all delivered. *Still open (lower priority):*
   concentration checks and out-of-turn action enforcement.
-- **LAN today; internet tunnel in progress** — no HTTPS on LAN, no persistent user accounts. Internet play via **Cloudflare Tunnel** is being built in a separate stream (with rate limiting, CSRF, and persistent token revocation as prerequisites).
-- **In-memory token revocation** — lost on server restart.
+- **LAN + internet tunnel delivered** — no HTTPS on LAN (trusted-network assumption), no persistent user accounts. Internet play via **Cloudflare Tunnel** ships in the desktop wrapper (cloudflared bundled as a checksum-verified sidecar), gated by **internet-mode hardening**: per-IP rate limiting, SPA CSRF/origin checks, and persistent token revocation. The tunnel URL is temporary (free tier, new URL each session); browser-only hosts use LAN mode. Persistent named tunnels (Cloudflare account) are an optional follow-up.
+- **Token revocation is persistent** — a `RevokedTokens` table (+ `jti` claim) backs an in-memory fast path, so revocations now survive a server restart; a daily job purges expired rows.
 - **Chat providers:** OpenAI + Ollama fully wired; Azure/Bedrock/Grok fall back to Fake.
   **Embedding providers:** Ollama + Fake (768-dim) plus **OpenAI and Azure OpenAI** (1536-dim).
   Switching to a different-dimension provider requires a manual column migration + re-embed
@@ -443,7 +498,7 @@ are removed from the active backlog and recorded under "Completed P1 Work"):
 - ✅ Open-content compliance — About/Credits panel + attribution surface
 - ✅ Desktop wrapper — **decided: Tauri v2**; delivered (backend sidecar, native webview, LAN URL/QR tray, Ollama awareness)
 - ✅ App source-code license — **decided: Proprietary** (Shawn Walter Joseph Shiers); `LICENSE` file added + README updated
-- 🚧 Internet tunnel / remote play — **decided: Cloudflare Tunnel**; implementation in progress in a separate stream (hardening: rate limiting, CSRF, persistent token revocation)
+- ✅ Internet tunnel / remote play — **decided: Cloudflare Tunnel**; delivered (cloudflared sidecar + checksum verification) with its hardening prerequisites: per-IP rate limiting, SPA CSRF/origin checks, and persistent token revocation
 - ⛔ PF2e Remaster real ORC **rules text** — *not auto-built: content/licensing (maintainer action)*
 
 **P2:**
@@ -462,8 +517,6 @@ are removed from the active backlog and recorded under "Completed P1 Work"):
 - D&D Beyond / VTT import
 - Pathbuilder 2e character import (JSON export → existing JSON character import path)
 - Multi-turn AI memory
-- Rate limiting
-- Persistent token revocation
 - Session export / replay
 
 **P4:**

@@ -15,7 +15,7 @@ the priority lists below with full detail; this section records *why* they were 
 | Item | Why not auto-built | What unblocks it |
 |------|--------------------|------------------|
 | **PF2e Remaster real ORC text** | Content/licensing decision. The obvious data sources (Foundry PF2e, Obsidian TTRPG Community) are **not** ORC-licensed — they fall under a private Paizo↔Foundry agreement and Paizo's Community Use Policy, so bundling them as ORC content would be a licensing violation. | Maintainer sources text from a genuine ORC release and drops it into the existing `pf2e_remaster` bundle (no code changes needed). |
-| **Internet Tunnel / Remote Play** | Decision made. Cloudflare Tunnel chosen as the tunnel provider. Full implementation task written and ready for Kiro. Security hardening (rate limiting, CSRF, persistent token revocation) is a hard prerequisite and is included in the task. | Nothing — implementation task is ready. See `kiro-task-internet-tunnel.md`. |
+| **Internet Tunnel / Remote Play** | **Decision made — Cloudflare Tunnel. Delivered.** Tunnel bundled as a second Tauri sidecar (checksum-verified at build time), with the security hardening prerequisites — per-IP rate limiting, SPA CSRF/origin checks, and persistent token revocation — implemented first. See "Completed P1 Work" below. | Nothing — delivered. Follow-up (persistent named tunnels via a Cloudflare account) is optional and tracked informally. |
 | **Desktop Wrapper (Tauri/Electron)** | **Decision made — Tauri.** Wrapper implemented: backend runs as a Tauri sidecar, native webview, LAN URL/QR in the tray, Ollama awareness. See "Completed P1 Work" below. | Nothing — delivered. Remaining follow-ups (code signing/notarisation, auto-update, bundled database) are tracked as separate deferred items. |
 | **Application source-code license** | Decision made. **Proprietary** license chosen for the application source code (distinct from the content licenses ORC/CC BY, which are unaffected). | Update the README and add a `LICENSE` file reflecting the proprietary terms. The in-app About panel already points at the README for this. |
 | **PF1e built-in content** | Removed for commercialization — OGL v1.0a adds a Section 15 attribution chain and a content-identification burden that adds legal complexity for a commercial product regardless of the source-code license chosen. D&D 5e SRD (CC BY 4.0) and PF2e Remaster (ORC) are commercial-friendly and retained. | Nothing to unblock — this is a deliberate removal, not deferred work. Users may still import their own PF1e PDFs via the folder-watching Library; only the bundled OGL rules text was removed. |
@@ -42,11 +42,6 @@ The `pf2e_remaster` built-in bundle currently ships a small placeholder (2 chunk
 
 The remaining work is documentation: update the README (currently "License TBD") and add a `LICENSE` file reflecting the proprietary terms. The in-app About / Credits panel (`/about`) already points users at the README for the app license. (The compliance surface itself — ORC Notice, CC BY / OGL attributions, ORC-Content-vs-Reserved-Material downstream declaration, and trademark note — is delivered in the About panel.)
 
-### Internet Tunnel / Remote Play
-> **Decision made — Cloudflare Tunnel; implementation in progress.** See the decision table at the top of this file and `kiro-task-internet-tunnel.md`.
-
-Allow players to connect over the internet without router port forwarding. **Cloudflare Tunnel** was chosen as the provider (over ngrok or a custom relay). Security hardening — HTTPS, rate limiting, CSRF protection, and persistent token revocation — is a hard prerequisite and is included in the implementation task. This item will move to "Completed P1 Work" once the tunnel task is verified complete.
-
 ---
 
 ## Completed P1 Work (delivered — kept for reference)
@@ -61,6 +56,7 @@ in the active list above.
 - **Embedding Provider Portability (dimensions + cloud providers).** Configurable embedding dimension with a startup compatibility check that disables vector search (keyword search still works) and logs a clear warning on a provider/column mismatch; `OpenAiEmbeddingProvider` (`text-embedding-3-small`, 1536) and `AzureOpenAiEmbeddingProvider` behind the existing `IEmbeddingProvider` abstraction. Provenance recording + mismatch guard + re-embed endpoints were delivered previously. Migration path documented in `docs/setup/ai-configuration.md`.
 - **Library Import UX follow-ups.** Content-based duplicate detection (`SourceDocument.ContentHash` SHA-256 + `ExactDuplicate` flag), a `GameSystemAlias` table with seeded common aliases + canonicalizer alias lookup + management API, and configurable per-folder `WatchedFolder.ExcludePatterns` (glob) driving the likely-not-rules signal. (The review-before-import flow, quick import, filename suggestions, and canonicalization were delivered previously.)
 - **OCR follow-ups.** Full-page rasterization via `IPdfRasterizer`/`DocnetPdfRasterizer` (PDFium, gated by `Ocr:FullPageRasterization`), an opt-in tessdata auto-downloader (`Ocr:AutoDownloadTessdata`), and re-OCR endpoints (`POST /api/library/documents/reocr[-all]`) with a "Re-run OCR" library UI button — all routed through the background job queue. (The Tesseract engine + embedded-image OCR were delivered previously.) See `docs/setup/ocr.md`.
+- **Internet Tunnel / Remote Play (Cloudflare Tunnel).** Remote players can join a session over the internet without router config. `cloudflared` is bundled as a **second Tauri sidecar**, fetched at build time from the official Cloudflare release and **SHA256-verified against a pinned manifest (build fails on mismatch)**. A `tunnel.rs` lifecycle module spawns the tunnel, captures the `*.trycloudflare.com` URL, reports it to the backend, and tears it down on window close/app exit; `enable_/disable_internet_play` Tauri commands drive it from the Vue UX (`InternetPlayPanel` with a dismissible Cloudflare disclosure, `AccessModeToggle`, QR + copy). `GET /api/sessions/network-info` now also returns `tunnelUrl`/`tunnelActive`, and a loopback-only `TunnelController` records the URL. **Security hardening (hard prerequisite, implemented first):** per-IP rate limiting (fixed-window on join/auth, sliding-window on all other endpoints) that engages only in internet mode; SPA-oriented CSRF/origin + `Content-Type` + `X-Requested-With` checks (bearer-token SPA, so no antiforgery cookie); and **persistent token revocation** — a `RevokedToken` table + `jti` claim so revocations survive a server restart (replaces the old in-memory-only list), bulk-revoked on session end, with a daily cleanup job. Verified: backend 1964 unit + 34 integration tests green, frontend `vue-tsc` + 108 session tests green, desktop `cargo check` + 3 tunnel tests green, and the Desktop CI build passes on Windows/macOS/Linux. The tunnel runs only in the desktop wrapper; browser-only hosts use LAN mode. Docs: `docs/setup/internet-play.md`, `docs/architecture/security.md`. **Optional follow-up:** persistent named tunnels (requires a free Cloudflare account).
 - **Desktop Wrapper (Tauri v2).** A `desktop/` Tauri v2 app that runs the ASP.NET Core backend as a managed sidecar (self-contained single-file publish), waits on `/api/health` behind a loading screen, then opens the Vue frontend in a native OS webview; a clear error screen handles startup timeout and port conflicts. Adds a system tray (Copy LAN URL, Show QR, Open, Quit), a dynamic window title with the local + LAN URLs backed by a new `GET /api/sessions/network-info` endpoint, and Ollama awareness (a dismissible banner when Ollama is the active provider but not running, plus a live status indicator in AI settings). The Vue app stays browser-agnostic behind a `window.__TAURI__` bridge. The sidecar sets `Aircane:TrustLocalHost=true` so the single local host can drive host-only surfaces (and first-run migrations) without a session token; a shared/hosted backend must not set it. Cross-platform build scripts (`desktop/build.{sh,ps1}`), a `Desktop CI` workflow (win/mac/linux, artifacts only), a single-source `VERSION` file with `scripts/bump-version.*`, and placeholder icons are included. See `docs/setup/desktop.md`. **Deferred follow-ups:** code signing/notarisation, `tauri-plugin-updater` auto-update, and a bundled/embedded database (the wrapper still needs an external PostgreSQL).
 
 ---
@@ -118,8 +114,8 @@ backend changes required.
 - Token storage: `flutter_secure_storage`.
 - No backend changes required — the companion app consumes the existing REST + SignalR API.
 
-Planned for after the main app (desktop wrapper + internet tunnel) stabilises and real
-player feedback is available.
+Planned for after the main app (desktop wrapper + internet tunnel, both now delivered)
+stabilises and real player feedback is available.
 
 ### Automatic Folder Watching
 Add a filesystem watcher that detects new or changed files in registered folders and triggers re-indexing without manual scans.
@@ -129,12 +125,6 @@ Handle multi-column layouts, tables, sidebars, and complex formatting for more a
 
 ### Multi-Turn AI Memory
 Persistent AI memory across sessions beyond what is stored in campaign state - long-term NPC relationship tracking, world knowledge graphs, and player preference learning.
-
-### Rate Limiting and Abuse Protection
-Add request throttling and abuse detection for internet-hosted sessions.
-
-### Persistent Token Revocation
-Move the in-memory token revocation list to a durable store (Redis or database) so revocations survive server restarts.
 
 ### Session Export and Replay
 Export full session logs, event history, and summaries in a portable format for archival or sharing.
@@ -157,4 +147,4 @@ Localize the UI and support non-English source documents.
 
 ---
 
-*Last updated: 2026-10-01 — Moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2 (character-import enhancements). Earlier (2026-09-29): native mobile companion app technology decided — Flutter (iOS + Android, single codebase, Riverpod, FCM, signalr_netcore).*
+*Last updated: 2026-10-01 — Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter.*

@@ -79,7 +79,8 @@ The default is **5 submissions per IP per hour**, tunable via the `RateLimiting:
 - The current route (active screen).
 - Session and campaign IDs (identifiers only, no content).
 - The last 10 session events as **type + timestamp + a short scalar summary** (e.g. a roll
-  formula and total, or a chat sender's name) — never the message text.
+  formula and total, or — for a chat message — the sender's display name only) — never the
+  message text itself.
 - The last 5 browser console errors (each stack trimmed to its first 3 lines).
 
 ## What is NOT captured
@@ -88,7 +89,9 @@ The default is **5 submissions per IP per hour**, tunable via the `RateLimiting:
 - Character data or character JSON.
 - PDF or source-document content.
 - API keys or secrets of any kind.
-- Player chat message text or player real names.
+- Chat message text. (A chat event's summary records only the sender's display name, as the
+  key field — never the message body. No real-name lookup is performed; the display name is
+  whatever a participant chose when joining.)
 
 ## Security notes
 

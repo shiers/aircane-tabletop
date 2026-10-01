@@ -515,6 +515,9 @@ public sealed class AiSettingsService : IAiSettingsService
         }
     }
 
+    /// <inheritdoc />
+    public bool SettingsFileExists() => File.Exists(_settingsFilePath);
+
     private void SetSetting(string key, string? value)
     {
         if (value is not null)

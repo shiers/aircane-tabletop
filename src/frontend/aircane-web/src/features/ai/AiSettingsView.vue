@@ -430,7 +430,7 @@ function isKeyMasked(value: string): boolean {
             placeholder="gpt-4o-mini"
           />
           <p class="text-xs text-gray-500 mt-1">
-            Enter the deployment name you created in Azure. The list shows common base models as suggestions.
+            Enter the deployment name you created in Azure (Azure deployments can't be listed automatically).
           </p>
         </div>
 

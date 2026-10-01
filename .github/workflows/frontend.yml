@@ -11,8 +11,8 @@ on:
     branches:
       - main
       - dev
-    paths:
-      - 'src/frontend/**'
+    # No paths filter on PRs: the job must always report so it can be a required status check
+    # (a filtered-out required check would stay pending forever and block the merge).
 
 jobs:
   lint-test-build:

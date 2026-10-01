@@ -12,9 +12,8 @@ on:
     branches:
       - main
       - dev
-    paths:
-      - 'src/backend/**'
-      - 'tests/backend/**'
+    # No paths filter on PRs: the job must always report so it can be a required status check
+    # (a filtered-out required check would stay pending forever and block the merge).
 
 jobs:
   build-and-test:

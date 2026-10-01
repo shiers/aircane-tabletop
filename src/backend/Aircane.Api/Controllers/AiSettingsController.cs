@@ -92,8 +92,9 @@ public class AiSettingsController : ControllerBase
     /// Lists available models for a provider.
     /// By default uses the currently configured provider; pass <paramref name="provider"/>
     /// to list models for a provider the host is considering but has not saved yet.
-    /// For OpenAI/Ollama, fetches live from the API/daemon when possible; otherwise
-    /// returns a curated list of chat-capable models.
+    /// OpenAI, Grok, and Ollama fetch live from the API/daemon and return an empty list when no
+    /// key is saved or the fetch fails (no hardcoded fallback). Azure returns empty (deployment
+    /// names are user-defined and entered as free text). Bedrock returns a curated model-id list.
     /// </summary>
     [HttpGet("models")]
     public async Task<IActionResult> ListModels([FromQuery] AiProviderType? provider, CancellationToken ct)
@@ -105,9 +106,13 @@ public class AiSettingsController : ControllerBase
         {
             case AiProviderType.OpenAi:
             {
+                // Models are fetched live from the OpenAI API. Without a saved key there is
+                // nothing to fetch, so return an empty list; the UI then prompts for a key and
+                // offers manual entry. On any fetch failure we also return empty rather than a
+                // stale hardcoded list.
                 var apiKey = _settingsService.GetRawSetting("Ai:OpenAi:ApiKey");
                 if (string.IsNullOrWhiteSpace(apiKey))
-                    return Ok(new { models = GetDefaultOpenAiModels() });
+                    return Ok(new { models = Array.Empty<string>() });
 
                 try
                 {
@@ -116,7 +121,7 @@ public class AiSettingsController : ControllerBase
                 }
                 catch
                 {
-                    return Ok(new { models = GetDefaultOpenAiModels() });
+                    return Ok(new { models = Array.Empty<string>() });
                 }
             }
 
@@ -135,12 +140,28 @@ public class AiSettingsController : ControllerBase
             }
 
             case AiProviderType.Grok:
-                return Ok(new { models = GetDefaultGrokModels() });
+            {
+                // xAI exposes an OpenAI-compatible /v1/models endpoint. Fetch live; empty on
+                // no-key or failure.
+                var apiKey = _settingsService.GetRawSetting("Ai:Grok:ApiKey");
+                if (string.IsNullOrWhiteSpace(apiKey))
+                    return Ok(new { models = Array.Empty<string>() });
+
+                try
+                {
+                    var models = await FetchGrokModelsAsync(apiKey, ct);
+                    return Ok(new { models });
+                }
+                catch
+                {
+                    return Ok(new { models = Array.Empty<string>() });
+                }
+            }
 
             case AiProviderType.AzureOpenAi:
-                // Azure serves models via user-defined deployment names, so we can't
-                // enumerate them. Offer the common base model names as suggestions.
-                return Ok(new { models = GetDefaultOpenAiModels() });
+                // Azure serves models via user-defined deployment names, so there is nothing to
+                // enumerate. Return empty — the UI uses a free-text deployment-name field.
+                return Ok(new { models = Array.Empty<string>() });
 
             case AiProviderType.AwsBedrock:
                 return Ok(new { models = GetDefaultBedrockModels() });
@@ -149,22 +170,6 @@ public class AiSettingsController : ControllerBase
                 return Ok(new { models = Array.Empty<string>() });
         }
     }
-
-    private static string[] GetDefaultOpenAiModels() =>
-    [
-        "gpt-4o",
-        "gpt-4o-mini",
-        "gpt-4-turbo",
-        "gpt-4",
-        "gpt-3.5-turbo",
-    ];
-
-    private static string[] GetDefaultGrokModels() =>
-    [
-        "grok-3-mini",
-        "grok-3",
-        "grok-2",
-    ];
 
     private static string[] GetDefaultBedrockModels() =>
     [
@@ -185,7 +190,7 @@ public class AiSettingsController : ControllerBase
 
         var response = await client.GetAsync("https://api.openai.com/v1/models", ct);
         if (!response.IsSuccessStatusCode)
-            return GetDefaultOpenAiModels();
+            return [];
 
         var json = await response.Content.ReadAsStringAsync(ct);
         using var doc = System.Text.Json.JsonDocument.Parse(json);
@@ -207,7 +212,34 @@ public class AiSettingsController : ControllerBase
         }
 
         chatModels.Sort();
-        return chatModels.Count > 0 ? chatModels.ToArray() : GetDefaultOpenAiModels();
+        return chatModels.ToArray();
+    }
+
+    private static async Task<string[]> FetchGrokModelsAsync(string apiKey, CancellationToken ct)
+    {
+        using var client = new HttpClient();
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+        // xAI's API is OpenAI-compatible: GET /v1/models returns { data: [{ id }, ...] }.
+        var response = await client.GetAsync("https://api.x.ai/v1/models", ct);
+        if (!response.IsSuccessStatusCode)
+            return [];
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("data", out var data))
+            return [];
+
+        var models = new List<string>();
+        foreach (var model in data.EnumerateArray())
+        {
+            if (model.TryGetProperty("id", out var idProp) && idProp.GetString() is { } id)
+                models.Add(id);
+        }
+
+        models.Sort();
+        return models.ToArray();
     }
 
     private static async Task<string[]> FetchOllamaModelsAsync(string baseUrl, CancellationToken ct)

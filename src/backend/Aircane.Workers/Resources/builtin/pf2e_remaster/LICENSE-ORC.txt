@@ -1,0 +1,11 @@
+ORC LICENSE (Open RPG Creative License)
+
+This work uses content from the Pathfinder Second Edition Remaster rules published by Paizo Inc. under the ORC License. The ORC License is administered by Azora Law on behalf of Paizo Inc. and the broader tabletop community.
+
+The full text of the ORC License is available at: https://paizo.com/orclicense
+
+ATTRIBUTION
+
+Reproduced material is used under the terms of the ORC License. This work credits Paizo Inc. as the source of the Licensed Material. Product Identity (including but not limited to the Golarion setting, iconic characters, and Paizo trademarks) is NOT reproduced and is expressly reserved.
+
+Licensed Material used under the ORC License remains subject to that license. Any further reuse of this content must comply with the ORC License terms and preserve this attribution.

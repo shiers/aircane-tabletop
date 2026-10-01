@@ -1,0 +1,386 @@
+import apiClient from '@/shared/api/client'
+import type { AxiosProgressEvent } from 'axios'
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+// NOTE: These numeric values MUST match the backend Aircane.Domain.Enums.SourceType
+// declaration order, because the API serializes the enum as its integer value.
+export enum SourceType {
+  Rules = 0,
+  Adventure = 1,
+  Solo = 2,
+  Character = 3,
+  Homebrew = 4,
+  Generated = 5,
+  Unknown = 6,
+}
+
+export enum ImportStatus {
+  Pending = 0,
+  Processing = 1,
+  Completed = 2,
+  Failed = 3,
+  OcrRequired = 4,
+}
+
+export enum ContentVisibility {
+  Public = 0,
+  DMOnly = 1,
+  Hidden = 2,
+  Revealed = 3,
+}
+
+// ---------------------------------------------------------------------------
+// DTOs
+// ---------------------------------------------------------------------------
+
+export interface WatchedFolderDto {
+  id: string
+  displayName: string
+  absolutePath: string
+  defaultSourceType: SourceType
+  defaultGameSystem: string | null
+  defaultRuleset: string | null
+  lastScannedAt: string | null
+  createdAt: string
+}
+
+export interface RegisterFolderRequest {
+  displayName: string
+  absolutePath: string
+  defaultSourceType: SourceType
+  defaultGameSystem?: string
+  defaultRuleset?: string
+}
+
+export interface UpdateFolderRequest {
+  displayName?: string
+  defaultSourceType?: SourceType
+  defaultGameSystem?: string
+  defaultRuleset?: string
+}
+
+export interface FolderScanResultDto {
+  folderId: string
+  scannedAt: string
+  newDocuments: number
+  updatedDocuments: number
+  unchangedDocuments: number
+  errors: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Folder scan review (preview-before-import)
+// ---------------------------------------------------------------------------
+
+/**
+ * Advisory flags on a scan candidate. Values match the backend ScanCandidateFlag enum by ordinal:
+ * 0 = DuplicateVariant, 1 = AlreadyImported, 2 = LikelyNotRules.
+ */
+export enum ScanCandidateFlag {
+  DuplicateVariant = 0,
+  AlreadyImported = 1,
+  LikelyNotRules = 2,
+}
+
+/** A single analyzed file discovered during a folder scan preview. */
+export interface ScanCandidateDto {
+  sourcePath: string
+  fileName: string
+  suggestedTitle: string
+  suggestedRuleset: string | null
+  sizeBytes: number | null
+  dedupKey: string
+  flags: ScanCandidateFlag[]
+  reason: string | null
+  alreadyImported: boolean
+}
+
+/** Result of analyzing a folder without importing anything. */
+export interface FolderScanPreviewDto {
+  folderId: string
+  filesFound: number
+  candidates: ScanCandidateDto[]
+  analyzedAt: string
+}
+
+/** A single file's import decision, with optional classification overrides. */
+export interface FolderImportSelectionItem {
+  sourcePath: string
+  import: boolean
+  title?: string
+  sourceType?: SourceType
+  gameSystem?: string
+  ruleset?: string
+}
+
+/** Backend result summary for a folder scan / selection import. */
+export interface FolderScanResultSummaryDto {
+  folderId: string
+  filesFound: number
+  newFiles: number
+  updatedFiles: number
+  skippedFiles: number
+  scannedAt: string
+}
+
+export interface SourceDocumentDto {
+  id: string
+  title: string
+  originalFileName: string
+  sourceType: SourceType
+  gameSystem: string | null
+  ruleset: string | null
+  visibility: ContentVisibility
+  importStatus: ImportStatus
+  isSourceAvailable: boolean
+  watchedFolderId: string | null
+  createdAt: string
+  updatedAt: string
+  /** Ruleset tags applied to this document. */
+  tags?: string[]
+  /** True for built-in rules content shipped with the app (cannot be deleted, only disabled). */
+  isBuiltIn: boolean
+  /** True when the host has disabled this document (excluded from retrieval, retained). */
+  isDisabled: boolean
+  /** Machine-readable open-content license key (e.g. "cc-by-4.0"). Null for user documents. */
+  licenseKey: string | null
+  /** Human-readable license name. Null for user documents. */
+  licenseDisplayName: string | null
+}
+
+export interface ImportStatusDto {
+  documentId: string
+  status: ImportStatus
+  progressPercent: number
+  errorMessage: string | null
+  updatedAt: string
+}
+
+export interface ListDocumentsParams {
+  sourceType?: SourceType
+  gameSystem?: string
+  ruleset?: string
+  importStatus?: ImportStatus
+  page?: number
+  pageSize?: number
+}
+
+export interface UploadDocumentRequest {
+  file: File
+  title: string
+  sourceType: SourceType
+  gameSystem?: string
+  ruleset?: string
+  visibility?: ContentVisibility
+}
+
+export interface UpdateClassificationRequest {
+  sourceType?: SourceType
+  gameSystem?: string
+  ruleset?: string
+  visibility?: ContentVisibility
+}
+
+// ---------------------------------------------------------------------------
+// API functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Upload a new document to the library.
+ * Reports upload progress via the optional onUploadProgress callback.
+ */
+export async function uploadDocument(
+  request: UploadDocumentRequest,
+  onUploadProgress?: (progressPercent: number) => void,
+): Promise<SourceDocumentDto> {
+  const form = new FormData()
+  form.append('file', request.file)
+  form.append('title', request.title)
+  form.append('sourceType', String(request.sourceType))
+  if (request.gameSystem) form.append('gameSystem', request.gameSystem)
+  if (request.ruleset) form.append('ruleset', request.ruleset)
+  if (request.visibility !== undefined) form.append('visibility', String(request.visibility))
+
+  const response = await apiClient.post<SourceDocumentDto>('/api/library/documents', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event: AxiosProgressEvent) => {
+      if (onUploadProgress && event.total) {
+        onUploadProgress(Math.round((event.loaded * 100) / event.total))
+      }
+    },
+  })
+  return response.data
+}
+
+/** List documents with optional filters. */
+export async function listDocuments(params?: ListDocumentsParams): Promise<SourceDocumentDto[]> {
+  const response = await apiClient.get<SourceDocumentDto[]>('/api/library/documents', { params })
+  return response.data
+}
+
+/** Get a single document by ID. */
+export async function getDocument(id: string): Promise<SourceDocumentDto> {
+  const response = await apiClient.get<SourceDocumentDto>(`/api/library/documents/${id}`)
+  return response.data
+}
+
+/** Delete a document by ID. Built-in documents cannot be deleted (server returns 409). */
+export async function deleteDocument(id: string): Promise<void> {
+  await apiClient.delete(`/api/library/documents/${id}`)
+}
+
+/** Enable or disable a document. Disabled documents are excluded from retrieval but retained. */
+export async function setDocumentDisabled(
+  id: string,
+  disabled: boolean,
+): Promise<SourceDocumentDto> {
+  const response = await apiClient.patch<SourceDocumentDto>(
+    `/api/library/documents/${id}/disabled`,
+    { disabled },
+  )
+  return response.data
+}
+
+export interface RestoreDefaultsResult {
+  restoredCount: number
+}
+
+/** Re-enable all disabled built-in documents ("restore defaults"). */
+export async function restoreBuiltInDefaults(): Promise<RestoreDefaultsResult> {
+  const response = await apiClient.post<RestoreDefaultsResult>(
+    '/api/library/documents/restore-defaults',
+  )
+  return response.data
+}
+
+/** Get the import status for a document. */
+export async function getImportStatus(id: string): Promise<ImportStatusDto> {
+  const response = await apiClient.get<ImportStatusDto>(`/api/library/documents/${id}/status`)
+  return response.data
+}
+
+/** Re-run the import job for a document. */
+export async function reindexDocument(id: string): Promise<void> {
+  await apiClient.post(`/api/library/documents/${id}/reindex`)
+}
+
+/** Response returned when a long-running library operation is enqueued as a background job. */
+export interface JobAcceptedResponse {
+  jobId: string
+  jobType: string
+}
+
+/** Re-run OCR/import on a single OCR-required document. Returns the enqueued job. */
+export async function reOcrDocument(id: string): Promise<JobAcceptedResponse> {
+  const response = await apiClient.post<JobAcceptedResponse>(`/api/library/documents/${id}/reocr`)
+  return response.data
+}
+
+/** Re-run OCR/import on every OCR-required document. Returns the enqueued job. */
+export async function reOcrAll(): Promise<JobAcceptedResponse> {
+  const response = await apiClient.post<JobAcceptedResponse>(`/api/library/documents/reocr-all`)
+  return response.data
+}
+
+/** Update the classification metadata for a document. */
+export async function updateClassification(
+  id: string,
+  request: UpdateClassificationRequest,
+): Promise<SourceDocumentDto> {
+  const response = await apiClient.patch<SourceDocumentDto>(
+    `/api/library/documents/${id}/classification`,
+    request,
+  )
+  return response.data
+}
+
+// ---------------------------------------------------------------------------
+// Folder API functions
+// ---------------------------------------------------------------------------
+
+/** List all registered watched folders. */
+export async function getFolders(): Promise<WatchedFolderDto[]> {
+  const response = await apiClient.get<WatchedFolderDto[]>('/api/library/folders')
+  return response.data
+}
+
+/** Register a new watched folder. */
+export async function registerFolder(request: RegisterFolderRequest): Promise<WatchedFolderDto> {
+  const response = await apiClient.post<WatchedFolderDto>('/api/library/folders', request)
+  return response.data
+}
+
+/** Update settings for a watched folder. */
+export async function updateFolder(
+  id: string,
+  request: UpdateFolderRequest,
+): Promise<WatchedFolderDto> {
+  const response = await apiClient.put<WatchedFolderDto>(`/api/library/folders/${id}`, request)
+  return response.data
+}
+
+/** Unregister a watched folder (does not delete source files). */
+export async function deleteFolder(id: string): Promise<void> {
+  await apiClient.delete(`/api/library/folders/${id}`)
+}
+
+/** Trigger a manual rescan of a watched folder. */
+export async function scanFolder(id: string): Promise<FolderScanResultDto> {
+  const response = await apiClient.post<FolderScanResultDto>(
+    `/api/library/folders/${id}/scan`,
+    undefined,
+    { timeout: 0 }, // No timeout — scans can take minutes for large folders
+  )
+  return response.data
+}
+
+/**
+ * Analyze a watched folder and return a review preview of discovered files (no writes).
+ * The host reviews the candidates and then confirms a selection via importFolderSelection.
+ */
+export async function previewFolderScan(id: string): Promise<FolderScanPreviewDto> {
+  const response = await apiClient.get<FolderScanPreviewDto>(
+    `/api/library/folders/${id}/scan/preview`,
+    { timeout: 0 }, // Enumeration + analysis can take a moment for large folders
+  )
+  return response.data
+}
+
+/** Import the host-selected files from a folder-scan preview, with per-file overrides. */
+export async function importFolderSelection(
+  id: string,
+  items: FolderImportSelectionItem[],
+): Promise<FolderScanResultSummaryDto> {
+  const response = await apiClient.post<FolderScanResultSummaryDto>(
+    `/api/library/folders/${id}/scan/import`,
+    { items },
+    { timeout: 0 }, // Imports can take minutes for large selections
+  )
+  return response.data
+}
+
+// ---------------------------------------------------------------------------
+// Folder Browse API
+// ---------------------------------------------------------------------------
+
+export interface BrowseDirectoryEntry {
+  name: string
+  fullPath: string
+}
+
+export interface BrowseFoldersResponse {
+  currentPath: string | null
+  parentPath: string | null
+  directories: BrowseDirectoryEntry[]
+}
+
+/** Browse server filesystem directories. Pass null/undefined to get root drives. */
+export async function browseFolders(path?: string): Promise<BrowseFoldersResponse> {
+  const response = await apiClient.get<BrowseFoldersResponse>('/api/library/folders/browse', {
+    params: path ? { path } : undefined,
+  })
+  return response.data
+}

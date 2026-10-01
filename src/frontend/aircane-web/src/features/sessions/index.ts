@@ -1,0 +1,12 @@
+// Sessions feature - session hosting, joining, and real-time play
+export { default } from './JoinSessionView.vue'
+export { default as LanJoinScreen } from './LanJoinScreen.vue'
+export { default as ParticipantApprovalPanel } from './ParticipantApprovalPanel.vue'
+export { default as ChatPanel } from './ChatPanel.vue'
+export { default as HostSessionView } from './HostSessionView.vue'
+export { default as PlayerSessionView } from './PlayerSessionView.vue'
+export { default as InternetPlayPanel } from './components/InternetPlayPanel.vue'
+export { default as AccessModeToggle } from './components/AccessModeToggle.vue'
+export { default as QRCode } from './components/QRCode.vue'
+export { useSessionStore } from './store'
+export * from './api'

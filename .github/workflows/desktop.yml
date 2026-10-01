@@ -1,0 +1,118 @@
+name: Desktop CI
+
+# Builds the Tauri desktop wrapper on all three platforms and uploads the
+# installers as artifacts. Release tagging/publishing is a deliberate manual
+# step — this workflow never creates a GitHub Release.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'desktop/**'
+      - 'src/backend/**'
+      - 'src/frontend/**'
+      - 'VERSION'
+      - '.github/workflows/desktop.yml'
+  # Validate the desktop build on PRs that touch the wrapper, backend, or
+  # frontend, so the 3-platform Rust/Tauri build is checked before merge (the
+  # only place it runs pre-merge, since Rust isn't compiled in local dev).
+  # Path-scoped to avoid running these heavy builds on unrelated PRs.
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'src/backend/**'
+      - 'src/frontend/**'
+      - 'VERSION'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            build: pwsh ./build.ps1
+          - os: macos-latest
+            build: bash ./build.sh
+          - os: ubuntu-latest
+            build: bash ./build.sh
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Linux needs the WebKitGTK webview + GTK dev headers, plus the packaging
+      # tools Tauri uses for AppImage/deb.
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # The Tauri CLI is a devDependency of desktop/package.json; install it so
+      # the build scripts' `npx tauri build` fallback works even without a global
+      # cargo-tauri.
+      - name: Install Tauri CLI (npm)
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build desktop app
+        working-directory: desktop
+        run: ${{ matrix.build }}
+
+      # ── Upload installers (artifacts only — no auto-publish) ──────────────────
+      - name: Upload Windows installers
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aircane-desktop-windows
+          path: |
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: warn
+
+      - name: Upload macOS installer
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aircane-desktop-macos
+          path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: warn
+
+      - name: Upload Linux installers
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aircane-desktop-linux
+          path: |
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: warn

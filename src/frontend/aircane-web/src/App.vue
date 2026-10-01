@@ -1,0 +1,67 @@
+<script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import AppLayout from '@/shared/components/AppLayout.vue'
+import OllamaBanner from '@/shared/components/OllamaBanner.vue'
+import SetupWizard from '@/features/setup/SetupWizard.vue'
+import { useSetupWizard } from '@/features/setup/composables/useSetupWizard'
+import { isDesktop, listen, TauriEvents } from '@/shared/tauri/bridge'
+import { useFeedbackModal } from '@/features/feedback/useFeedbackModal'
+
+const router = useRouter()
+const unlisteners: Array<() => void> = []
+const { openFeedback } = useFeedbackModal()
+
+// First-launch setup wizard. Shown once per device when no AI provider is
+// configured and this isn't a Player browser (see useSetupWizard.checkShouldShow).
+const wizardVisible = ref(false)
+const { checkShouldShow } = useSetupWizard()
+
+onMounted(async () => {
+  // Decide whether to show the setup wizard. Fails safe to "don't show".
+  wizardVisible.value = await checkShouldShow()
+
+  if (!isDesktop()) return
+
+  // Tray "Copy LAN URL" — the Rust side can't touch the clipboard, so it emits
+  // the URL and we perform the copy here (the webview has clipboard access).
+  unlisteners.push(
+    await listen<string>(TauriEvents.CopyLanUrl, async (url) => {
+      if (!url) return
+      try {
+        await navigator.clipboard.writeText(url)
+      } catch {
+        // Clipboard unavailable — ignore.
+      }
+    }),
+  )
+
+  // Deep-link from the wrapper (error page / Ollama banner) to AI settings.
+  unlisteners.push(
+    await listen(TauriEvents.NavigateAiSettings, () => {
+      router.push({ name: 'ai-settings' })
+    }),
+  )
+
+  // Tray "Report a bug" — open the in-app feedback modal.
+  unlisteners.push(
+    await listen(TauriEvents.FeedbackReport, () => {
+      openFeedback()
+    }),
+  )
+})
+
+onUnmounted(() => {
+  unlisteners.forEach((fn) => fn())
+})
+</script>
+
+<template>
+  <AppLayout>
+    <OllamaBanner />
+    <RouterView />
+  </AppLayout>
+
+  <!-- First-launch setup wizard overlays everything (fixed, full-screen). -->
+  <SetupWizard v-if="wizardVisible" @complete="wizardVisible = false" />
+</template>

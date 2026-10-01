@@ -1,0 +1,16 @@
+{
+  "id": "pf2e-remaster-core",
+  "displayName": "Pathfinder 2e Remaster Core Rules",
+  "version": "2024",
+  "gameSystem": "Pathfinder 2e",
+  "ruleset": "Remaster",
+  "sourceType": "Rules",
+  "licenseKey": "orc",
+  "licenseDisplayName": "Open RPG Creative (ORC) License",
+  "attributionText": "This work uses material that is licensed under the Open RPG Creative (ORC) License and includes content from the Pathfinder Player Core and Pathfinder GM Core, \u00a9 2023 Paizo Inc. Paizo and Pathfinder are trademarks of Paizo Inc. See LICENSE-ORC.txt for full license terms. ORC attribution and licensor notices available at paizo.com/orclicense.",
+  "attributionUrl": "https://paizo.com/pathfinderRPG/prd/",
+  "files": [
+    { "file": "action-economy.md", "chunkType": "rules",     "section": "Action Economy" },
+    { "file": "conditions.md",     "chunkType": "condition", "section": "Conditions" }
+  ]
+}

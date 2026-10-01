@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aircane — LAN Join QR</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #111827;
+        color: #e5e7eb;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      .wrap {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        padding: 1.25rem;
+        box-sizing: border-box;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #cbd5e1;
+      }
+      canvas {
+        border-radius: 12px;
+        background: #111827;
+      }
+      .url {
+        font-size: 0.85rem;
+        color: #38bdf8;
+        word-break: break-all;
+        text-align: center;
+      }
+      .err {
+        color: #fca5a5;
+        font-size: 0.85rem;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Scan to join on this network</h1>
+      <canvas id="qr" width="240" height="240"></canvas>
+      <div class="url" id="url"></div>
+      <div class="err" id="err"></div>
+    </div>
+
+    <!-- Vendored at build time from the frontend's qrcode dependency (offline-safe). -->
+    <script src="qrcode.min.js"></script>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var url = params.get("url") || "";
+        document.getElementById("url").textContent = url;
+
+        var canvas = document.getElementById("qr");
+        var err = document.getElementById("err");
+
+        if (!window.QRCode || typeof window.QRCode.toCanvas !== "function") {
+          err.textContent = "QR library not available.";
+          return;
+        }
+        window.QRCode.toCanvas(
+          canvas,
+          url,
+          { width: 240, margin: 2, color: { dark: "#ffffff", light: "#111827" } },
+          function (error) {
+            if (error) err.textContent = "Could not generate QR code.";
+          },
+        );
+      })();
+    </script>
+  </body>
+</html>

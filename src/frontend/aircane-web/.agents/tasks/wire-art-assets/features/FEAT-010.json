@@ -1,0 +1,24 @@
+{
+  "id": "FEAT-010",
+  "type": "feat",
+  "description": "About & Credits view art (Phase 10) in src/features/about/AboutView.vue: page bg, hero, license cards, dark attribution panels, attribution badges, legal scroll dividers. Independent of other view FEATs; depends on FEAT-001 tokens.",
+  "status": "completed",
+  "steps": [
+    "In AboutView.vue apply /assets/about/about-credits-background.png as the page background and /assets/about/about-hero-banner.png as the hero banner with the 'About & Credits' heading overlaid (the image has no baked-in text).",
+    "Apply /assets/about/dnd-srd-license-card.png and pf2e-orc-license-card.png as backgrounds of the two license cards (D&D SRD CC BY 4.0, PF2e Remaster ORC) with attribution text over the right 75%.",
+    "Apply /assets/about/open-content-attributions-panel.png, content-licensing-declaration-panel.png, and application-license-panel.png as backgrounds of the three dark attribution/declaration/license sections with headings + body over the right 75% (keep the live listLicenses() data flow intact).",
+    "Apply /assets/about/attribution-badge.png as the background-image of each attribution badge with text overlaid.",
+    "Place /assets/about/legal-scroll-ornament.png as a decorative <img> divider between the major sections."
+  ],
+  "acceptance_criteria": [
+    "About page bg, hero (heading overlaid), two license cards, three dark panels, attribution badges, and legal-scroll dividers are wired via absolute /assets/about/... paths.",
+    "Existing license-loading behavior is preserved.",
+    "`npm run build` succeeds and `npm test` passes."
+  ],
+  "verification": [
+    "cd src/frontend/aircane-web && npm run build",
+    "cd src/frontend/aircane-web && npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "Wired all Phase 10 About art into src/features/about/AboutView.vue using absolute /assets/about/... paths: about-credits-background.png as the page bg (bg-cover bg-center), about-hero-banner.png as the hero with the 'About & Credits' heading overlaid (image has no baked-in text; white heading + text-shadow). Added two static license cards backed by dnd-srd-license-card.png (CC BY 4.0) and pf2e-orc-license-card.png (ORC) with text over the right 75%. The three content sections now use the dark panels open-content-attributions-panel.png, content-licensing-declaration-panel.png, and application-license-panel.png (cover + bg-left, headings/body over right 75%). Each live attribution license badge is backed by attribution-badge.png with the license label overlaid; the existing badgeClasses coloring is kept. legal-scroll-ornament.png is used as a decorative <img> divider (alt=\"\", aria-hidden, w-full max-w-[600px]) between the major sections. The live listLicenses() onMounted data flow, loading/error/empty states, and attribution/source/license links are unchanged; the Trademarks section is left as plain text. No CSS borders added over bordered art. Verified from the frontend dir: `npm run build` succeeded (0 type errors) and `npm test` passed (39 files / 296 tests). No new component tests were required (no new components; AboutView had no prior test)."
+}

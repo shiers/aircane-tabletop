@@ -6,6 +6,8 @@
 import { ref, computed } from 'vue'
 import { useSessionStore } from './store'
 import type { JoinSessionResult } from './api'
+import DisplayNameField from './components/DisplayNameField.vue'
+import InviteCodeField from './components/InviteCodeField.vue'
 
 // ---------------------------------------------------------------------------
 // Props & emits
@@ -74,7 +76,7 @@ async function handleSubmit(): Promise<void> {
 <template>
   <section
     aria-labelledby="join-form-heading"
-    class="rounded-xl border border-gray-800 bg-gray-900 p-6"
+    class="join-panel rounded-xl p-6"
   >
     <h2 id="join-form-heading" class="mb-1 text-lg font-semibold text-white">
       Join Session
@@ -117,26 +119,11 @@ async function handleSubmit(): Promise<void> {
         >
           Display Name <span class="text-red-400" aria-hidden="true">*</span>
         </label>
-        <input
+        <DisplayNameField
           id="join-display-name"
           v-model="displayName"
-          type="text"
-          autocomplete="nickname"
-          maxlength="50"
-          placeholder="e.g. Thorin Oakenshield"
-          class="w-full rounded-md border bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-          :class="fieldErrors.displayName ? 'border-red-600' : 'border-gray-700'"
-          :aria-describedby="fieldErrors.displayName ? 'join-display-name-error' : undefined"
-          :aria-invalid="!!fieldErrors.displayName"
+          :error="fieldErrors.displayName"
         />
-        <p
-          v-if="fieldErrors.displayName"
-          id="join-display-name-error"
-          role="alert"
-          class="mt-1 text-xs text-red-400"
-        >
-          {{ fieldErrors.displayName }}
-        </p>
       </div>
 
       <!-- Invite code -->
@@ -147,39 +134,35 @@ async function handleSubmit(): Promise<void> {
         >
           Invite Code <span class="text-red-400" aria-hidden="true">*</span>
         </label>
-        <input
+        <InviteCodeField
           id="join-invite-code"
           v-model="inviteCode"
-          type="text"
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="characters"
-          spellcheck="false"
-          placeholder="e.g. ABC123"
-          class="w-full rounded-md border bg-gray-800 px-3 py-2 text-center font-mono text-lg tracking-widest text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-          :class="fieldErrors.inviteCode ? 'border-red-600' : 'border-gray-700'"
-          :aria-describedby="fieldErrors.inviteCode ? 'join-invite-code-error' : undefined"
-          :aria-invalid="!!fieldErrors.inviteCode"
+          :error="fieldErrors.inviteCode"
         />
-        <p
-          v-if="fieldErrors.inviteCode"
-          id="join-invite-code-error"
-          role="alert"
-          class="mt-1 text-xs text-red-400"
-        >
-          {{ fieldErrors.inviteCode }}
-        </p>
       </div>
 
       <!-- Submit -->
       <button
         type="submit"
-        class="w-full rounded-lg bg-aircane-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+        class="join-submit w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50 transition-opacity"
         :disabled="store.loading || !isValid"
       >
         <span v-if="store.loading">Joining…</span>
-        <span v-else>Join Session</span>
+        <span v-else>Join Session →</span>
       </button>
     </form>
   </section>
 </template>
+
+<style scoped>
+.join-panel {
+  background-image: url('/assets/join-session/join-session-panel-art.png');
+  background-size: cover;
+  background-position: left center;
+}
+
+.join-submit {
+  background-image: url('/assets/join-session/join-session-button-art.png');
+  background-size: 100% 100%;
+}
+</style>

@@ -59,9 +59,15 @@ onUnmounted(() => {
 
 <template>
   <div class="mx-auto max-w-5xl space-y-6">
+    <!-- Full-width hero banner -->
+    <div class="library-hero" role="img" aria-label="Document Library">
+      <h1 class="library-hero-title">Document Library</h1>
+    </div>
+
     <!-- Page header -->
     <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-white">Document Library</h1>
+      <h2 class="sr-only">Library actions</h2>
+      <div class="flex-1" />
       <div class="flex items-center gap-3">
         <button
           v-if="hasDisabledBuiltIns"
@@ -73,7 +79,7 @@ onUnmounted(() => {
           <span v-else>Restore defaults</span>
         </button>
         <button
-          class="text-sm font-medium text-aircane-400 hover:text-aircane-300 hover:underline"
+          class="open-content-licenses-btn"
           @click="licensesModalOpen = true"
         >
           Open Content Licenses
@@ -211,3 +217,48 @@ onUnmounted(() => {
     <LicenseAttributionModal :open="licensesModalOpen" @close="licensesModalOpen = false" />
   </div>
 </template>
+
+<style scoped>
+.library-hero {
+  position: relative;
+  width: 100%;
+  min-height: 180px;
+  display: flex;
+  align-items: flex-end;
+  padding: 24px 28px;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  background-image: url('/assets/library/document-library-hero-background.png');
+  background-size: cover;
+  background-position: center;
+}
+
+.library-hero-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+
+/* Open Content Licenses button art (background-size: 100% 100% per button-art rule). */
+.open-content-licenses-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 18px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #fff;
+  border: none;
+  background-color: transparent;
+  background-image: url('/assets/library/open-content-licenses-button-art.png');
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.open-content-licenses-btn:focus {
+  outline: none;
+  box-shadow: var(--glow-purple);
+}
+</style>

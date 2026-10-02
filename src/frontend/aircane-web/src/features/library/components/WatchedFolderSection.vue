@@ -133,8 +133,14 @@ async function handleDelete(folder: WatchedFolderDto): Promise<void> {
 
 <template>
   <section aria-labelledby="folders-heading">
-    <div class="mb-4 flex items-center justify-between">
-      <h2 id="folders-heading" class="text-lg font-semibold text-white">Watched Folders</h2>
+    <!-- Banner header: heading + description over the right 70% of the banner art. -->
+    <div class="watched-folders-banner mb-4">
+      <div class="watched-folders-banner-text">
+        <h2 id="folders-heading" class="text-lg font-semibold text-white">Watched Folders</h2>
+        <p class="mt-1 text-sm text-gray-300">
+          Register folders to scan for rules, adventures, and homebrew content automatically.
+        </p>
+      </div>
     </div>
 
     <!-- Folders error -->
@@ -373,3 +379,26 @@ async function handleDelete(folder: WatchedFolderDto): Promise<void> {
     />
   </section>
 </template>
+
+<style scoped>
+.watched-folders-banner {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 96px;
+  padding: 16px 24px;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  background-image: url('/assets/library/watched-folders-banner.png');
+  background-size: cover;
+  background-position: left center;
+}
+
+/* Heading + description sit over the right 70% of the banner. */
+.watched-folders-banner-text {
+  width: 70%;
+  text-align: left;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+</style>

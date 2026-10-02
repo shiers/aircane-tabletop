@@ -75,25 +75,14 @@ async function handleSubmit(): Promise<void> {
 
 <template>
   <div>
-    <!-- Toggle button when form is hidden -->
+    <!-- Toggle button when form is hidden (add-watched-folder button art) -->
     <button
       v-if="!showForm"
       type="button"
-      class="inline-flex items-center gap-2 rounded-lg border border-dashed border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-300 hover:border-aircane-500 hover:text-aircane-400 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+      class="btn-art btn-art-add inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium text-white focus:outline-none"
       @click="showForm = true"
     >
-      <svg
-        class="h-4 w-4"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        <path
-          d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"
-        />
-      </svg>
-      Register Folder
+      Add Watched Folder
     </button>
 
     <!-- Registration form -->
@@ -216,7 +205,7 @@ async function handleSubmit(): Promise<void> {
           <button
             type="submit"
             :disabled="submitting"
-            class="inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+            class="btn-art btn-art-register inline-flex items-center justify-center gap-2 px-5 py-2 text-sm font-semibold text-white focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg
               v-if="submitting"
@@ -255,3 +244,27 @@ async function handleSubmit(): Promise<void> {
     </section>
   </div>
 </template>
+
+<style scoped>
+/* Button art backgrounds. Per the button-art rule: background-size: 100% 100% so
+   the image scales to the button; no extra border (it is baked into the art). */
+.btn-art {
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  border: none;
+  border-radius: var(--border-radius-sm);
+}
+
+.btn-art-add {
+  background-image: url('/assets/library/add-watched-folder-button-art.png');
+}
+
+.btn-art-register {
+  background-image: url('/assets/library/register-folder-button-art.png');
+}
+
+.btn-art:focus {
+  box-shadow: var(--glow-purple);
+}
+</style>

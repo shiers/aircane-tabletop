@@ -7,6 +7,7 @@ import CharacterForm from './components/CharacterForm.vue'
 import CharacterList from './components/CharacterList.vue'
 import ImportCharacterModal from './components/ImportCharacterModal.vue'
 import apiClient from '@/shared/api/client'
+import { computed } from 'vue'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -43,6 +44,27 @@ onMounted(() => {
   if (props.campaignId) {
     store.fetchCharacters(props.campaignId)
   }
+})
+
+/**
+ * The four summary stat tiles shown in the detail side-panel while editing an
+ * existing character, read from the character's canonical JSON.
+ */
+const detailStatTiles = computed(() => {
+  const c = editingCharacter.value
+  if (!c) return []
+  let combat: Record<string, number> = {}
+  try {
+    combat = JSON.parse(c.canonicalJson)?.combat ?? {}
+  } catch {
+    combat = {}
+  }
+  return [
+    { key: 'hit-points', label: 'Hit Points', value: combat.maxHitPoints ?? '—' },
+    { key: 'armor-class', label: 'Armor Class', value: combat.armorClass ?? '—' },
+    { key: 'speed', label: 'Speed', value: combat.speed ?? '—' },
+    { key: 'proficiency', label: 'Proficiency', value: combat.proficiencyBonus ?? '—' },
+  ]
 })
 
 function openCreateForm(): void {
@@ -164,9 +186,17 @@ async function handlePdfFileChange(event: Event): Promise<void> {
 
 <template>
   <div class="mx-auto max-w-5xl space-y-6">
+    <!-- Hero banner -->
+    <section class="hero">
+      <div class="hero-heading">
+        <h1 class="text-2xl font-bold text-white sm:text-3xl">Characters</h1>
+        <p class="mt-1 text-sm text-gray-200">Build, import, and manage your party.</p>
+      </div>
+    </section>
+
     <!-- Page header -->
     <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-white">Characters</h1>
+      <h2 class="text-xl font-semibold text-white">Your Characters</h2>
 
       <div v-if="!showForm" class="flex items-center gap-2">
         <!-- Hidden PDF file input -->
@@ -179,10 +209,10 @@ async function handlePdfFileChange(event: Event): Promise<void> {
           @change="handlePdfFileChange"
         />
 
-        <!-- Import PDF button -->
+        <!-- Import PDF button (art background, no extra border) -->
         <button
           :disabled="pdfImporting"
-          class="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-surface-850 px-4 py-2 text-sm font-semibold text-gray-300 shadow hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+          class="import-button import-button--pdf inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
           @click="triggerPdfImport"
         >
           <svg
@@ -205,9 +235,9 @@ async function handlePdfFileChange(event: Event): Promise<void> {
           {{ pdfImporting ? 'Importing…' : 'Import PDF' }}
         </button>
 
-        <!-- Import JSON button -->
+        <!-- Import JSON button (art background, no extra border) -->
         <button
-          class="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-surface-850 px-4 py-2 text-sm font-semibold text-gray-300 shadow hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          class="import-button import-button--json inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400"
           @click="openImportModal"
         >
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -280,18 +310,39 @@ async function handlePdfFileChange(event: Event): Promise<void> {
     <section
       v-if="showForm"
       aria-labelledby="character-form-heading"
-      class="rounded-xl border border-surface-700/50 bg-surface-850 p-6"
+      class="grid gap-6 lg:grid-cols-[1fr_320px]"
     >
-      <h2 id="character-form-heading" class="mb-6 text-lg font-semibold text-white">
-        {{ editingCharacter ? 'Edit Character' : 'New Character' }}
-      </h2>
+      <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-6">
+        <h2 id="character-form-heading" class="mb-6 text-lg font-semibold text-white">
+          {{ editingCharacter ? 'Edit Character' : 'New Character' }}
+        </h2>
 
-      <CharacterForm
-        :character="editingCharacter ?? undefined"
-        :campaign-id="campaignId"
-        @submit="handleFormSubmit"
-        @cancel="closeForm"
-      />
+        <CharacterForm
+          :character="editingCharacter ?? undefined"
+          :campaign-id="campaignId"
+          @submit="handleFormSubmit"
+          @cancel="closeForm"
+        />
+      </div>
+
+      <!-- Detail side-panel: summary stat tiles in the upper 60% (edit mode) -->
+      <aside v-if="editingCharacter" class="detail-panel" aria-label="Character stats">
+        <div class="detail-panel-body">
+          <div class="stat-tiles">
+            <div
+              v-for="tile in detailStatTiles"
+              :key="tile.key"
+              class="stat-tile"
+              :style="{
+                backgroundImage: `url('/assets/characters/character-stat-tile-${tile.key}.png')`,
+              }"
+            >
+              <span class="stat-value">{{ tile.value }}</span>
+              <span class="stat-label">{{ tile.label }}</span>
+            </div>
+          </div>
+        </div>
+      </aside>
     </section>
 
     <!-- Character list -->
@@ -307,3 +358,102 @@ async function handlePdfFileChange(event: Event): Promise<void> {
     />
   </div>
 </template>
+
+<style scoped>
+/* Hero banner */
+.hero {
+  position: relative;
+  width: 100%;
+  min-height: 180px;
+  overflow: hidden;
+  border-radius: var(--border-radius-md);
+  background-image: url('/assets/characters/characters-hero-background.png');
+  background-size: cover;
+  background-position: center;
+}
+
+.hero-heading {
+  position: absolute;
+  top: 50%;
+  left: 5%;
+  right: 5%;
+  transform: translateY(-50%);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Import button art (background-size: 100% 100%, no extra border) */
+.import-button {
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  transition: box-shadow 0.2s ease;
+}
+
+.import-button:hover {
+  box-shadow: var(--glow-purple);
+}
+
+.import-button--pdf {
+  background-image: url('/assets/characters/import-pdf-button-art.png');
+}
+
+.import-button--json {
+  background-image: url('/assets/characters/import-json-button-art.png');
+}
+
+/* Detail side-panel art — stats live in the upper 60%. */
+.detail-panel {
+  position: relative;
+  min-height: 260px;
+  border-radius: var(--border-radius-md);
+  background-image: url('/assets/characters/character-detail-side-panel-art.png');
+  background-size: cover;
+  background-position: left center;
+  background-repeat: no-repeat;
+}
+
+.detail-panel-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60%;
+  padding: 1rem;
+}
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  height: 100%;
+}
+
+/* Stat tile art (background-size: 100% 100%) with value/label overlaid. */
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  border-radius: var(--border-radius-sm);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}
+
+.stat-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-gold);
+}
+</style>

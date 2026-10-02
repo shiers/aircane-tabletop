@@ -13,7 +13,21 @@ import {
 } from './api'
 import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
 import ModelSelect from '@/shared/components/ModelSelect.vue'
+import ApiKeyField from '@/shared/components/ApiKeyField.vue'
 import { isDesktop, invoke, openExternal } from '@/shared/tauri/bridge'
+
+// Provider quick-select cards. Clicking a card sets activeProvider; the dropdown
+// stays as an accessible fallback and both stay in sync via activeProvider.
+const providerCards: { provider: AiProviderType; name: string; art: string }[] = [
+  { provider: AiProviderType.OpenAi, name: 'OpenAI', art: '/assets/ai-settings/provider-card-openai.png' },
+  { provider: AiProviderType.AzureOpenAi, name: 'Azure OpenAI', art: '/assets/ai-settings/provider-card-azure-openai.png' },
+  { provider: AiProviderType.AwsBedrock, name: 'AWS Bedrock', art: '/assets/ai-settings/provider-card-bedrock.png' },
+  { provider: AiProviderType.Ollama, name: 'Ollama', art: '/assets/ai-settings/provider-card-ollama.png' },
+]
+
+function selectProvider(provider: AiProviderType) {
+  activeProvider.value = provider
+}
 
 const licensesModalOpen = ref(false)
 const loading = ref(false)
@@ -271,23 +285,24 @@ function isKeyMasked(value: string): boolean {
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl space-y-6">
-    <!-- Page header -->
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold text-white">AI Provider Settings</h1>
-        <p class="mt-1 text-sm text-gray-400">
-          Configure which AI provider powers rules lookup, narration, and the AI DM runtime.
-          API keys are stored server-side only and never sent to the browser.
-        </p>
+  <div class="ai-settings-page">
+    <div class="mx-auto max-w-2xl space-y-6">
+      <!-- Section header with hero art, heading overlaid -->
+      <div class="settings-hero">
+        <div class="settings-hero-content">
+          <h1 class="text-2xl font-bold text-white">AI Provider Settings</h1>
+          <p class="mt-1 text-sm text-gray-200">
+            Configure which AI provider powers rules lookup, narration, and the AI DM runtime.
+            API keys are stored server-side only and never sent to the browser.
+          </p>
+        </div>
+        <button
+          class="settings-hero-licenses text-sm font-medium text-aircane-300 hover:text-aircane-200 hover:underline"
+          @click="licensesModalOpen = true"
+        >
+          Open Content Licenses
+        </button>
       </div>
-      <button
-        class="text-sm font-medium text-aircane-400 hover:text-aircane-300 hover:underline"
-        @click="licensesModalOpen = true"
-      >
-        Open Content Licenses
-      </button>
-    </div>
 
     <!-- Open-content license attribution modal -->
     <LicenseAttributionModal :open="licensesModalOpen" @close="licensesModalOpen = false" />
@@ -329,6 +344,22 @@ function isKeyMasked(value: string): boolean {
     </div>
 
     <form v-if="!loading" @submit.prevent="saveConfig" class="space-y-6">
+      <!-- Provider quick-select cards -->
+      <div class="provider-card-row">
+        <button
+          v-for="card in providerCards"
+          :key="card.provider"
+          type="button"
+          class="provider-card"
+          :class="{ active: activeProvider === card.provider }"
+          :style="{ backgroundImage: `url('${card.art}')` }"
+          :aria-pressed="activeProvider === card.provider"
+          @click="selectProvider(card.provider)"
+        >
+          <span class="provider-card-name">{{ card.name }}</span>
+        </button>
+      </div>
+
       <!-- Provider selector -->
       <div>
         <label for="provider-select" class="block text-sm font-medium text-gray-300 mb-1">
@@ -357,14 +388,7 @@ function isKeyMasked(value: string): boolean {
 
         <div>
           <label for="openai-key" class="block text-sm font-medium text-gray-300 mb-1">API Key</label>
-          <input
-            id="openai-key"
-            v-model="openAiApiKey"
-            type="password"
-            placeholder="sk-..."
-            autocomplete="off"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
-          />
+          <ApiKeyField id="openai-key" v-model="openAiApiKey" placeholder="sk-..." />
           <p class="text-xs text-gray-500 mt-1">Stored server-side only. Leave unchanged to keep existing key.</p>
         </div>
 
@@ -399,14 +423,7 @@ function isKeyMasked(value: string): boolean {
 
         <div>
           <label for="azure-key" class="block text-sm font-medium text-gray-300 mb-1">API Key</label>
-          <input
-            id="azure-key"
-            v-model="azureApiKey"
-            type="password"
-            placeholder="Azure API key"
-            autocomplete="off"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
-          />
+          <ApiKeyField id="azure-key" v-model="azureApiKey" placeholder="Azure API key" />
         </div>
 
         <div>
@@ -455,26 +472,12 @@ function isKeyMasked(value: string): boolean {
 
         <div>
           <label for="aws-key-id" class="block text-sm font-medium text-gray-300 mb-1">Access Key ID</label>
-          <input
-            id="aws-key-id"
-            v-model="awsAccessKeyId"
-            type="password"
-            placeholder="AKIA..."
-            autocomplete="off"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
-          />
+          <ApiKeyField id="aws-key-id" v-model="awsAccessKeyId" placeholder="AKIA..." />
         </div>
 
         <div>
           <label for="aws-secret" class="block text-sm font-medium text-gray-300 mb-1">Secret Access Key</label>
-          <input
-            id="aws-secret"
-            v-model="awsSecretAccessKey"
-            type="password"
-            placeholder="Secret access key"
-            autocomplete="off"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
-          />
+          <ApiKeyField id="aws-secret" v-model="awsSecretAccessKey" placeholder="Secret access key" />
         </div>
 
         <div>
@@ -598,14 +601,7 @@ function isKeyMasked(value: string): boolean {
 
         <div>
           <label for="grok-key" class="block text-sm font-medium text-gray-300 mb-1">API Key</label>
-          <input
-            id="grok-key"
-            v-model="grokApiKey"
-            type="password"
-            placeholder="xai-..."
-            autocomplete="off"
-            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
-          />
+          <ApiKeyField id="grok-key" v-model="grokApiKey" placeholder="xai-..." />
           <p class="text-xs text-gray-500 mt-1">Stored server-side only. Leave unchanged to keep existing key.</p>
         </div>
 
@@ -637,20 +633,162 @@ function isKeyMasked(value: string): boolean {
         <button
           type="submit"
           :disabled="saving"
-          class="rounded-lg bg-aircane-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="art-button art-button--save text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-aircane-400"
         >
-          {{ saving ? 'Saving...' : 'Save Configuration' }}
+          <span class="art-button-label">{{ saving ? 'Saving...' : 'Save Configuration' }}</span>
         </button>
 
         <button
           type="button"
           :disabled="testing"
-          class="rounded-lg border border-gray-600 bg-surface-850 px-4 py-2 text-sm font-semibold text-gray-300 shadow hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="art-button art-button--test text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-aircane-400"
           @click="testConnection"
         >
-          {{ testing ? 'Testing...' : 'Test Connection' }}
+          <span class="art-button-label">{{ testing ? 'Testing...' : 'Test Connection' }}</span>
         </button>
       </div>
+
+      <!-- AI Runtime -->
+      <section class="space-y-3">
+        <div class="runtime-header">
+          <h2 class="runtime-header-title">AI Runtime</h2>
+        </div>
+        <p class="text-sm text-gray-400">
+          The AI runtime uses the active provider above for rules lookup, narration, and the
+          AI DM. Save your configuration and run Test Connection to confirm the runtime can
+          reach the selected provider before starting a session.
+        </p>
+      </section>
     </form>
+    </div>
   </div>
 </template>
+
+<style scoped>
+/* Page background */
+.ai-settings-page {
+  position: relative;
+  min-height: 100%;
+  padding: 1.5rem 1rem;
+  background-image: url('/assets/ai-settings/ai-provider-background.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+/* Section header with hero art, heading overlaid */
+.settings-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 120px;
+  padding: 1rem 1.25rem;
+  border-radius: var(--border-radius-md);
+  background-image: url('/assets/ai-settings/ai-provider-settings-hero.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.settings-hero-content {
+  max-width: 70%;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+
+.settings-hero-licenses {
+  position: absolute;
+  top: 0.75rem;
+  right: 1rem;
+}
+
+/* Provider quick-select cards (name over the right 70%) */
+.provider-card-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.provider-card {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 72px;
+  padding: 0 1rem;
+  border-radius: var(--border-radius-md);
+  border: 1px solid transparent;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.provider-card:hover {
+  transform: translateY(-1px);
+}
+
+.provider-card.active {
+  box-shadow: var(--glow-purple);
+  border-color: var(--color-purple);
+}
+
+.provider-card-name {
+  width: 70%;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+
+/* Button art (background-size: 100% 100%, no extra border) */
+.art-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+  min-height: 44px;
+  padding: 0 1.25rem;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  transition: box-shadow 0.2s ease;
+}
+
+.art-button:hover:not(:disabled) {
+  box-shadow: var(--glow-purple);
+}
+
+.art-button--save {
+  background-image: url('/assets/ai-settings/save-configuration-button-art.png');
+}
+
+.art-button--test {
+  background-image: url('/assets/ai-settings/test-connection-button-art.png');
+}
+
+.art-button-label {
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* AI Runtime section header (heading over the left 60%) */
+.runtime-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  padding: 0 1.25rem;
+  border-radius: var(--border-radius-md);
+  background-image: url('/assets/ai-settings/ai-runtime-panel-art.png');
+  background-size: cover;
+  background-position: left center;
+  background-repeat: no-repeat;
+}
+
+.runtime-header-title {
+  width: 60%;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+</style>
+

@@ -42,9 +42,17 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
 
 <template>
   <div class="mx-auto max-w-5xl space-y-6">
+    <!-- Hero banner -->
+    <section class="hero">
+      <div class="hero-heading">
+        <h1 class="text-2xl font-bold text-white sm:text-3xl">Campaigns</h1>
+        <p class="mt-1 text-sm text-gray-200">Create, manage, and jump back into your adventures.</p>
+      </div>
+    </section>
+
     <!-- Page header -->
     <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-white">Campaigns</h1>
+      <h2 class="text-xl font-semibold text-white">Your Campaigns</h2>
       <button
         v-if="!showForm"
         class="btn-primary"
@@ -97,8 +105,115 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
         />
       </section>
 
+      <!-- Campaign overview + recent sessions panels -->
+      <div v-if="!showForm" class="grid gap-6 lg:grid-cols-2">
+        <section class="panel panel--overview" aria-labelledby="campaign-overview-heading">
+          <div class="panel-body">
+            <h2 id="campaign-overview-heading" class="panel-title">Campaign Overview</h2>
+            <p class="panel-text">Pick up where you left off in your most recent adventure.</p>
+            <button type="button" class="continue-button" @click="store.fetchCampaigns">
+              <span class="continue-label">Continue</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="panel panel--sessions" aria-labelledby="recent-sessions-heading">
+          <div class="panel-body">
+            <h2 id="recent-sessions-heading" class="panel-title">Recent Sessions</h2>
+            <p class="panel-text">Your latest play sessions appear here as you run them.</p>
+          </div>
+        </section>
+      </div>
+
       <!-- Campaign list -->
       <CampaignList @edit="openEditForm" />
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Hero banner */
+.hero {
+  position: relative;
+  width: 100%;
+  min-height: 180px;
+  overflow: hidden;
+  border-radius: var(--border-radius-md);
+  background-image: url('/assets/campaigns/campaigns-hero-background.png');
+  background-size: cover;
+  background-position: center;
+}
+
+.hero-heading {
+  position: absolute;
+  top: 50%;
+  left: 5%;
+  right: 5%;
+  transform: translateY(-50%);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Panel art sections (background-size: cover; background-position: left center) */
+.panel {
+  position: relative;
+  min-height: 160px;
+  border-radius: var(--border-radius-md);
+  background-size: cover;
+  background-position: left center;
+  background-repeat: no-repeat;
+}
+
+.panel--overview {
+  background-image: url('/assets/campaigns/campaign-overview-panel-art.png');
+}
+
+.panel--sessions {
+  background-image: url('/assets/campaigns/recent-sessions-panel-art.png');
+}
+
+/* Content overlaid over the right 50% */
+.panel-body {
+  margin-left: 50%;
+  padding: 1.25rem 1.25rem 1.25rem 0.75rem;
+}
+
+.panel-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.panel-text {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: #e5e7eb;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Continue button art (background-size: 100% 100%, no extra border) */
+.continue-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  min-height: 40px;
+  margin-top: 0.75rem;
+  padding: 0 1.25rem;
+  background-image: url('/assets/campaigns/continue-button-art.png');
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  transition: box-shadow 0.2s ease;
+}
+
+.continue-button:hover {
+  box-shadow: var(--glow-purple);
+}
+
+.continue-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+</style>

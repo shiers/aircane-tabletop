@@ -4,6 +4,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './assets/main.css'
+import './assets/styles/tokens.css'
 import { installErrorCapture, pushError } from './features/feedback/errorBuffer'
 
 // Install console-error capture BEFORE creating the app so init-time errors are caught

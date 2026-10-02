@@ -24,7 +24,10 @@ function toggleSidebar() {
     <!-- Main content area -->
     <div class="flex flex-1 flex-col overflow-hidden">
       <!-- Top bar -->
-      <header class="flex h-14 shrink-0 items-center justify-between border-b border-surface-800/60 bg-surface-900/50 px-6 backdrop-blur-sm">
+      <header
+        class="flex h-14 shrink-0 items-center justify-between border-b border-surface-800/60 bg-surface-900/50 px-6 backdrop-blur-sm"
+        style="background-image: url('/assets/ui/topbar-background.png'); background-size: cover; background-position: center;"
+      >
         <div class="flex items-center gap-3">
           <!-- Mobile menu toggle -->
           <button

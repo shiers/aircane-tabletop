@@ -5,6 +5,7 @@
 @layer base {
   body {
     @apply bg-surface-950 text-gray-100 antialiased;
+    background: url('/assets/ui/app-background.png') center / cover no-repeat fixed;
   }
 
   /* Custom scrollbar for the dark theme */
@@ -39,11 +40,27 @@
 
   /* Primary button */
   .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-aircane-600/20 transition-all hover:bg-aircane-500 hover:shadow-aircane-500/30 focus:outline-none focus:ring-2 focus:ring-aircane-400;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-aircane-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-aircane-600/20 transition-all hover:bg-aircane-500 hover:shadow-aircane-500/30 focus:outline-none focus:ring-2 focus:ring-aircane-400;
+    /* Button art is baked with its own border/glow; scale it to fit any size. */
+    background-image: url('/assets/ui/primary-button-glow.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
   }
 
   /* Secondary/ghost button */
   .btn-secondary {
-    @apply inline-flex items-center gap-2 rounded-lg border border-surface-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition-all hover:border-surface-600 hover:bg-surface-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-surface-600;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-300 transition-all hover:bg-surface-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-surface-600;
+    /* Art already includes a border, so no CSS border is applied here. */
+    background-image: url('/assets/ui/secondary-button-glow.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+  }
+
+  /* Reusable decorative section divider ornament for later phases:
+     <img src="/assets/ui/section-divider-ornament.png" alt="" class="section-divider"> */
+  .section-divider {
+    @apply mx-auto block;
+    width: 100%;
+    max-width: 600px;
   }
 }

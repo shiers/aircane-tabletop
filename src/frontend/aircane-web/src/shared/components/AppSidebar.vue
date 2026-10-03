@@ -117,6 +117,13 @@ function isActive(to: string): boolean {
   border-left: 3px solid var(--color-purple);
   box-shadow: inset 0 0 20px rgba(124, 58, 237, 0.1);
 }
+/* Pin the logo mark to a fixed 40x40 square so the AircaneImg wrapper
+   cannot expand and overlap the nav list below it. */
+.app-logo-mark {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+}
 /* Logo mark should fit (not cover) within its square slot. */
 .app-logo-mark :deep(img) {
   object-fit: contain;

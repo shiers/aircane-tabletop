@@ -338,12 +338,13 @@ const quickActions = [
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
-/* Footer quote ornament */
+/* Footer quote ornament — ornament on top, quote text stacked below it. */
 .footer-quote {
-  position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1rem;
   padding: 1rem 0;
 }
 
@@ -354,10 +355,6 @@ const quickActions = [
 }
 
 .footer-quote-text {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
   font-style: italic;
   color: var(--color-gold);
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);

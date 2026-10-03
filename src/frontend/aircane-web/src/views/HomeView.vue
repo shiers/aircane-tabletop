@@ -344,7 +344,7 @@ const quickActions = [
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
+  gap: 0.5rem;
   padding: 1rem 0;
 }
 
@@ -352,6 +352,11 @@ const quickActions = [
   display: block;
   width: 100%;
   max-width: 600px;
+  /* The source PNG is a short divider centred in a tall transparent canvas.
+     Cap the rendered height and crop the empty top/bottom bands so the box
+     hugs the artwork, letting the quote sit directly beneath it. */
+  height: 60px;
+  object-fit: cover;
 }
 
 .footer-quote-text {

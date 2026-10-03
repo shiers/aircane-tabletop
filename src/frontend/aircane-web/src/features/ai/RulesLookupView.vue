@@ -68,21 +68,25 @@ async function submitQuestion() {
     v-bg-asset="{ url: '/assets/rules/rules-lookup-background.png', fallback: '#0a0a1a' }"
   >
     <div class="mx-auto max-w-3xl space-y-6 p-6">
-      <!-- Hero banner -->
+      <!-- Hero banner: art has no baked-in text, so overlay the heading + subtitle. -->
       <div
-        class="h-40 w-full rounded-lg bg-cover bg-center"
+        class="rules-hero relative flex h-40 w-full flex-col justify-center overflow-hidden rounded-lg bg-cover bg-center"
         v-bg-asset="{ url: '/assets/rules/rules-lookup-hero-banner.png', fallback: '#0d0d2a' }"
-        role="img"
-        aria-label="Rules Lookup"
-      ></div>
-
-      <!-- Page header -->
-      <div>
-        <h1 class="text-2xl font-bold text-white">Rules Lookup</h1>
-        <p class="mt-1 text-sm text-gray-400">
-          Ask a rules question and get an AI-generated answer grounded in your indexed source
-          documents.
-        </p>
+      >
+        <!-- Legibility scrim so white text stays readable over the busy art. -->
+        <div
+          class="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"
+          aria-hidden="true"
+        ></div>
+        <div class="relative px-6">
+          <h1 class="text-2xl font-bold text-white" style="text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85)">
+            Rules Lookup
+          </h1>
+          <p class="mt-1 max-w-xl text-sm text-gray-200" style="text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85)">
+            Ask a rules question and get an AI-generated answer grounded in your indexed source
+            documents.
+          </p>
+        </div>
       </div>
 
       <!-- Question panel: ask-question-panel-art backs the panel, controls over the right 65% -->

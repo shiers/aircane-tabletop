@@ -30,6 +30,13 @@
   --glow-green:         0 0 10px rgba(34, 197, 94, 0.5);
   --glow-red:           0 0 10px rgba(220, 38, 38, 0.5);
 
+  /* Fallback layer — solid colours shown immediately so missing/failed art degrades cleanly */
+  --fallback-bg:        #0a0a1a;
+  --fallback-panel:     #0d0d2a;
+  --fallback-hero:      linear-gradient(180deg, #0d0d2a 0%, #0a0a1a 100%);
+  --fallback-thumbnail: #0f0f1e;
+  --fallback-card:      #0d0d24;
+
   /* Asset paths */
   --asset-ui:           '/assets/ui';
   --asset-dashboard:    '/assets/dashboard';

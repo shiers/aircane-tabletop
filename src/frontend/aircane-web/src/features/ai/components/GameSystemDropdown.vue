@@ -18,8 +18,8 @@ function onChange(event: Event) {
 
 <template>
   <div
-    class="relative flex items-center rounded-lg bg-cover bg-center"
-    style="background-image: url('/assets/rules/game-system-field-art.png')"
+    class="game-system-field relative flex items-center rounded-lg bg-cover bg-center"
+    v-bg-asset="{ url: '/assets/rules/game-system-field-art.png', fallback: '#0d0d2a' }"
   >
     <!-- Dice icon (decorative) -->
     <img
@@ -28,6 +28,7 @@ function onChange(event: Event) {
       aria-hidden="true"
       class="pointer-events-none ml-3 h-5 w-5 flex-shrink-0"
       style="object-fit: contain"
+      @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
     />
 
     <!-- Native select, transparent over the field art -->
@@ -54,3 +55,10 @@ function onChange(event: Event) {
     </span>
   </div>
 </template>
+
+<style scoped>
+/* Gold-dim border so the field stays bordered/legible with no art. */
+.game-system-field {
+  border: var(--border-gold-dim);
+}
+</style>

@@ -285,10 +285,16 @@ function isKeyMasked(value: string): boolean {
 </script>
 
 <template>
-  <div class="ai-settings-page">
+  <div
+    class="ai-settings-page"
+    v-bg-asset="{ url: '/assets/ai-settings/ai-provider-background.png', fallback: '#0a0a1a' }"
+  >
     <div class="mx-auto max-w-2xl space-y-6">
       <!-- Section header with hero art, heading overlaid -->
-      <div class="settings-hero">
+      <div
+        class="settings-hero"
+        v-bg-asset="{ url: '/assets/ai-settings/ai-provider-settings-hero.png', fallback: '#0d0d2a' }"
+      >
         <div class="settings-hero-content">
           <h1 class="text-2xl font-bold text-white">AI Provider Settings</h1>
           <p class="mt-1 text-sm text-gray-200">
@@ -352,7 +358,7 @@ function isKeyMasked(value: string): boolean {
           type="button"
           class="provider-card"
           :class="{ active: activeProvider === card.provider }"
-          :style="{ backgroundImage: `url('${card.art}')` }"
+          v-bg-asset="{ url: card.art, fallback: '#0d0d2a' }"
           :aria-pressed="activeProvider === card.provider"
           @click="selectProvider(card.provider)"
         >
@@ -634,6 +640,7 @@ function isKeyMasked(value: string): boolean {
           type="submit"
           :disabled="saving"
           class="art-button art-button--save text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          v-bg-asset="{ url: '/assets/ai-settings/save-configuration-button-art.png', fallback: 'transparent', size: '100% 100%' }"
         >
           <span class="art-button-label">{{ saving ? 'Saving...' : 'Save Configuration' }}</span>
         </button>
@@ -642,6 +649,7 @@ function isKeyMasked(value: string): boolean {
           type="button"
           :disabled="testing"
           class="art-button art-button--test text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          v-bg-asset="{ url: '/assets/ai-settings/test-connection-button-art.png', fallback: 'transparent', size: '100% 100%' }"
           @click="testConnection"
         >
           <span class="art-button-label">{{ testing ? 'Testing...' : 'Test Connection' }}</span>
@@ -650,7 +658,10 @@ function isKeyMasked(value: string): boolean {
 
       <!-- AI Runtime -->
       <section class="space-y-3">
-        <div class="runtime-header">
+        <div
+          class="runtime-header"
+          v-bg-asset="{ url: '/assets/ai-settings/ai-runtime-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+        >
           <h2 class="runtime-header-title">AI Runtime</h2>
         </div>
         <p class="text-sm text-gray-400">
@@ -670,7 +681,6 @@ function isKeyMasked(value: string): boolean {
   position: relative;
   min-height: 100%;
   padding: 1.5rem 1rem;
-  background-image: url('/assets/ai-settings/ai-provider-background.png');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
@@ -684,7 +694,6 @@ function isKeyMasked(value: string): boolean {
   min-height: 120px;
   padding: 1rem 1.25rem;
   border-radius: var(--border-radius-md);
-  background-image: url('/assets/ai-settings/ai-provider-settings-hero.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -715,7 +724,8 @@ function isKeyMasked(value: string): boolean {
   min-height: 72px;
   padding: 0 1rem;
   border-radius: var(--border-radius-md);
-  border: 1px solid transparent;
+  /* Gold-dim border so the card stays visible/selectable with no art. */
+  border: var(--border-gold-dim);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -740,7 +750,7 @@ function isKeyMasked(value: string): boolean {
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
 }
 
-/* Button art (background-size: 100% 100%, no extra border) */
+/* Button art over an art-independent CSS base so the buttons stay usable. */
 .art-button {
   display: inline-flex;
   align-items: center;
@@ -748,6 +758,8 @@ function isKeyMasked(value: string): boolean {
   min-width: 180px;
   min-height: 44px;
   padding: 0 1.25rem;
+  border-radius: var(--border-radius-md);
+  border: var(--border-gold);
   background-size: 100% 100%;
   background-repeat: no-repeat;
   transition: box-shadow 0.2s ease;
@@ -757,12 +769,14 @@ function isKeyMasked(value: string): boolean {
   box-shadow: var(--glow-purple);
 }
 
+/* Save = primary (purple + glow); Test = secondary (dark bg). */
 .art-button--save {
-  background-image: url('/assets/ai-settings/save-configuration-button-art.png');
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
 }
 
 .art-button--test {
-  background-image: url('/assets/ai-settings/test-connection-button-art.png');
+  background-color: var(--color-bg);
 }
 
 .art-button-label {
@@ -777,7 +791,7 @@ function isKeyMasked(value: string): boolean {
   min-height: 72px;
   padding: 0 1.25rem;
   border-radius: var(--border-radius-md);
-  background-image: url('/assets/ai-settings/ai-runtime-panel-art.png');
+  border: var(--border-gold);
   background-size: cover;
   background-position: left center;
   background-repeat: no-repeat;

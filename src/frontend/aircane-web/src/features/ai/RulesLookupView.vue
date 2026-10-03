@@ -65,13 +65,13 @@ async function submitQuestion() {
 <template>
   <div
     class="min-h-full bg-cover bg-center bg-no-repeat"
-    style="background-image: url('/assets/rules/rules-lookup-background.png')"
+    v-bg-asset="{ url: '/assets/rules/rules-lookup-background.png', fallback: '#0a0a1a' }"
   >
     <div class="mx-auto max-w-3xl space-y-6 p-6">
       <!-- Hero banner -->
       <div
         class="h-40 w-full rounded-lg bg-cover bg-center"
-        style="background-image: url('/assets/rules/rules-lookup-hero-banner.png')"
+        v-bg-asset="{ url: '/assets/rules/rules-lookup-hero-banner.png', fallback: '#0d0d2a' }"
         role="img"
         aria-label="Rules Lookup"
       ></div>
@@ -87,8 +87,8 @@ async function submitQuestion() {
 
       <!-- Question panel: ask-question-panel-art backs the panel, controls over the right 65% -->
       <div
-        class="rounded-lg bg-cover bg-left p-5"
-        style="background-image: url('/assets/rules/ask-question-panel-art.png')"
+        class="ask-question-panel rounded-lg bg-cover bg-left p-5"
+        v-bg-asset="{ url: '/assets/rules/ask-question-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
       >
       <div class="ml-auto w-[65%] min-w-[260px]">
 
@@ -139,12 +139,8 @@ async function submitQuestion() {
         <button
           type="submit"
           :disabled="loading || !question.trim()"
-          class="rounded-md px-5 py-2.5 text-sm font-semibold text-white shadow focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
-          style="
-            background-image: url('/assets/rules/ask-question-button-.png');
-            background-size: 100% 100%;
-            background-repeat: no-repeat;
-          "
+          class="ask-question-button rounded-md px-5 py-2.5 text-sm font-semibold text-white shadow focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+          v-bg-asset="{ url: '/assets/rules/ask-question-button-.png', fallback: 'transparent', size: '100% 100%' }"
         >
           <span v-if="loading" class="flex items-center gap-2">
             <svg
@@ -234,8 +230,8 @@ async function submitQuestion() {
             <li
               v-for="(citation, idx) in result.citations"
               :key="citation.chunkId"
-              class="flex items-center gap-3 rounded-lg bg-cover bg-left p-4"
-              style="background-image: url('/assets/rules/citation-card-art.png')"
+              class="citation-card flex items-center gap-3 rounded-lg bg-cover bg-left p-4"
+              v-bg-asset="{ url: '/assets/rules/citation-card-art.png', fallback: '#0d0d2a', position: 'left center' }"
             >
               <!-- Scroll icon (decorative) far-left -->
               <img
@@ -244,6 +240,7 @@ async function submitQuestion() {
                 aria-hidden="true"
                 class="h-10 w-10 flex-shrink-0"
                 style="object-fit: contain"
+                @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
               />
               <!-- Citation text over the right 65% -->
               <div class="ml-auto w-[65%] min-w-[200px] text-sm text-gray-300">
@@ -285,3 +282,19 @@ async function submitQuestion() {
     <LicenseAttributionModal :open="licensesModalOpen" @close="licensesModalOpen = false" />
   </div>
 </template>
+
+<style scoped>
+/* Type C panel/card — gold border so they stay bordered/legible with no art. */
+.ask-question-panel,
+.citation-card {
+  border: var(--border-gold);
+}
+
+/* Type D button — art-independent CSS base so it is always clickable. */
+.ask-question-button {
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
+  background-repeat: no-repeat;
+}
+</style>

@@ -187,7 +187,10 @@ async function handlePdfFileChange(event: Event): Promise<void> {
 <template>
   <div class="mx-auto max-w-5xl space-y-6">
     <!-- Hero banner -->
-    <section class="hero">
+    <section
+      class="hero"
+      v-bg-asset="{ url: '/assets/characters/characters-hero-background.png', fallback: '#0d0d2a' }"
+    >
       <div class="hero-heading">
         <h1 class="text-2xl font-bold text-white sm:text-3xl">Characters</h1>
         <p class="mt-1 text-sm text-gray-200">Build, import, and manage your party.</p>
@@ -213,6 +216,7 @@ async function handlePdfFileChange(event: Event): Promise<void> {
         <button
           :disabled="pdfImporting"
           class="import-button import-button--pdf inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+          v-bg-asset="{ url: '/assets/characters/import-pdf-button-art.png', fallback: 'transparent', size: '100% 100%' }"
           @click="triggerPdfImport"
         >
           <svg
@@ -238,6 +242,7 @@ async function handlePdfFileChange(event: Event): Promise<void> {
         <!-- Import JSON button (art background, no extra border) -->
         <button
           class="import-button import-button--json inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          v-bg-asset="{ url: '/assets/characters/import-json-button-art.png', fallback: 'transparent', size: '100% 100%' }"
           @click="openImportModal"
         >
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -326,16 +331,19 @@ async function handlePdfFileChange(event: Event): Promise<void> {
       </div>
 
       <!-- Detail side-panel: summary stat tiles in the upper 60% (edit mode) -->
-      <aside v-if="editingCharacter" class="detail-panel" aria-label="Character stats">
+      <aside
+        v-if="editingCharacter"
+        class="detail-panel"
+        aria-label="Character stats"
+        v-bg-asset="{ url: '/assets/characters/character-detail-side-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+      >
         <div class="detail-panel-body">
           <div class="stat-tiles">
             <div
               v-for="tile in detailStatTiles"
               :key="tile.key"
               class="stat-tile"
-              :style="{
-                backgroundImage: `url('/assets/characters/character-stat-tile-${tile.key}.png')`,
-              }"
+              v-bg-asset="{ url: `/assets/characters/character-stat-tile-${tile.key}.png`, fallback: '#0d0d2a', size: '100% 100%' }"
             >
               <span class="stat-value">{{ tile.value }}</span>
               <span class="stat-label">{{ tile.label }}</span>
@@ -367,7 +375,6 @@ async function handlePdfFileChange(event: Event): Promise<void> {
   min-height: 180px;
   overflow: hidden;
   border-radius: var(--border-radius-md);
-  background-image: url('/assets/characters/characters-hero-background.png');
   background-size: cover;
   background-position: center;
 }
@@ -381,24 +388,19 @@ async function handlePdfFileChange(event: Event): Promise<void> {
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
-/* Import button art (background-size: 100% 100%, no extra border) */
+/* Import buttons — art-independent CSS base so they stay usable with no art. */
 .import-button {
   background-size: 100% 100%;
   background-repeat: no-repeat;
+  background-color: var(--color-purple);
+  border: var(--border-gold);
+  box-shadow: var(--glow-purple);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
   transition: box-shadow 0.2s ease;
 }
 
 .import-button:hover {
-  box-shadow: var(--glow-purple);
-}
-
-.import-button--pdf {
-  background-image: url('/assets/characters/import-pdf-button-art.png');
-}
-
-.import-button--json {
-  background-image: url('/assets/characters/import-json-button-art.png');
+  box-shadow: var(--glow-purple-lg);
 }
 
 /* Detail side-panel art — stats live in the upper 60%. */
@@ -406,7 +408,7 @@ async function handlePdfFileChange(event: Event): Promise<void> {
   position: relative;
   min-height: 260px;
   border-radius: var(--border-radius-md);
-  background-image: url('/assets/characters/character-detail-side-panel-art.png');
+  border: var(--border-gold);
   background-size: cover;
   background-position: left center;
   background-repeat: no-repeat;
@@ -438,6 +440,7 @@ async function handlePdfFileChange(event: Event): Promise<void> {
   padding: 8px;
   background-size: 100% 100%;
   background-repeat: no-repeat;
+  border: var(--border-gold-dim);
   border-radius: var(--border-radius-sm);
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }

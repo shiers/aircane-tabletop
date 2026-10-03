@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import AircaneImg from './AircaneImg.vue'
+import NavIcon from './NavIcon.vue'
 
 defineProps<{
   collapsed: boolean
@@ -12,18 +13,19 @@ defineEmits<{
 
 const route = useRoute()
 
-// `iconSrc` points at a PNG under /assets/ui for the 8 mapped nav items.
-// Dashboard has no PNG asset, so it keeps the inline SVG (iconSrc undefined).
-const navItems: { label: string; to: string; icon: string; iconSrc?: string }[] = [
+// `iconName` is the PNG basename under /assets/ui for the 8 mapped nav items
+// (rendered via <NavIcon> with an emoji fallback). Dashboard has no PNG asset,
+// so it keeps the inline SVG (iconName undefined).
+const navItems: { label: string; to: string; icon: string; iconName?: string }[] = [
   { label: 'Dashboard', to: '/', icon: 'dashboard' },
-  { label: 'Campaigns', to: '/campaigns', icon: 'campaigns', iconSrc: '/assets/ui/icon-campaign.png' },
-  { label: 'Library', to: '/library', icon: 'library', iconSrc: '/assets/ui/icon-library.png' },
-  { label: 'Characters', to: '/characters', icon: 'characters', iconSrc: '/assets/ui/icon-character.png' },
-  { label: 'Rules Lookup', to: '/rules-lookup', icon: 'rules', iconSrc: '/assets/ui/icon-rules.png' },
-  { label: 'AI DM', to: '/settings/ai', icon: 'ai', iconSrc: '/assets/ui/icon-ai.png' },
-  { label: 'Adventure Forge', to: '/adventures/generate', icon: 'adventure', iconSrc: '/assets/ui/icon-adventure.png' },
-  { label: 'Dice Roller', to: '/sessions', icon: 'dice', iconSrc: '/assets/ui/icon-dice.png' },
-  { label: 'About & Credits', to: '/about', icon: 'about', iconSrc: '/assets/ui/icon-about.png' },
+  { label: 'Campaigns', to: '/campaigns', icon: 'campaigns', iconName: 'icon-campaign' },
+  { label: 'Library', to: '/library', icon: 'library', iconName: 'icon-library' },
+  { label: 'Characters', to: '/characters', icon: 'characters', iconName: 'icon-character' },
+  { label: 'Rules Lookup', to: '/rules-lookup', icon: 'rules', iconName: 'icon-rules' },
+  { label: 'AI DM', to: '/settings/ai', icon: 'ai', iconName: 'icon-ai' },
+  { label: 'Adventure Forge', to: '/adventures/generate', icon: 'adventure', iconName: 'icon-adventure' },
+  { label: 'Dice Roller', to: '/sessions', icon: 'dice', iconName: 'icon-dice' },
+  { label: 'About & Credits', to: '/about', icon: 'about', iconName: 'icon-about' },
 ]
 
 function isActive(to: string): boolean {
@@ -36,15 +38,16 @@ function isActive(to: string): boolean {
   <aside
     class="flex h-full flex-col border-r border-surface-800/60 bg-surface-900 transition-all duration-300"
     :class="collapsed ? 'w-16' : 'w-60'"
-    style="background-image: url('/assets/ui/side-nav-background.png'); background-size: cover; background-position: center;"
+    v-bg-asset="{ url: '/assets/ui/side-nav-background.png', fallback: '#0a0a1a' }"
   >
     <!-- Logo area -->
     <div class="flex h-14 shrink-0 items-center gap-3 border-b border-surface-800/60 px-4">
-      <img
+      <AircaneImg
         src="/assets/ui/app-logo-mark.png"
         alt="Aircane Tabletop"
-        class="h-10 w-10 shrink-0"
-        style="object-fit: contain;"
+        type="thumbnail"
+        fallback-text="✦"
+        class="h-10 w-10 shrink-0 app-logo-mark"
       />
       <span
         v-if="!collapsed"
@@ -70,13 +73,11 @@ function isActive(to: string): boolean {
       >
         <!-- Icons -->
         <span class="flex h-5 w-5 shrink-0 items-center justify-center">
-          <!-- PNG icon for the mapped nav items -->
-          <img
-            v-if="item.iconSrc"
-            :src="item.iconSrc"
-            alt=""
-            class="h-6 w-6"
-            style="object-fit: contain;"
+          <!-- PNG icon (with emoji fallback) for the mapped nav items -->
+          <NavIcon
+            v-if="item.iconName"
+            :icon="item.iconName"
+            :label="item.label"
           />
           <!-- Dashboard keeps its inline SVG (no PNG asset exists) -->
           <svg v-else-if="item.icon === 'dashboard'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,5 +116,9 @@ function isActive(to: string): boolean {
   background: rgba(124, 58, 237, 0.15);
   border-left: 3px solid var(--color-purple);
   box-shadow: inset 0 0 20px rgba(124, 58, 237, 0.1);
+}
+/* Logo mark should fit (not cover) within its square slot. */
+.app-logo-mark :deep(img) {
+  object-fit: contain;
 }
 </style>

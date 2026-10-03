@@ -4,6 +4,8 @@ import { useCampaignStore } from '../store'
 import { aiRoleLabels, aiAuthorityLabels, type CampaignDto } from '../api'
 import StatusBadge from './StatusBadge.vue'
 import FilterPill from './FilterPill.vue'
+import AircaneImg from '@/shared/components/AircaneImg.vue'
+import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
 
 const emit = defineEmits<{
   (e: 'edit', campaign: CampaignDto): void
@@ -88,6 +90,7 @@ async function handleDelete(campaign: CampaignDto): Promise<void> {
         alt=""
         aria-hidden="true"
         class="empty-state-ornament"
+        @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
       />
       <p class="mt-4 text-sm text-gray-400">No campaigns yet</p>
       <p class="mt-1 text-xs text-gray-500">Create one above to get started.</p>
@@ -135,12 +138,17 @@ async function handleDelete(campaign: CampaignDto): Promise<void> {
               <!-- Name with placeholder thumbnail -->
               <td class="px-4 py-3 font-medium text-white">
                 <div class="flex items-center gap-3">
-                  <img
+                  <AircaneImg
                     :src="placeholderThumbnail(index)"
                     alt=""
+                    type="thumbnail"
                     aria-hidden="true"
                     class="campaign-thumbnail"
-                  />
+                  >
+                    <template #fallback>
+                      <ThumbnailPlaceholder :label="campaign.name" />
+                    </template>
+                  </AircaneImg>
                   <span>{{ campaign.name }}</span>
                 </div>
               </td>

@@ -43,7 +43,10 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
 <template>
   <div class="mx-auto max-w-5xl space-y-6">
     <!-- Hero banner -->
-    <section class="hero">
+    <section
+      class="hero"
+      v-bg-asset="{ url: '/assets/campaigns/campaigns-hero-background.png', fallback: '#0d0d2a' }"
+    >
       <div class="hero-heading">
         <h1 class="text-2xl font-bold text-white sm:text-3xl">Campaigns</h1>
         <p class="mt-1 text-sm text-gray-200">Create, manage, and jump back into your adventures.</p>
@@ -107,17 +110,30 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
 
       <!-- Campaign overview + recent sessions panels -->
       <div v-if="!showForm" class="grid gap-6 lg:grid-cols-2">
-        <section class="panel panel--overview" aria-labelledby="campaign-overview-heading">
+        <section
+          class="panel panel--overview"
+          aria-labelledby="campaign-overview-heading"
+          v-bg-asset="{ url: '/assets/campaigns/campaign-overview-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+        >
           <div class="panel-body">
             <h2 id="campaign-overview-heading" class="panel-title">Campaign Overview</h2>
             <p class="panel-text">Pick up where you left off in your most recent adventure.</p>
-            <button type="button" class="continue-button" @click="store.fetchCampaigns">
+            <button
+              type="button"
+              class="continue-button"
+              v-bg-asset="{ url: '/assets/campaigns/continue-button-art.png', fallback: 'transparent', size: '100% 100%' }"
+              @click="store.fetchCampaigns"
+            >
               <span class="continue-label">Continue</span>
             </button>
           </div>
         </section>
 
-        <section class="panel panel--sessions" aria-labelledby="recent-sessions-heading">
+        <section
+          class="panel panel--sessions"
+          aria-labelledby="recent-sessions-heading"
+          v-bg-asset="{ url: '/assets/campaigns/recent-sessions-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+        >
           <div class="panel-body">
             <h2 id="recent-sessions-heading" class="panel-title">Recent Sessions</h2>
             <p class="panel-text">Your latest play sessions appear here as you run them.</p>
@@ -139,7 +155,6 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
   min-height: 180px;
   overflow: hidden;
   border-radius: var(--border-radius-md);
-  background-image: url('/assets/campaigns/campaigns-hero-background.png');
   background-size: cover;
   background-position: center;
 }
@@ -158,17 +173,10 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
   position: relative;
   min-height: 160px;
   border-radius: var(--border-radius-md);
+  border: var(--border-gold);
   background-size: cover;
   background-position: left center;
   background-repeat: no-repeat;
-}
-
-.panel--overview {
-  background-image: url('/assets/campaigns/campaign-overview-panel-art.png');
-}
-
-.panel--sessions {
-  background-image: url('/assets/campaigns/recent-sessions-panel-art.png');
 }
 
 /* Content overlaid over the right 50% */
@@ -191,7 +199,7 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
-/* Continue button art (background-size: 100% 100%, no extra border) */
+/* Continue button — art-independent CSS base so it is always clickable. */
 .continue-button {
   display: inline-flex;
   align-items: center;
@@ -200,8 +208,10 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
   min-height: 40px;
   margin-top: 0.75rem;
   padding: 0 1.25rem;
-  background-image: url('/assets/campaigns/continue-button-art.png');
-  background-size: 100% 100%;
+  border-radius: var(--border-radius-md);
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
   background-repeat: no-repeat;
   transition: box-shadow 0.2s ease;
 }

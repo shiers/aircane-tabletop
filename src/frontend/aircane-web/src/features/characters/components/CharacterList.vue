@@ -4,6 +4,8 @@ import { useCharacterStore } from '../store'
 import { abilityModifier, type CharacterDto } from '../api'
 import AbilityScoreTile from './AbilityScoreTile.vue'
 import RoleBadge from './RoleBadge.vue'
+import AircaneImg from '@/shared/components/AircaneImg.vue'
+import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
 
 const emit = defineEmits<{
   (e: 'edit', character: CharacterDto): void
@@ -129,6 +131,7 @@ async function handleDelete(character: CharacterDto): Promise<void> {
         alt=""
         aria-hidden="true"
         class="mb-4 w-full max-w-xs"
+        @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
       />
       <p class="text-sm">No characters yet. Create one above to get started.</p>
     </div>
@@ -139,17 +142,23 @@ async function handleDelete(character: CharacterDto): Promise<void> {
         <!-- Framed card: portrait (upper 65%) + stats (lower 35%).
              The frame art bakes in its own border — no CSS border is added. -->
         <div class="card-media">
-          <img
+          <AircaneImg
             :src="portraitUrl(character)"
             alt=""
+            type="portrait"
             aria-hidden="true"
             class="portrait"
-          />
+          >
+            <template #fallback>
+              <ThumbnailPlaceholder :label="character.name" />
+            </template>
+          </AircaneImg>
           <img
             src="/assets/characters/character-card-frame.png"
             alt=""
             aria-hidden="true"
             class="frame"
+            @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
           />
           <div class="card-stats">
             <p class="card-name">{{ character.name }}</p>

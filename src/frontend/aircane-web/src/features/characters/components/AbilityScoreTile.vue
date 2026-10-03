@@ -13,7 +13,10 @@ const signedModifier = (): string =>
 </script>
 
 <template>
-  <div class="ability-tile">
+  <div
+    class="ability-tile"
+    v-bg-asset="{ url: '/assets/characters/ability-score-tile.png', fallback: '#0d0d2a', size: '100% 100%' }"
+  >
     <span class="abbr">{{ abbr }}</span>
     <span class="score">{{ score }}</span>
     <span class="modifier">{{ signedModifier() }}</span>
@@ -29,10 +32,10 @@ const signedModifier = (): string =>
   gap: 2px;
   min-width: 64px;
   padding: 10px 8px;
-  /* Art already bakes in its own border — do not add a CSS border. */
-  background-image: url('/assets/characters/ability-score-tile.png');
   background-size: 100% 100%;
   background-repeat: no-repeat;
+  /* Gold-dim border so the tile stays bordered/legible with no art. */
+  border: var(--border-gold-dim);
   border-radius: var(--border-radius-sm);
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }

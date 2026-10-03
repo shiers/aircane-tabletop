@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import AircaneImg from '@/shared/components/AircaneImg.vue'
+import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
+
 const features = [
   {
     icon: 'library',
@@ -83,9 +86,16 @@ const quickActions = [
 <template>
   <div class="mx-auto max-w-6xl space-y-8">
     <!-- Hero banner -->
-    <section class="hero">
+    <section
+      class="hero"
+      v-bg-asset="{ url: '/assets/dashboard/dashboard-hero-background.png', fallback: '#0d0d2a' }"
+    >
       <!-- Welcome banner overlaid on the left 55% -->
-      <div class="hero-welcome" aria-hidden="true" />
+      <div
+        class="hero-welcome"
+        aria-hidden="true"
+        v-bg-asset="{ url: '/assets/dashboard/dashboard-welcome-banner.png', fallback: '#0d0d2a', position: 'left center' }"
+      />
       <!-- Heading over the right portion -->
       <div class="hero-heading">
         <h1 class="text-2xl font-bold text-white sm:text-3xl">Welcome back, Dungeon Master</h1>
@@ -102,12 +112,17 @@ const quickActions = [
         class="group relative overflow-hidden rounded-xl border border-surface-700/50 bg-surface-850 transition-all duration-200 hover:border-aircane-700/50 hover:shadow-lg hover:shadow-aircane-900/20"
       >
         <!-- Thumbnail -->
-        <img
+        <AircaneImg
           :src="feature.thumbnail"
           alt=""
+          type="thumbnail"
           aria-hidden="true"
           class="feature-thumbnail"
-        />
+        >
+          <template #fallback>
+            <ThumbnailPlaceholder :label="feature.title" />
+          </template>
+        </AircaneImg>
 
         <!-- Gradient overlay -->
         <div
@@ -147,7 +162,10 @@ const quickActions = [
 
     <!-- Quick Actions panel -->
     <section class="space-y-4">
-      <div class="panel-header panel-header--quick-actions">
+      <div
+        class="panel-header panel-header--quick-actions"
+        v-bg-asset="{ url: '/assets/dashboard/quick-actions-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+      >
         <h2 class="panel-header-title">Quick Actions</h2>
       </div>
 
@@ -158,7 +176,7 @@ const quickActions = [
           :key="action.label"
           :to="action.to"
           class="quick-action-card"
-          :style="{ backgroundImage: `url('${action.art}')` }"
+          v-bg-asset="{ url: action.art, fallback: '#0d0d24' }"
         >
           <span class="quick-action-label">{{ action.label }}</span>
         </RouterLink>
@@ -167,13 +185,20 @@ const quickActions = [
 
     <!-- Recent Campaigns panel -->
     <section class="space-y-4">
-      <div class="panel-header panel-header--recent-campaigns">
+      <div
+        class="panel-header panel-header--recent-campaigns"
+        v-bg-asset="{ url: '/assets/dashboard/recent-campaigns-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+      >
         <h2 class="panel-header-title">Recent Campaigns</h2>
       </div>
 
       <div class="flex items-center justify-between rounded-xl border border-surface-700/50 bg-surface-850 p-5">
         <p class="text-sm text-gray-400">Jump back into an existing adventure or start a fresh one.</p>
-        <RouterLink to="/campaigns" class="new-campaign-button">
+        <RouterLink
+          to="/campaigns"
+          class="new-campaign-button"
+          v-bg-asset="{ url: '/assets/dashboard/new-campaign-button-art.png', fallback: 'transparent', size: '100% 100%' }"
+        >
           <span class="new-campaign-label">+ New Campaign</span>
         </RouterLink>
       </div>
@@ -186,6 +211,7 @@ const quickActions = [
         alt=""
         aria-hidden="true"
         class="footer-quote-ornament"
+        @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
       />
       <p class="footer-quote-text">Great stories aren't just imagined. They're played.</p>
     </footer>
@@ -200,7 +226,6 @@ const quickActions = [
   min-height: 200px;
   overflow: hidden;
   border-radius: var(--border-radius-md);
-  background-image: url('/assets/dashboard/dashboard-hero-background.png');
   background-size: cover;
   background-position: center;
 }
@@ -209,7 +234,6 @@ const quickActions = [
 .hero-welcome {
   position: absolute;
   inset: 0 45% 0 0;
-  background-image: url('/assets/dashboard/dashboard-welcome-banner.png');
   background-size: cover;
   background-position: left center;
 }
@@ -244,14 +268,8 @@ const quickActions = [
   background-size: cover;
   background-position: left center;
   background-repeat: no-repeat;
-}
-
-.panel-header--quick-actions {
-  background-image: url('/assets/dashboard/quick-actions-panel-art.png');
-}
-
-.panel-header--recent-campaigns {
-  background-image: url('/assets/dashboard/recent-campaigns-panel-art.png');
+  /* Panel border so Type C panels stay legible with no art. */
+  border: var(--border-gold);
 }
 
 /* Heading text overlaid over the right 75% */
@@ -271,6 +289,8 @@ const quickActions = [
   min-height: 72px;
   padding: 0 1rem;
   border-radius: var(--border-radius-md);
+  /* Card base so it stays identifiable/clickable with no art. */
+  border: var(--border-gold-dim);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -291,7 +311,7 @@ const quickActions = [
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
 }
 
-/* New Campaign button art (background-size: 100% 100%, no extra border) */
+/* New Campaign button — art-independent CSS base so it is always clickable. */
 .new-campaign-button {
   display: inline-flex;
   align-items: center;
@@ -299,8 +319,10 @@ const quickActions = [
   min-width: 180px;
   min-height: 44px;
   padding: 0 1.25rem;
-  background-image: url('/assets/dashboard/new-campaign-button-art.png');
-  background-size: 100% 100%;
+  border-radius: var(--border-radius-md);
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
   background-repeat: no-repeat;
   transition: box-shadow 0.2s ease;
 }

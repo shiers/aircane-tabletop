@@ -58,13 +58,13 @@ onMounted(async () => {
 <template>
   <div
     class="min-h-full bg-cover bg-center bg-no-repeat"
-    style="background-image: url('/assets/about/about-credits-background.png')"
+    v-bg-asset="{ url: '/assets/about/about-credits-background.png', fallback: '#0a0a1a' }"
   >
     <div class="mx-auto max-w-3xl space-y-8 p-6">
       <!-- Hero banner: image has no baked-in text, so overlay the heading. -->
       <div
         class="relative flex h-40 w-full items-center justify-center rounded-lg bg-cover bg-center"
-        style="background-image: url('/assets/about/about-hero-banner.png')"
+        v-bg-asset="{ url: '/assets/about/about-hero-banner.png', fallback: '#0d0d2a' }"
         role="img"
         aria-label="About & Credits"
       >
@@ -85,8 +85,8 @@ onMounted(async () => {
         <div
           v-for="card in licenseCards"
           :key="card.key"
-          class="rounded-lg bg-cover bg-left p-5"
-          :style="{ backgroundImage: `url('${card.art}')` }"
+          class="license-card rounded-lg bg-cover bg-left p-5"
+          v-bg-asset="{ url: card.art, fallback: '#0d0d2a', position: 'left center' }"
         >
           <div class="ml-auto w-[75%] min-w-[180px]">
             <h3 class="font-semibold text-white">{{ card.title }}</h3>
@@ -102,12 +102,13 @@ onMounted(async () => {
         alt=""
         aria-hidden="true"
         class="mx-auto w-full max-w-[600px]"
+        @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
       />
 
       <!-- Open content attributions (dark panel) -->
       <section
-        class="rounded-lg bg-cover bg-left p-5"
-        style="background-image: url('/assets/about/open-content-attributions-panel.png')"
+        class="about-panel rounded-lg bg-cover bg-left p-5"
+        v-bg-asset="{ url: '/assets/about/open-content-attributions-panel.png', fallback: '#0d0d2a', position: 'left center' }"
       >
         <div class="ml-auto w-[75%] min-w-[260px] space-y-4">
           <h2 class="text-lg font-semibold text-white">Open Content &amp; Attributions</h2>
@@ -139,7 +140,7 @@ onMounted(async () => {
                 <span
                   class="inline-flex items-center rounded-full bg-cover bg-center px-3 py-0.5 text-xs font-medium"
                   :class="badgeClasses(doc.licenseKey)"
-                  style="background-image: url('/assets/about/attribution-badge.png')"
+                  v-bg-asset="{ url: '/assets/about/attribution-badge.png', fallback: '#0d0d2a' }"
                 >
                   {{ doc.licenseDisplayName ?? doc.licenseKey ?? 'Unknown license' }}
                 </span>
@@ -178,12 +179,13 @@ onMounted(async () => {
         alt=""
         aria-hidden="true"
         class="mx-auto w-full max-w-[600px]"
+        @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
       />
 
       <!-- ORC downstream declaration (dark panel) -->
       <section
-        class="rounded-lg bg-cover bg-left p-5"
-        style="background-image: url('/assets/about/content-licensing-declaration-panel.png')"
+        class="about-panel rounded-lg bg-cover bg-left p-5"
+        v-bg-asset="{ url: '/assets/about/content-licensing-declaration-panel.png', fallback: '#0d0d2a', position: 'left center' }"
       >
         <div class="ml-auto w-[75%] min-w-[260px] space-y-3 text-sm text-gray-400">
           <h2 class="text-lg font-semibold text-white">Content Licensing Declaration</h2>
@@ -220,12 +222,13 @@ onMounted(async () => {
         alt=""
         aria-hidden="true"
         class="mx-auto w-full max-w-[600px]"
+        @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
       />
 
       <!-- Application license (dark panel) -->
       <section
-        class="rounded-lg bg-cover bg-left p-5"
-        style="background-image: url('/assets/about/application-license-panel.png')"
+        class="about-panel rounded-lg bg-cover bg-left p-5"
+        v-bg-asset="{ url: '/assets/about/application-license-panel.png', fallback: '#0d0d2a', position: 'left center' }"
       >
         <div class="ml-auto w-[75%] min-w-[260px] space-y-3">
           <h2 class="text-lg font-semibold text-white">Application License</h2>
@@ -249,3 +252,11 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Type C panels/cards — gold border so they stay bordered/legible with no art. */
+.license-card,
+.about-panel {
+  border: var(--border-gold);
+}
+</style>

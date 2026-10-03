@@ -56,6 +56,7 @@ function onInput(event: Event): void {
         alt=""
         aria-hidden="true"
         class="h-8 w-8 shrink-0 object-contain"
+        @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
       />
       <span>{{ error }}</span>
     </p>

@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PlayerJoinForm from '../PlayerJoinForm.vue'
 import * as sessionsApi from '../api'
+import vBgAsset from '@/directives/vBgAsset'
 
 // Mock the sessions API so no real HTTP calls are made
 vi.mock('../api', async (importOriginal) => {
@@ -24,6 +25,7 @@ function mountForm(props = {}) {
     },
     global: {
       plugins: [createPinia()],
+      directives: { 'bg-asset': vBgAsset },
       stubs: {
         RouterLink: true,
       },

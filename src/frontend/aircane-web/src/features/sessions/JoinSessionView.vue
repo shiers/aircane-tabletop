@@ -50,10 +50,17 @@ function handleJoined(result: JoinSessionResult): void {
 </script>
 
 <template>
-  <div class="join-page -m-6 min-h-full p-6">
+  <div
+    class="join-page -m-6 min-h-full p-6"
+    v-bg-asset="{ url: '/assets/join-session/join-session-background.png', fallback: '#0a0a1a' }"
+  >
     <div class="mx-auto max-w-lg space-y-6">
       <!-- Hero banner -->
-      <div class="join-hero overflow-hidden rounded-xl" aria-hidden="true" />
+      <div
+        class="join-hero overflow-hidden rounded-xl"
+        aria-hidden="true"
+        v-bg-asset="{ url: '/assets/join-session/join-session-hero-banner.png', fallback: '#0d0d2a' }"
+      />
 
       <!-- Page header -->
       <div class="flex items-center justify-between">
@@ -75,6 +82,7 @@ function handleJoined(result: JoinSessionResult): void {
         v-else-if="store.error && !store.currentSession"
         role="alert"
         class="not-found-panel flex min-h-[14rem] flex-col items-center justify-center rounded-xl px-6 py-8 text-center"
+        v-bg-asset="{ url: '/assets/join-session/session-not-found-error-panel.png', fallback: '#0d0d2a', position: 'left center' }"
       >
         <p class="mb-2 text-lg font-semibold text-red-300">Session not found</p>
         <p class="text-sm text-red-400">{{ store.error }}</p>
@@ -116,7 +124,10 @@ function handleJoined(result: JoinSessionResult): void {
         />
 
         <!-- Join by QR card: QR over the left 35%, heading/subtext over the right 65% -->
-        <div class="qr-card flex items-center gap-4 rounded-xl p-5">
+        <div
+          class="qr-card flex items-center gap-4 rounded-xl p-5"
+          v-bg-asset="{ url: '/assets/join-session/join-by-qr-card.png', fallback: '#0d0d2a', position: 'left center' }"
+        >
           <div class="flex w-[35%] shrink-0 justify-center">
             <QRCode :value="joinUrl" :size="140" />
           </div>
@@ -134,7 +145,6 @@ function handleJoined(result: JoinSessionResult): void {
 
 <style scoped>
 .join-page {
-  background-image: url('/assets/join-session/join-session-background.png');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
@@ -142,19 +152,18 @@ function handleJoined(result: JoinSessionResult): void {
 
 .join-hero {
   height: 160px;
-  background-image: url('/assets/join-session/join-session-hero-banner.png');
   background-size: cover;
   background-position: center;
 }
 
 .not-found-panel {
-  background-image: url('/assets/join-session/session-not-found-error-panel.png');
+  border: var(--border-gold);
   background-size: cover;
   background-position: left center;
 }
 
 .qr-card {
-  background-image: url('/assets/join-session/join-by-qr-card.png');
+  border: var(--border-gold);
   background-size: cover;
   background-position: left center;
 }

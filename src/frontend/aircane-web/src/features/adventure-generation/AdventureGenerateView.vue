@@ -90,12 +90,14 @@ async function submitForm() {
 
 <template>
   <div
-    class="forge-page bg-[url('/assets/adventure-forge/adventure-forge-background.png')] bg-cover bg-fixed bg-center"
+    class="forge-page bg-cover bg-fixed bg-center"
+    v-bg-asset="{ url: '/assets/adventure-forge/adventure-forge-background.png', fallback: '#0a0a1a' }"
   >
     <div class="mx-auto max-w-3xl space-y-6">
       <!-- Hero banner -->
       <div
-        class="forge-hero flex items-end bg-[url('/assets/adventure-forge/adventure-forge-hero-banner.png')] bg-cover bg-center"
+        class="forge-hero flex items-end bg-cover bg-center"
+        v-bg-asset="{ url: '/assets/adventure-forge/adventure-forge-hero-banner.png', fallback: '#0d0d2a' }"
       >
         <h1 class="forge-hero-title p-5 text-2xl font-bold text-white">Generate Adventure</h1>
       </div>
@@ -127,7 +129,8 @@ async function submitForm() {
 
       <form
         @submit.prevent="submitForm"
-        class="forge-panel space-y-6 rounded-md bg-[url('/assets/adventure-forge/adventure-forge-panel-background.png')] bg-cover bg-left-top p-6"
+        class="forge-panel space-y-6 rounded-md bg-cover bg-left-top p-6"
+        v-bg-asset="{ url: '/assets/adventure-forge/adventure-forge-panel-background.png', fallback: '#0d0d2a', position: 'left top' }"
       >
         <!-- Mode selector -->
         <fieldset>
@@ -202,7 +205,8 @@ async function submitForm() {
           <div>
             <label for="tone" class="block text-sm font-medium text-gray-300 mb-1">Tone</label>
             <div
-              class="field-art bg-[url('/assets/adventure-forge/tone-dropdown-art.png')]"
+              class="field-art"
+              v-bg-asset="{ url: '/assets/adventure-forge/tone-dropdown-art.png', fallback: '#0d0d2a', size: '100% 100%' }"
             >
               <select
                 id="tone"
@@ -219,7 +223,8 @@ async function submitForm() {
           <div>
             <label for="length" class="block text-sm font-medium text-gray-300 mb-1">Length</label>
             <div
-              class="field-art bg-[url('/assets/adventure-forge/length-dropdown-art.png')]"
+              class="field-art"
+              v-bg-asset="{ url: '/assets/adventure-forge/length-dropdown-art.png', fallback: '#0d0d2a', size: '100% 100%' }"
             >
               <select
                 id="length"
@@ -238,7 +243,8 @@ async function submitForm() {
               Difficulty
             </label>
             <div
-              class="field-art bg-[url('/assets/adventure-forge/difficulty-dropdown-art.png')]"
+              class="field-art"
+              v-bg-asset="{ url: '/assets/adventure-forge/difficulty-dropdown-art.png', fallback: '#0d0d2a', size: '100% 100%' }"
             >
               <select
                 id="difficulty"
@@ -283,7 +289,10 @@ async function submitForm() {
           <label for="setting" class="block text-sm font-medium text-gray-300 mb-1">
             Setting <span class="text-gray-500">(optional)</span>
           </label>
-          <div class="field-art bg-[url('/assets/adventure-forge/setting-field-art.png')]">
+          <div
+            class="field-art"
+            v-bg-asset="{ url: '/assets/adventure-forge/setting-field-art.png', fallback: '#0d0d2a', size: '100% 100%' }"
+          >
             <input
               id="setting"
               v-model="setting"
@@ -299,7 +308,8 @@ async function submitForm() {
         <button
           type="submit"
           :disabled="loading || !ratioValid"
-          class="generate-button bg-[url('/assets/adventure-forge/generate-adventure-button-art.png')] disabled:cursor-not-allowed disabled:opacity-50"
+          class="generate-button disabled:cursor-not-allowed disabled:opacity-50"
+          v-bg-asset="{ url: '/assets/adventure-forge/generate-adventure-button-art.png', fallback: 'transparent', size: '100% 100%' }"
         >
           <span v-if="loading" class="flex items-center justify-center gap-2">
             <svg
@@ -355,6 +365,8 @@ async function submitForm() {
   width: 100%;
   background-size: 100% 100%;
   background-repeat: no-repeat;
+  /* Gold-dim border so the field stays bordered/legible with no art. */
+  border: var(--border-gold-dim);
   border-radius: var(--border-radius-sm);
 }
 
@@ -382,7 +394,11 @@ async function submitForm() {
   min-height: 56px;
   background-size: 100% 100%;
   background-repeat: no-repeat;
-  border: none;
+  /* Art-independent CSS base so the button is always clickable. */
+  border: var(--border-gold);
+  border-radius: var(--border-radius-md);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
   display: flex;
   align-items: center;
   justify-content: flex-end;

@@ -77,6 +77,7 @@ async function handleSubmit(): Promise<void> {
   <section
     aria-labelledby="join-form-heading"
     class="join-panel rounded-xl p-6"
+    v-bg-asset="{ url: '/assets/join-session/join-session-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
   >
     <h2 id="join-form-heading" class="mb-1 text-lg font-semibold text-white">
       Join Session
@@ -145,6 +146,7 @@ async function handleSubmit(): Promise<void> {
       <button
         type="submit"
         class="join-submit w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50 transition-opacity"
+        v-bg-asset="{ url: '/assets/join-session/join-session-button-art.png', fallback: 'transparent', size: '100% 100%' }"
         :disabled="store.loading || !isValid"
       >
         <span v-if="store.loading">Joining…</span>
@@ -156,13 +158,16 @@ async function handleSubmit(): Promise<void> {
 
 <style scoped>
 .join-panel {
-  background-image: url('/assets/join-session/join-session-panel-art.png');
+  border: var(--border-gold);
   background-size: cover;
   background-position: left center;
 }
 
+/* Join button — art-independent CSS base so it stays usable with no art. */
 .join-submit {
-  background-image: url('/assets/join-session/join-session-button-art.png');
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
   background-size: 100% 100%;
 }
 </style>

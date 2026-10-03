@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import { useLibraryStore } from '../store'
 import { ImportStatus, SourceType, type SourceDocumentDto } from '../api'
 import DocumentStatusBadge from './DocumentStatusBadge.vue'
+import AircaneImg from '@/shared/components/AircaneImg.vue'
+import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
 
 const store = useLibraryStore()
 
@@ -172,6 +174,7 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
         alt=""
         aria-hidden="true"
         class="mb-4 w-full max-w-[280px]"
+        @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
       />
       <p class="text-sm">No documents yet. Upload one above or register a folder to get started.</p>
     </div>
@@ -205,12 +208,17 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
             >
               <!-- Source-type thumbnail -->
               <td class="px-4 py-3">
-                <img
+                <AircaneImg
                   :src="thumbnailFor(doc)"
                   alt=""
+                  type="thumbnail"
                   aria-hidden="true"
-                  class="h-10 w-10 rounded object-cover"
-                />
+                  class="h-10 w-10 rounded"
+                >
+                  <template #fallback>
+                    <ThumbnailPlaceholder :label="doc.title" />
+                  </template>
+                </AircaneImg>
               </td>
 
               <!-- Title + filename + source-unavailable badge -->
@@ -387,6 +395,7 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
         v-if="selectedDoc"
         class="document-detail-panel"
         aria-label="Document details"
+        v-bg-asset="{ url: '/assets/library/document-detail-side-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
       >
         <div class="document-detail-content">
           <div class="flex items-start justify-between gap-2">
@@ -444,8 +453,8 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
   width: 100%;
   min-height: 320px;
   border-radius: var(--border-radius-md);
+  border: var(--border-gold);
   overflow: hidden;
-  background-image: url('/assets/library/document-detail-side-panel-art.png');
   background-size: cover;
   background-position: left center;
   background-repeat: no-repeat;

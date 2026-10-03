@@ -60,7 +60,12 @@ onUnmounted(() => {
 <template>
   <div class="mx-auto max-w-5xl space-y-6">
     <!-- Full-width hero banner -->
-    <div class="library-hero" role="img" aria-label="Document Library">
+    <div
+      class="library-hero"
+      role="img"
+      aria-label="Document Library"
+      v-bg-asset="{ url: '/assets/library/document-library-hero-background.png', fallback: '#0d0d2a' }"
+    >
       <h1 class="library-hero-title">Document Library</h1>
     </div>
 
@@ -80,6 +85,7 @@ onUnmounted(() => {
         </button>
         <button
           class="open-content-licenses-btn"
+          v-bg-asset="{ url: '/assets/library/open-content-licenses-button-art.png', fallback: 'transparent', size: '100% 100%' }"
           @click="licensesModalOpen = true"
         >
           Open Content Licenses
@@ -228,7 +234,6 @@ onUnmounted(() => {
   padding: 24px 28px;
   border-radius: var(--border-radius-md);
   overflow: hidden;
-  background-image: url('/assets/library/document-library-hero-background.png');
   background-size: cover;
   background-position: center;
 }
@@ -240,7 +245,7 @@ onUnmounted(() => {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
 }
 
-/* Open Content Licenses button art (background-size: 100% 100% per button-art rule). */
+/* Open Content Licenses button — art-independent CSS base so it stays usable. */
 .open-content-licenses-btn {
   display: inline-flex;
   align-items: center;
@@ -249,9 +254,9 @@ onUnmounted(() => {
   font-size: 0.875rem;
   font-weight: 500;
   color: #fff;
-  border: none;
-  background-color: transparent;
-  background-image: url('/assets/library/open-content-licenses-button-art.png');
+  border: var(--border-gold);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--color-bg);
   background-size: 100% 100%;
   background-repeat: no-repeat;
   cursor: pointer;

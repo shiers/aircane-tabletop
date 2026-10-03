@@ -134,7 +134,10 @@ async function handleDelete(folder: WatchedFolderDto): Promise<void> {
 <template>
   <section aria-labelledby="folders-heading">
     <!-- Banner header: heading + description over the right 70% of the banner art. -->
-    <div class="watched-folders-banner mb-4">
+    <div
+      class="watched-folders-banner mb-4"
+      v-bg-asset="{ url: '/assets/library/watched-folders-banner.png', fallback: '#0d0d2a', position: 'left center' }"
+    >
       <div class="watched-folders-banner-text">
         <h2 id="folders-heading" class="text-lg font-semibold text-white">Watched Folders</h2>
         <p class="mt-1 text-sm text-gray-300">
@@ -389,8 +392,8 @@ async function handleDelete(folder: WatchedFolderDto): Promise<void> {
   min-height: 96px;
   padding: 16px 24px;
   border-radius: var(--border-radius-md);
+  border: var(--border-gold);
   overflow: hidden;
-  background-image: url('/assets/library/watched-folders-banner.png');
   background-size: cover;
   background-position: left center;
 }

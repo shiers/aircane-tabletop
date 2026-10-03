@@ -80,6 +80,7 @@ async function handleSubmit(): Promise<void> {
       v-if="!showForm"
       type="button"
       class="btn-art btn-art-add inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium text-white focus:outline-none"
+      v-bg-asset="{ url: '/assets/library/add-watched-folder-button-art.png', fallback: 'transparent', size: '100% 100%' }"
       @click="showForm = true"
     >
       Add Watched Folder
@@ -206,6 +207,7 @@ async function handleSubmit(): Promise<void> {
             type="submit"
             :disabled="submitting"
             class="btn-art btn-art-register inline-flex items-center justify-center gap-2 px-5 py-2 text-sm font-semibold text-white focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            v-bg-asset="{ url: '/assets/library/register-folder-button-art.png', fallback: 'transparent', size: '100% 100%' }"
           >
             <svg
               v-if="submitting"
@@ -249,19 +251,12 @@ async function handleSubmit(): Promise<void> {
 /* Button art backgrounds. Per the button-art rule: background-size: 100% 100% so
    the image scales to the button; no extra border (it is baked into the art). */
 .btn-art {
-  background-color: transparent;
   background-repeat: no-repeat;
   background-size: 100% 100%;
-  border: none;
+  /* Art-independent CSS base so the button stays usable with no art. */
+  background-color: var(--color-purple);
+  border: var(--border-gold);
   border-radius: var(--border-radius-sm);
-}
-
-.btn-art-add {
-  background-image: url('/assets/library/add-watched-folder-button-art.png');
-}
-
-.btn-art-register {
-  background-image: url('/assets/library/register-folder-button-art.png');
 }
 
 .btn-art:focus {

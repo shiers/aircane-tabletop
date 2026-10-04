@@ -50,21 +50,16 @@ function handleJoined(result: JoinSessionResult): void {
 </script>
 
 <template>
-  <div
-    class="join-page -m-6 min-h-full p-6"
-    v-bg-asset="{ url: '/assets/join-session/join-session-background.png', fallback: '#0a0a1a' }"
-  >
+  <div class="join-page page-plain min-h-full">
     <div class="mx-auto max-w-lg space-y-6">
-      <!-- Hero banner -->
+      <!-- Hero banner with the title overlaid bottom-left -->
       <div
-        class="join-hero overflow-hidden rounded-xl"
-        aria-hidden="true"
+        class="app-hero"
         v-bg-asset="{ url: '/assets/join-session/join-session-hero-banner.png', fallback: '#0d0d2a' }"
-      />
-
-      <!-- Page header -->
-      <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-white">Join Session</h1>
+      >
+        <div class="app-hero__overlay">
+          <h1 class="app-hero__title">Join Session</h1>
+        </div>
       </div>
 
       <!-- Loading state -->
@@ -75,23 +70,6 @@ function handleJoined(result: JoinSessionResult): void {
         aria-busy="true"
       >
         <span class="text-gray-400">Loading session…</span>
-      </div>
-
-      <!-- Error loading session -->
-      <div
-        v-else-if="store.error && !store.currentSession"
-        role="alert"
-        class="not-found-panel flex min-h-[14rem] flex-col items-center justify-center rounded-xl px-6 py-8 text-center"
-        v-bg-asset="{ url: '/assets/join-session/session-not-found-error-panel.png', fallback: '#0d0d2a', position: 'left center' }"
-      >
-        <p class="mb-2 text-lg font-semibold text-red-300">Session not found</p>
-        <p class="text-sm text-red-400">{{ store.error }}</p>
-        <RouterLink
-          to="/"
-          class="mt-4 inline-block text-sm text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-        >
-          ← Back to home
-        </RouterLink>
       </div>
 
       <!-- Joined - waiting for approval -->
@@ -115,11 +93,12 @@ function handleJoined(result: JoinSessionResult): void {
         </p>
       </div>
 
-      <!-- Join form + QR hand-off -->
-      <template v-else-if="store.currentSession">
+      <!-- Join form + QR hand-off. The form always renders first (regardless of
+           whether the session loaded), with the error panel shown BELOW it. -->
+      <template v-else>
         <PlayerJoinForm
           :session-id="sessionId"
-          :session-name="store.currentSession.name"
+          :session-name="store.currentSession?.name"
           @joined="handleJoined"
         />
 
@@ -138,24 +117,32 @@ function handleJoined(result: JoinSessionResult): void {
             </p>
           </div>
         </div>
+
+        <!-- Session-not-found panel: only when the session failed to load.
+             PlayerJoinForm surfaces join (API) errors itself, so this standalone
+             panel is scoped to the load failure (no currentSession) to avoid a
+             duplicate error being shown. -->
+        <div
+          v-if="store.error && !store.currentSession"
+          role="alert"
+          class="not-found-panel flex min-h-[14rem] flex-col items-center justify-center rounded-xl px-6 py-8 text-center"
+          v-bg-asset="{ url: '/assets/join-session/session-not-found-error-panel.png', fallback: '#0d0d2a', position: 'left center' }"
+        >
+          <p class="mb-2 text-lg font-semibold text-red-300">Session not found</p>
+          <p class="text-sm text-red-400">{{ store.error }}</p>
+          <RouterLink
+            to="/"
+            class="mt-4 inline-block text-sm text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          >
+            ← Back to home
+          </RouterLink>
+        </div>
       </template>
     </div>
   </div>
 </template>
 
 <style scoped>
-.join-page {
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-}
-
-.join-hero {
-  height: 160px;
-  background-size: cover;
-  background-position: center;
-}
-
 .not-found-panel {
   border: var(--border-gold);
   background-size: cover;

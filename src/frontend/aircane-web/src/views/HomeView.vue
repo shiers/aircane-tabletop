@@ -84,8 +84,8 @@ const quickActions = [
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-8">
-    <!-- Hero banner -->
+  <div class="space-y-8">
+    <!-- Hero banner (Dashboard hero may stay taller than the standard 240px) -->
     <section
       class="hero"
       v-bg-asset="{ url: '/assets/dashboard/dashboard-hero-background.png', fallback: '#0d0d2a' }"

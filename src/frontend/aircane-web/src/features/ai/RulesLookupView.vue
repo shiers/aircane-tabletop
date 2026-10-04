@@ -63,28 +63,24 @@ async function submitQuestion() {
 </script>
 
 <template>
-  <div
-    class="min-h-full bg-cover bg-center bg-no-repeat"
-    v-bg-asset="{ url: '/assets/rules/rules-lookup-background.png', fallback: '#0a0a1a' }"
-  >
-    <div class="mx-auto max-w-3xl space-y-6 p-6">
-      <!-- Hero banner -->
-      <div
-        class="h-40 w-full rounded-lg bg-cover bg-center"
-        v-bg-asset="{ url: '/assets/rules/rules-lookup-hero-banner.png', fallback: '#0d0d2a' }"
-        role="img"
-        aria-label="Rules Lookup"
-      ></div>
-
-      <!-- Page header -->
-      <div>
-        <h1 class="text-2xl font-bold text-white">Rules Lookup</h1>
-        <p class="mt-1 text-sm text-gray-400">
-          Ask a rules question and get an AI-generated answer grounded in your indexed source
-          documents.
+  <div class="page-sections page-plain">
+    <!-- Hero banner -->
+    <div
+      class="app-hero"
+      v-bg-asset="{ url: '/assets/rules/rules-lookup-hero-banner.png', fallback: '#0d0d2a' }"
+      role="img"
+      aria-label="Rules Lookup"
+    >
+      <div class="app-hero__overlay">
+        <h1 class="app-hero__title">Rules Lookup</h1>
+        <p class="app-hero__subtitle">
+          Ask a rules question and get an AI-generated answer grounded in your indexed sources.
         </p>
       </div>
+    </div>
 
+    <!-- Question + results column -->
+    <div class="space-y-6">
       <!-- Question panel: ask-question-panel-art backs the panel, controls over the right 65% -->
       <div
         class="ask-question-panel rounded-lg bg-cover bg-left p-5"

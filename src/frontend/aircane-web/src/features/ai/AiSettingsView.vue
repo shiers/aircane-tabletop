@@ -285,29 +285,25 @@ function isKeyMasked(value: string): boolean {
 </script>
 
 <template>
-  <div
-    class="ai-settings-page"
-    v-bg-asset="{ url: '/assets/ai-settings/ai-provider-background.png', fallback: '#0a0a1a' }"
-  >
-    <div class="mx-auto max-w-2xl space-y-6">
-      <!-- Section header with hero art, heading overlaid -->
+  <div class="ai-settings-page page-plain">
+    <div class="space-y-6">
+      <!-- Hero banner with the title overlaid bottom-left -->
       <div
-        class="settings-hero"
+        class="app-hero"
         v-bg-asset="{ url: '/assets/ai-settings/ai-provider-settings-hero.png', fallback: '#0d0d2a' }"
       >
-        <div class="settings-hero-content">
-          <h1 class="text-2xl font-bold text-white">AI Provider Settings</h1>
-          <p class="mt-1 text-sm text-gray-200">
-            Configure which AI provider powers rules lookup, narration, and the AI DM runtime.
-            API keys are stored server-side only and never sent to the browser.
-          </p>
-        </div>
         <button
           class="settings-hero-licenses text-sm font-medium text-aircane-300 hover:text-aircane-200 hover:underline"
           @click="licensesModalOpen = true"
         >
           Open Content Licenses
         </button>
+        <div class="app-hero__overlay">
+          <h1 class="app-hero__title">AI Provider Settings</h1>
+          <p class="app-hero__subtitle">
+            Configure which AI provider powers rules lookup, narration, and the AI DM runtime.
+          </p>
+        </div>
       </div>
 
     <!-- Open-content license attribution modal -->
@@ -676,38 +672,19 @@ function isKeyMasked(value: string): boolean {
 </template>
 
 <style scoped>
-/* Page background */
+/* Solid dark page (no full-page art). */
 .ai-settings-page {
   position: relative;
   min-height: 100%;
-  padding: 1.5rem 1rem;
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
 }
 
-/* Section header with hero art, heading overlaid */
-.settings-hero {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-height: 120px;
-  padding: 1rem 1.25rem;
-  border-radius: var(--border-radius-md);
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-
-.settings-hero-content {
-  max-width: 70%;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
-}
-
+/* "Open Content Licenses" link pinned to the hero's top-right corner. */
 .settings-hero-licenses {
   position: absolute;
   top: 0.75rem;
   right: 1rem;
+  z-index: 1;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
 }
 
 /* Provider quick-select cards (name over the right 70%) */

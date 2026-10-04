@@ -41,30 +41,27 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl space-y-6">
+  <div class="page-sections">
     <!-- Hero banner -->
     <section
-      class="hero"
+      class="app-hero"
       v-bg-asset="{ url: '/assets/campaigns/campaigns-hero-background.png', fallback: '#0d0d2a' }"
     >
-      <div class="hero-heading">
-        <h1 class="text-2xl font-bold text-white sm:text-3xl">Campaigns</h1>
-        <p class="mt-1 text-sm text-gray-200">Create, manage, and jump back into your adventures.</p>
+      <div class="app-hero__overlay">
+        <h1 class="app-hero__title">Campaigns</h1>
+        <p class="app-hero__subtitle">Create, manage, and jump back into your adventures.</p>
       </div>
     </section>
 
-    <!-- Page header -->
-    <div class="flex items-center justify-between">
-      <h2 class="text-xl font-semibold text-white">Your Campaigns</h2>
+    <!-- Page header (New Campaign action; heading lives above the card list) -->
+    <div class="flex items-center justify-end">
       <button
         v-if="!showForm"
-        class="btn-primary"
+        class="new-campaign-button"
+        v-bg-asset="{ url: '/assets/dashboard/new-campaign-button-art.png', fallback: 'transparent', size: '100% 100%' }"
         @click="openCreateForm"
       >
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        New Campaign
+        <span class="new-campaign-label">+ New Campaign</span>
       </button>
     </div>
 
@@ -148,23 +145,32 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
 </template>
 
 <style scoped>
-/* Hero banner */
-.hero {
-  position: relative;
-  width: 100%;
-  min-height: 180px;
-  overflow: hidden;
+/* New Campaign button — same art + dimensions as the Dashboard button
+   (HomeView `.new-campaign-button`). Art-independent CSS base keeps it usable
+   if the art fails to load. */
+.new-campaign-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+  min-height: 44px;
+  padding: 0 1.25rem;
   border-radius: var(--border-radius-md);
-  background-size: cover;
-  background-position: center;
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
+  background-repeat: no-repeat;
+  transition: box-shadow 0.2s ease;
 }
 
-.hero-heading {
-  position: absolute;
-  top: 50%;
-  left: 5%;
-  right: 5%;
-  transform: translateY(-50%);
+.new-campaign-button:hover {
+  box-shadow: var(--glow-purple);
+}
+
+.new-campaign-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 

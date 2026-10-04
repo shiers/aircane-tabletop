@@ -155,6 +155,14 @@ driven `ImportReviewPanel` every other source uses. Two follow-ups to converge i
   the two review models touches the backend PDF endpoint, the review components, and their tests, and the
   existing PDF flow works and is tested.
 
+### In-App Help / How-To Menu
+Add a Help menu item that surfaces user-facing how-tos and guidance in-app (rather than only in
+`docs/`). First content to include: **character import instructions per source** (Pathbuilder 2e,
+D&D Beyond URL + saved file, Foundry VTT 5e/PF2e, Roll20, Generic VTT, and PDF via the unified
+**Import Character** modal) — the detailed step-by-step was drafted but intentionally not written to
+`docs/` because it belongs in this feature. Likely also covers library import, hosting a session,
+and AI provider setup. Surface it in the app shell (and the Tauri tray where it fits).
+
 ### Streaming Narration (All Providers)
 Ensure token-by-token streaming works consistently across all AI providers and UI modes.
 

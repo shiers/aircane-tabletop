@@ -1,5 +1,7 @@
+using System.Text.RegularExpressions;
 using Aircane.Application.Abstractions;
 using Aircane.Application.Characters;
+using Aircane.Application.Characters.Import;
 using Microsoft.Extensions.Logging;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.AcroForms.Fields;
@@ -221,6 +223,11 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
 
         foreach (var (key, value) in fields)
         {
+            // D&D Beyond PDF form-field names take priority over the generic heuristics: when a
+            // field name matches a known DDB hint, map it via the hinted canonical path.
+            if (TryMapByDndBeyondHint(key, value, character, warnings))
+                continue;
+
             if (!TryMapField(key, value, character, warnings))
             {
                 unmapped[key] = value;
@@ -228,6 +235,112 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
         }
 
         return (character, unmapped);
+    }
+
+    /// <summary>
+    /// Priority override for D&amp;D Beyond PDF exports: when a form-field name matches a key in
+    /// <see cref="DndBeyondPdfHints.FieldMap"/>, apply the value via the hinted canonical path. The
+    /// combined <c>ClassLevel</c> field is split into class name + level. Returns <c>true</c> when
+    /// the field was recognised as a DDB hint (and handled), <c>false</c> otherwise.
+    /// </summary>
+    private static bool TryMapByDndBeyondHint(
+        string key,
+        string value,
+        CanonicalCharacter character,
+        List<string> warnings)
+    {
+        var trimmedKey = key.Trim();
+
+        // ClassLevel is a combined "class name + level" field; split it post-parse. Multiclass
+        // values (containing "/") are delegated to the general parser, which handles each segment.
+        if (string.Equals(trimmedKey, DndBeyondPdfHints.ClassLevelFieldName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (value.Contains('/'))
+            {
+                MapClassLevel(value, character, warnings);
+                return true;
+            }
+
+            var match = Regex.Match(value.Trim(), @"^(.+?)\s+(\d+)$");
+            if (match.Success && int.TryParse(match.Groups[2].Value, out var level))
+            {
+                var className = match.Groups[1].Value.Trim();
+                character.Classes.Add(new CharacterClass
+                {
+                    ClassName = className,
+                    Level = level,
+                    HitDie = DefaultHitDieForClass(className),
+                });
+            }
+            else
+            {
+                // Fall back to the general class/level parsing when the simple pattern fails.
+                MapClassLevel(value, character, warnings);
+            }
+
+            return true;
+        }
+
+        if (!DndBeyondPdfHints.FieldMap.TryGetValue(trimmedKey, out var canonicalPath))
+            return false;
+
+        ApplyCanonicalPath(canonicalPath, trimmedKey, value, character, warnings);
+        return true;
+    }
+
+    /// <summary>Applies a value to the character for a known canonical <c>ApplyMapping</c> path.</summary>
+    private static void ApplyCanonicalPath(
+        string canonicalPath,
+        string fieldName,
+        string value,
+        CanonicalCharacter character,
+        List<string> warnings)
+    {
+        switch (canonicalPath)
+        {
+            case CanonicalCharacterPaths.IdentityName:
+                character.Identity.Name = value;
+                break;
+            case CanonicalCharacterPaths.IdentityRaceOrAncestry:
+                character.Identity.RaceOrAncestry = value;
+                break;
+            case CanonicalCharacterPaths.IdentityBackground:
+                character.Identity.Background = value;
+                break;
+            case CanonicalCharacterPaths.AbilityStrength:
+                character.Abilities.Strength = ParseAbilityScore(fieldName, value, warnings);
+                break;
+            case CanonicalCharacterPaths.AbilityDexterity:
+                character.Abilities.Dexterity = ParseAbilityScore(fieldName, value, warnings);
+                break;
+            case CanonicalCharacterPaths.AbilityConstitution:
+                character.Abilities.Constitution = ParseAbilityScore(fieldName, value, warnings);
+                break;
+            case CanonicalCharacterPaths.AbilityIntelligence:
+                character.Abilities.Intelligence = ParseAbilityScore(fieldName, value, warnings);
+                break;
+            case CanonicalCharacterPaths.AbilityWisdom:
+                character.Abilities.Wisdom = ParseAbilityScore(fieldName, value, warnings);
+                break;
+            case CanonicalCharacterPaths.AbilityCharisma:
+                character.Abilities.Charisma = ParseAbilityScore(fieldName, value, warnings);
+                break;
+            case CanonicalCharacterPaths.CombatMaxHitPoints:
+                character.Combat.MaxHitPoints = ParseIntField(fieldName, value, 0, warnings);
+                break;
+            case CanonicalCharacterPaths.CombatHitPoints:
+                character.Combat.CurrentHitPoints = ParseIntField(fieldName, value, 0, warnings);
+                break;
+            case CanonicalCharacterPaths.CombatArmorClass:
+                character.Combat.ArmorClass = ParseIntField(fieldName, value, 10, warnings);
+                break;
+            case CanonicalCharacterPaths.CombatSpeed:
+                character.Combat.Speed = ParseIntField(fieldName, value, 30, warnings);
+                break;
+            case CanonicalCharacterPaths.CombatProficiencyBonus:
+                character.Combat.ProficiencyBonus = ParseIntField(fieldName, value, 2, warnings);
+                break;
+        }
     }
 
     /// <summary>

@@ -29,6 +29,7 @@ public sealed class CharactersController : ControllerBase
     private readonly ICharacterSchemaEngine _schemaEngine;
     private readonly CharacterFormatDetector _formatDetector;
     private readonly IReadOnlyList<ICharacterSourceMapper> _sourceMappers;
+    private readonly IDndBeyondUrlImportService _dndBeyondUrlImport;
     private readonly ILogger<CharactersController> _logger;
 
     public CharactersController(
@@ -38,6 +39,7 @@ public sealed class CharactersController : ControllerBase
         ICharacterSchemaEngine schemaEngine,
         CharacterFormatDetector formatDetector,
         IEnumerable<ICharacterSourceMapper> sourceMappers,
+        IDndBeyondUrlImportService dndBeyondUrlImport,
         ILogger<CharactersController> logger)
     {
         _characters = characters;
@@ -46,6 +48,7 @@ public sealed class CharactersController : ControllerBase
         _schemaEngine = schemaEngine;
         _formatDetector = formatDetector;
         _sourceMappers = sourceMappers.ToList();
+        _dndBeyondUrlImport = dndBeyondUrlImport;
         _logger = logger;
     }
 
@@ -368,6 +371,169 @@ public sealed class CharactersController : ControllerBase
         var systems = await _registry.ListAsync(cancellationToken);
         return systems.FirstOrDefault(s =>
             string.Equals(s.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Imports a character from a D&amp;D Beyond character URL (or bare numeric id) via the
+    /// unofficial character-service API. Returns 200 with a <see cref="SourceImportResponse"/>
+    /// review envelope on success. Returns 422 for user-correctable upstream failures (private
+    /// sheet, not found, timeout, upstream error) and 400 for an unparseable URL. The character URL
+    /// is never stored or logged.
+    /// </summary>
+    [HttpPost("import/dndbeyond-url")]
+    [ProducesResponseType(typeof(SourceImportResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> ImportCharacterFromDndBeyondUrl(
+        [FromBody] DndBeyondUrlImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.CharacterUrl))
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation failed",
+                Detail = "Enter a valid D&D Beyond character URL or ID.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+
+        string rawJson;
+        try
+        {
+            rawJson = await _dndBeyondUrlImport.FetchAsync(request.CharacterUrl, cancellationToken);
+        }
+        catch (DndBeyondImportException ex)
+        {
+            return MapDndBeyondFailure(ex);
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(rawJson);
+        }
+        catch (JsonException)
+        {
+            // The upstream returned something unparseable; surface as an upstream failure (never
+            // echo the body).
+            return UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "D&D Beyond import failed. Use the PDF export option instead.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            });
+        }
+
+        using (doc)
+        {
+            var mapper = _sourceMappers.FirstOrDefault(m => m.Source == CharacterImportSource.DndBeyondApi);
+            if (mapper is null)
+                return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+                {
+                    Title = "Import failed",
+                    Detail = "The D&D Beyond import mapper is not available.",
+                    Status = StatusCodes.Status500InternalServerError,
+                });
+
+            // D&D Beyond always forces the built-in D&D 5e 2014 system.
+            var summary = await ResolveBuiltInSystemAsync("dnd-5e-2014", cancellationToken);
+            if (summary is null)
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Validation failed",
+                    Detail = "The required built-in game system is not installed.",
+                    Status = StatusCodes.Status400BadRequest,
+                });
+
+            SourceMapResult mapResult;
+            try
+            {
+                mapResult = mapper.Map(doc);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error while mapping a D&D Beyond URL import.");
+                return UnprocessableEntity(new ProblemDetails
+                {
+                    Title = "Import failed",
+                    Detail = "D&D Beyond import failed. Use the PDF export option instead.",
+                    Status = StatusCodes.Status422UnprocessableEntity,
+                });
+            }
+
+            var ruleset = mapResult.Ruleset ?? "2014";
+            var persistWarnings = new List<string>();
+
+            CharacterDto draft;
+            try
+            {
+                draft = await PersistDraftFromCanonicalAsync(
+                    mapResult.Character,
+                    summary.Name,
+                    ruleset,
+                    request.CampaignId,
+                    originalFileName: null,
+                    persistWarnings,
+                    cancellationToken);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "D&D Beyond URL import could not persist a draft.");
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Import failed",
+                    Detail = "The imported character data could not be saved.",
+                    Status = StatusCodes.Status400BadRequest,
+                });
+            }
+
+            var review = BuildSourceReview(mapResult, draft.Id, summary.Id, persistWarnings);
+
+            return Ok(new SourceImportResponse(
+                DetectedSource: CharacterImportSource.DndBeyondApi.ToString(),
+                Confidence: mapResult.Confidence == ImportConfidence.High ? "high" : "low",
+                RequiresSourceConfirmation: mapResult.Confidence == ImportConfidence.Low,
+                Ruleset: mapResult.Ruleset,
+                RulesetRequiresConfirmation: mapResult.RulesetRequiresConfirmation,
+                Review: review));
+        }
+    }
+
+    /// <summary>Maps a <see cref="DndBeyondImportException"/> to the brief's exact status + message.</summary>
+    private IActionResult MapDndBeyondFailure(DndBeyondImportException ex)
+    {
+        return ex.StatusKind switch
+        {
+            DndBeyondImportStatusKind.Private403 => UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "This character is private. Make your character sheet public on D&D Beyond to import it.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            }),
+            DndBeyondImportStatusKind.NotFound404 => UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "Character not found. Check the URL and try again.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            }),
+            DndBeyondImportStatusKind.Timeout => UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "D&D Beyond is not responding. Try again later.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            }),
+            DndBeyondImportStatusKind.InvalidUrl => BadRequest(new ProblemDetails
+            {
+                Title = "Validation failed",
+                Detail = "Enter a valid D&D Beyond character URL or ID.",
+                Status = StatusCodes.Status400BadRequest,
+            }),
+            _ => UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "D&D Beyond import failed. Use the PDF export option instead.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            }),
+        };
     }
 
     /// <summary>

@@ -121,6 +121,11 @@ src/frontend/aircane-web/dist/desktop/qrcode.min.js
 # ============================================================
 .kiro/
 
+# Agent workflow scaffolding (task tracking, design notes, review verdicts)
+# and transient git worktrees — never commit these.
+.agents/
+.worktrees/
+
 # ============================================================
 # Misc
 # ============================================================

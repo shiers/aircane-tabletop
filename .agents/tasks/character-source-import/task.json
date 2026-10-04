@@ -1,0 +1,7 @@
+{
+  "task_id": "task-character-source-import",
+  "task_description": "Add source-specific character import adapters (Pathbuilder 2e, D&D Beyond URL/file/companion, Foundry dnd5e/pf2e, Roll20, Generic VTT) and DDB PDF hints that funnel into the EXISTING CanonicalCharacter + CharacterService.ApplyMapping / ApplyFieldMappingsAsync review-and-save rail. Each mapper emits a flat dictionary of ApplyMapping-path raw values owning its own MappedFields (no phantom CanonicalCharacter defaults). Extend POST /api/characters/import (preserving the legacy 400 ruleset/gameSystem contract), add POST /api/characters/import/dndbeyond-url, extend the DDB PDF path, and extend the frontend import modal to reuse the FormDescriptor-driven renderer. Purely additive. Folds the 5 outstanding design-review findings (MEDIUM-1 legacy routing, MEDIUM-2 FieldMappingEntry shape, NIT-3 range-safe acceptance values, NIT-4 bare-int numeric strings, NIT-5 no destructive Unknown stub) in as explicit work.",
+  "status": "completed",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null
+}

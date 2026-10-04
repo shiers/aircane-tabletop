@@ -4,7 +4,7 @@
 > full project context. Claude uses it to have productive design/planning conversations, then
 > Shawn hands implementation work to AWS Kiro. Update this file after each significant session.
 >
-> **Last updated:** 2026-10-04 (decisions logged: Tauri desktop wrapper delivered, Proprietary app license, **Cloudflare internet tunnel delivered** with its security-hardening prerequisites, native mobile companion app → Flutter in P3; **in-app "Report a bug" feedback feature delivered and merged to `dev`** — see "Latest Delivered" immediately below)
+> **Last updated:** 2026-10-04 (decisions logged: Tauri desktop wrapper delivered, Proprietary app license, **Cloudflare internet tunnel delivered** with its security-hardening prerequisites, native mobile companion app → Flutter in P3; in-app "Report a bug" feedback feature delivered and merged to `dev`; **source-specific character import adapters — D&D Beyond (URL + file), Foundry VTT (5e/PF2e), Roll20, Pathbuilder 2e, Generic VTT — delivered and merged to `dev`** — see "Latest Delivered" immediately below)
 > **MVP status:** ✅ Complete — all 9 phases shipped.
 > **Phase 10 (Built-in Rules Content Bundle):** ✅ Complete — 10.1–10.8 done & verified
 > (embedded bundles, license metadata, `LicensesController`, attribution UI, tests).
@@ -13,6 +13,81 @@
 > are all delivered. Only the real PF2e ORC rules text remains fully maintainer-gated.
 > **Latest work:** Internet Tunnel / Remote Play via Cloudflare Tunnel + security hardening —
 > see "Latest Session" immediately below.
+
+---
+
+## Latest Delivered — Source-Specific Character Import Adapters (D&D Beyond / VTT / Pathbuilder 2e)
+
+**Status: ✅ delivered and merged to `dev`** (PR #15, merge commit `89dc148`; doc/cleanup follow-up
+after). Built via a Kiro design → plan → implement → review workflow (the design loop reconciled the
+original brief's idealised type/route names against the real repo before any code was written);
+reviewer approved and build/tests verified green before merge. Verified: backend build 0 errors,
+**2125 unit + 96 integration** tests green; frontend `vue-tsc` 0 errors + **317 vitest**.
+
+**What it is:** source-specific import adapters that funnel into the **existing** character import
+pipeline. Each source is an adapter that extracts raw field values; nothing bypasses the canonical
+schema or the review/save flow. The feature is **purely additive** — the legacy
+`POST /api/characters/import` contract (including its `400 "ruleset is required."` guard for partial
+bodies) is preserved.
+
+**Core abstraction (`Aircane.Application/Characters/Import/`):**
+- `ICharacterSourceMapper` (`Source`, `CanMap(JsonDocument)`, `Map(JsonDocument)`) + a
+  `CharacterImportSource` enum (Unknown, DndBeyondApi, DndBeyondCompanion, PathbuilderTwo,
+  FoundryDnd5e, FoundryPf2e, Roll20, GenericVtt).
+- `CharacterFormatDetector` runs the mappers in `Order` precedence (exception-swallowing `CanMap`)
+  and returns the detected source; the import endpoint calls it when no explicit `?source=` is given.
+- **Mappers never produce a new draft type and never write typed columns.** Each emits a flat
+  dictionary of raw field values keyed by canonical schema-field paths, which funnels through the
+  **existing** `CharacterService.ApplyMapping` / `CanonicalCharacter` rail that the PDF review/save
+  flow already uses. Data lands in `Character.CanonicalJson`. Each mapper owns its own `MappedFields`
+  so `CanonicalCharacter`'s non-zero constructor defaults (abilities=10, AC=10, speed=30) don't seed
+  phantom review values.
+
+**Mappers delivered:**
+- **Pathbuilder 2e** — PF2e "Export to JSON"; proficiency rank → bonus (`rank*2+level`), spellcasters
+  → spell blocks, Lore skills; game system auto-forced to **Pathfinder 2e / Remaster**.
+- **D&D Beyond API v5** — sums all bonus layers (base + racial/feat/override), flags out-of-range
+  ability scores `requiresReview`; ruleset 2014/2024 detected via source IDs
+  (`DndBeyondSources.Ruleset2024SourceIds`), always `RulesetRequiresConfirmation`.
+- **D&D Beyond Companion / DDB-Importer** — reuses the API mapper paths one level deeper (`character.`).
+- **Foundry VTT dnd5e** — items→class/subclass/spells/equipment/features, 18 skill keys; ruleset via
+  `_stats.systemVersion` (v3+ → 2024, v2 → 2014), fallback `source.book`.
+- **Foundry VTT pf2e** — ancestry/heritage/class/saves/classDC; game system auto-forced to PF2e/Remaster.
+- **Roll20** — flat `attribs` array (D&D 5e by Roll20 sheet names); missing attrib → null +
+  `requiresReview`; always **low confidence** (prompts full review).
+- **Generic VTT** — heuristic fallback when nothing matches; low confidence, all fields `requiresReview`.
+
+**D&D Beyond URL import (new endpoint):** `POST /api/characters/import/dndbeyond-url` →
+`DndBeyondUrlImportService` (Infrastructure) — a **typed HttpClient** that parses the character id
+from the URL (or a bare numeric id), calls the **unofficial**
+`character-service.dndbeyond.com/character/v5/character/{id}` with `User-Agent: Aircane-Tabletop/1.0`,
+and maps 403/404/timeout to clear help messages (private character / not found / not responding, all
+`422`). **Never called from the browser** (DDB blocks browser-origin). Responses are **not cached**;
+the character URL is **never stored or logged**. Because the existing `api` rate-limit policy is a
+LAN no-op, the service adds an in-process single-flight/min-interval guard so a local box can't spam
+the DDB API.
+
+**D&D Beyond PDF hints:** `DndBeyondPdfHints.FieldMap` wired into the existing PdfPig character
+extractor as a priority-override (known DDB sheet form-field names → canonical paths), with a
+post-parse split of `"Fighter 5"` into class + level.
+
+**Frontend (`features/characters/`):** `ImportCharacterModal.vue` gains import-method tabs
+(**Upload File / D&D Beyond URL / PDF**) with a detected-source badge, a source-override dropdown when
+detection is low-confidence, and the DDB URL tab (public-character help link + unofficial-API
+disclaimer). The review step reuses the **existing FormDescriptor-driven dynamic character sheet
+renderer** (not a custom field-by-field component) via a new `ImportReviewPanel.vue`, seeding from the
+mapped fields and building well-formed `FieldMappingEntry[]` on confirm. D&D 5e review always shows an
+editable **2014/2024 ruleset dropdown**, highlighted when confirmation is required.
+
+**Game-system handshake:** PF2e sources (Pathbuilder, Foundry PF2e) auto-set Pathfinder 2e/Remaster
+and DDB/Foundry dnd5e auto-set D&D 5e; **Roll20 and Generic VTT leave the system unset** and use a
+two-call flow (the second POST pins `?source` + `gameSystemDefinitionId`) so the user picks a system
+before mapping completes.
+
+**Tests:** per-mapper unit tests + detector precedence/negative tests, DDB URL parse/status tests
+(DDB API mocked with **WireMock.Net 1.6.11**), PDF-hint tests, integration tests for the endpoint
+(happy paths, `requiresSourceConfirmation`, the preserved legacy `400`, and the DDB `422`), and
+anonymised sample fixtures for every source.
 
 ---
 
@@ -530,7 +605,11 @@ User-facing guidance is in `docs/setup/ai-configuration.md` and `docs/known-limi
   per campaign and adventure generation uses PF2e terminology. D&D 5e remains the default validator.
 - **PF2e Remaster rules text is a 2-chunk stub** — the mechanics definition + PF2e-aware generation
   ship, but real ORC-licensed rules *text* is still needed (see decision table in `docs/backlog.md`).
-- **PDF character import is best-effort** — form-fillable + simple text-layer only.
+- **Character import — source adapters delivered** — D&D Beyond (URL via unofficial API + saved file),
+  Foundry VTT (dnd5e + PF2e), Roll20, Pathbuilder 2e, and a Generic VTT fallback all funnel into the
+  existing review/save pipeline, with auto format detection and 2014/2024 ruleset detection. PDF
+  character import stays best-effort (form-fillable + simple text-layer; DDB sheet field hints
+  improve it). The DDB URL path uses an **unofficial** API that may change — PDF export is the fallback.
 - **Background jobs run in-process** — a channel-queue + hosted-worker runner handles import/
   folder-scan/re-embed/re-OCR asynchronously (`GET /api/jobs/{id}` for status); no persistent
   runner (Hangfire) yet, but the seam is reserved.
@@ -556,6 +635,7 @@ are removed from the active backlog and recorded under "Completed P1 Work"):
 - ⛔ PF2e Remaster real ORC **rules text** — *not auto-built: content/licensing (maintainer action)*
 
 **P2:**
+- ✅ D&D Beyond / VTT / Pathbuilder 2e character import — **delivered** (DDB URL+file, Foundry 5e/PF2e, Roll20, Pathbuilder 2e, Generic VTT adapters → existing import rail)
 - Map / battlemap support
 - AWS cloud deployment
 - File upload source mode (`UploadDocumentSource` implemented)
@@ -568,8 +648,6 @@ are removed from the active backlog and recorded under "Completed P1 Work"):
 - Native player companion app (iOS/Android) — player-side view; push notifications, offline sheet, dice roller, QR join; no backend changes
 - Automatic folder watching (file-system watcher)
 - Advanced PDF layout parsing
-- D&D Beyond / VTT import
-- Pathbuilder 2e character import (JSON export → existing JSON character import path)
 - Multi-turn AI memory
 - Session export / replay
 

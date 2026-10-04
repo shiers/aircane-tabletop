@@ -40,8 +40,11 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 
 ## Characters
 
-- **PDF character import is best-effort.** Only form-fillable PDFs and simple text-layer PDFs produce reliable results. Complex character sheet layouts may require manual correction.
-- **No D&D Beyond or VTT integration.** Characters must be imported via PDF or JSON, or created manually.
+- **PDF character import is best-effort.** Only form-fillable PDFs and simple text-layer PDFs produce reliable results. Complex character sheet layouts may require manual correction. (D&D Beyond's standard PDF sheet now has known form-field hints that improve extraction.)
+- **D&D Beyond / VTT / Pathbuilder import is delivered, with caveats.** Characters can be imported from D&D Beyond (by public character URL via an unofficial API, or from a saved API JSON file), Foundry VTT (dnd5e and PF2e actor exports), Roll20 (community exporter JSON), Pathbuilder 2e ("Export to JSON"), and a generic VTT fallback — in addition to the existing JSON/PDF paths and manual creation. The format is auto-detected and funnels into the same review/save flow. Caveats:
+  - **The D&D Beyond URL path uses an *unofficial* API** (`character-service.dndbeyond.com`) that is not an official public API and may stop working without notice. The character must be set to **public** on D&D Beyond. If it fails, use the PDF export as a fallback. Responses are never cached and the character URL is never stored or logged.
+  - **Roll20 and Generic VTT are low-confidence by design** — Roll20 attribute names vary by sheet template, so unmatched fields are left null and flagged for review; the generic fallback flags all fields for review. Both require the user to pick a game system before mapping completes.
+  - **D&D 5e ruleset (2014 vs 2024) is auto-detected but always confirmable** — detection uses D&D Beyond source IDs or the Foundry system version and may be incomplete, so the review step always surfaces an editable 2014/2024 dropdown.
 
 ## Library
 

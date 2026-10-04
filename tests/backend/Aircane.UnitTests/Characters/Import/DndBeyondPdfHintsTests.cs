@@ -46,4 +46,68 @@ public sealed class DndBeyondPdfHintsTests
         foreach (var path in DndBeyondPdfHints.FieldMap.Values)
             Assert.Contains(path.ToLowerInvariant(), CanonicalCharacterPaths.Supported);
     }
+
+    // ── CaptionMap (OCR path) ─────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("CHARACTER NAME", CanonicalCharacterPaths.IdentityName)]
+    [InlineData("SPECIES", CanonicalCharacterPaths.IdentityRaceOrAncestry)]
+    [InlineData("RACE", CanonicalCharacterPaths.IdentityRaceOrAncestry)]
+    [InlineData("BACKGROUND", CanonicalCharacterPaths.IdentityBackground)]
+    [InlineData("STRENGTH", CanonicalCharacterPaths.AbilityStrength)]
+    [InlineData("DEXTERITY", CanonicalCharacterPaths.AbilityDexterity)]
+    [InlineData("CONSTITUTION", CanonicalCharacterPaths.AbilityConstitution)]
+    [InlineData("INTELLIGENCE", CanonicalCharacterPaths.AbilityIntelligence)]
+    [InlineData("WISDOM", CanonicalCharacterPaths.AbilityWisdom)]
+    [InlineData("CHARISMA", CanonicalCharacterPaths.AbilityCharisma)]
+    [InlineData("HIT POINTS", CanonicalCharacterPaths.CombatMaxHitPoints)]
+    [InlineData("SPEED", CanonicalCharacterPaths.CombatSpeed)]
+    [InlineData("PROFICIENCY BONUS", CanonicalCharacterPaths.CombatProficiencyBonus)]
+    public void CaptionMap_MapsCaptionToCanonicalPath(string caption, string expectedPath)
+    {
+        Assert.True(DndBeyondPdfHints.CaptionMap.TryGetValue(caption, out var path));
+        Assert.Equal(expectedPath, path);
+    }
+
+    [Theory]
+    [InlineData("ARMOR")]
+    [InlineData("ARMOR CLASS")]
+    public void CaptionMap_ArmorAlias_BothResolveToArmorClass(string caption)
+    {
+        Assert.True(DndBeyondPdfHints.CaptionMap.TryGetValue(caption, out var path));
+        Assert.Equal(CanonicalCharacterPaths.CombatArmorClass, path);
+    }
+
+    [Fact]
+    public void CaptionMap_IsCaseInsensitive()
+    {
+        Assert.True(DndBeyondPdfHints.CaptionMap.TryGetValue("strength", out var path));
+        Assert.Equal(CanonicalCharacterPaths.AbilityStrength, path);
+    }
+
+    [Fact]
+    public void CaptionMap_DoesNotContainPassivePerception()
+    {
+        // PASSIVE PERCEPTION is a signature-quorum token only; ApplyCanonicalPath has no arm for it.
+        Assert.False(DndBeyondPdfHints.CaptionMap.ContainsKey(DndBeyondPdfHints.PassivePerceptionCaption));
+    }
+
+    [Fact]
+    public void CaptionMap_DoesNotContainClassLevel_HandledBySplit()
+    {
+        Assert.False(DndBeyondPdfHints.CaptionMap.ContainsKey(DndBeyondPdfHints.ClassLevelCaption));
+    }
+
+    [Fact]
+    public void ClassLevelCaption_IsTheVerifiedToken()
+    {
+        Assert.Equal("CLASS & LEVEL", DndBeyondPdfHints.ClassLevelCaption);
+    }
+
+    [Fact]
+    public void CaptionMap_EveryMappedPath_IsSupportedByApplyMapping()
+    {
+        foreach (var path in DndBeyondPdfHints.CaptionMap.Values)
+            Assert.Contains(path.ToLowerInvariant(), CanonicalCharacterPaths.Supported);
+    }
 }

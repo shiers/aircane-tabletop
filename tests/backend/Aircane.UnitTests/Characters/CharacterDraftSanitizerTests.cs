@@ -223,5 +223,24 @@ public sealed class CharacterDraftSanitizerTests
         Assert.Equal(3, result.ReviewPaths.Count);
     }
 
+    [Fact]
+    public void OcrShapedOutOfRangeDraft_ClampsAndFlags()
+    {
+        // A draft shaped like an OCR import where a few values are out of range (STR 88, current
+        // HP -4). The sanitizer clamps in place and records the review paths. (Sanitizer logic
+        // unchanged by FEAT-002; this guards the OCR → sanitizer seam.)
+        var c = ValidCharacter();
+        c.Abilities.Strength = 88;
+        c.Combat.CurrentHitPoints = -4;
+
+        var result = CharacterDraftSanitizer.Sanitize(c);
+
+        Assert.Equal(30, c.Abilities.Strength);     // clamped to the 1..30 max
+        Assert.Equal(0, c.Combat.CurrentHitPoints);  // floored to 0
+        Assert.Contains(CanonicalCharacterPaths.AbilityStrength, result.ReviewPaths);
+        Assert.Contains(CanonicalCharacterPaths.CombatHitPoints, result.ReviewPaths);
+        Assert.Equal(2, result.ReviewPaths.Count);
+    }
+
     private static string CanonicalCharacterPathForCurrentHp() => CanonicalCharacterPaths.CombatHitPoints;
 }

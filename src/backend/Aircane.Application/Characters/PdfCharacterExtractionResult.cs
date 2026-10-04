@@ -1,3 +1,5 @@
+using Aircane.Application.Characters.Import;
+
 namespace Aircane.Application.Characters;
 
 /// <summary>
@@ -37,4 +39,28 @@ public sealed record PdfCharacterExtractionResult
     /// e.g. "STR value 'abc' is not a valid integer - defaulting to 10."
     /// </summary>
     public required IReadOnlyList<string> Warnings { get; init; }
+
+    /// <summary>
+    /// Canonical <c>ApplyMapping</c> paths that must be flagged for user review before the draft is
+    /// considered final. On the OCR path (<see cref="Import.DndBeyondOcrMapper"/>) EVERY OCR-mapped
+    /// field is listed here (FR-4.3) — including fields left at their canonical default because the
+    /// OCR text could not be parsed (default-and-flag; never a fabricated value). Defaults to empty
+    /// so the non-OCR extractor branches compile and serialize unchanged.
+    /// </summary>
+    public IReadOnlyCollection<string> RequiresReviewPaths { get; init; } = [];
+
+    /// <summary>
+    /// True when a D&amp;D Beyond printable sheet was detected (signature match) but the OCR stack
+    /// is unavailable, so the values (rasterized pixels) could not be read. Lets the controller emit
+    /// the actionable "OCR required but unavailable" 422 instead of the generic empty-PDF message.
+    /// </summary>
+    public bool OcrUnavailableForDdb { get; init; }
+
+    /// <summary>
+    /// The ruleset detected from the DDB ancestry caption (SPECIES ⇒ 2024, RACE ⇒ 2014). On a DDB
+    /// OCR import the detected ruleset OVERRIDES the form-supplied ruleset for the persisted draft
+    /// and is flagged requires-confirmation. <see cref="DdbRuleset.Unknown"/> when not a DDB sheet
+    /// or the ancestry caption was absent (keep the form ruleset).
+    /// </summary>
+    public DdbRuleset DetectedRuleset { get; init; } = DdbRuleset.Unknown;
 }

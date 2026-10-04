@@ -622,35 +622,83 @@ public sealed class CharactersController : ControllerBase
 
         if (extraction.IsOcrRequired)
         {
+            // A detected DDB printable sheet whose values are rasterized but OCR is unavailable:
+            // return an actionable 422 (not the old "OCR support is not available" dead-end).
+            if (extraction.OcrUnavailableForDdb)
+            {
+                return UnprocessableEntity(new ProblemDetails
+                {
+                    Title = "OCR required",
+                    Detail = "This looks like a D&D Beyond character sheet whose values are stored as images. " +
+                             "OCR is required to read it but is not available in this environment. " +
+                             "On the desktop app OCR is built in; on a server, enable Ocr:Enabled and install " +
+                             "Tesseract + eng.traineddata (see docs/setup/ocr.md).",
+                    Status = StatusCodes.Status422UnprocessableEntity,
+                });
+            }
+
+            // The truly-empty / unreadable PDF case: no claim about OCR being unsupported.
             return UnprocessableEntity(new ProblemDetails
             {
-                Title = "OCR required",
+                Title = "Unreadable PDF",
                 Detail = "This PDF contains no extractable text or form fields. " +
-                         "OCR support is not available in the current version. " +
                          "Please use a form-fillable or text-readable PDF.",
                 Status = StatusCodes.Status422UnprocessableEntity,
             });
         }
 
-        // When there are unmapped fields, persist a draft character and return the review DTO
-        if (extraction.UnmappedFields.Count > 0)
+        // Persist a draft + return the review DTO whenever there are OCR-flagged review paths OR
+        // unmapped fields. OCR-mapped DDB drafts carry their values in MappedCharacter with the
+        // review flags in RequiresReviewPaths, so UnmappedFields alone is not sufficient.
+        if (extraction.RequiresReviewPaths.Count > 0 || extraction.UnmappedFields.Count > 0)
         {
-            // Persist the draft character so the review UI has an ID to work with. Sanitizer
-            // warnings (if any out-of-range value was clamped) are folded into the review warnings.
-            var sanitizerWarnings = new List<string>();
-            var draftCharacter = await PersistDraftFromExtractionAsync(
-                extraction, gameSystem, ruleset, campaignId, file.FileName, sanitizerWarnings, cancellationToken);
+            // Persist the draft character so the review UI has an ID to work with. When the extractor
+            // detected a DDB ruleset (SPECIES/RACE), it OVERRIDES the form ruleset on the persisted
+            // draft and is flagged requires-confirmation (NIT-5); otherwise keep the form ruleset.
+            var effectiveRuleset = ResolveEffectiveRuleset(extraction.DetectedRuleset, ruleset);
 
-            // Build the unmapped field DTOs with confidence scores
-            var unmappedDtos = extraction.UnmappedFields
+            var sanitizerWarnings = new List<string>();
+            var persisted = await PersistDraftFromExtractionAsync(
+                extraction, gameSystem, effectiveRuleset, campaignId, file.FileName, sanitizerWarnings, cancellationToken);
+
+            // Build the unmapped field DTOs with confidence scores for the genuinely-unknown fields.
+            var reviewDtos = extraction.UnmappedFields
                 .Select(kvp => BuildUnmappedFieldDto(kvp.Key, kvp.Value))
                 .ToList();
 
+            // NEW PDF-branch review plumbing (finding 1): this is NOT a reuse of BuildSourceReview,
+            // which reads SourceMapResult.MappedFields that the PDF path lacks (the PDF path's values
+            // live in MappedCharacter, a CanonicalCharacter). Merge the extractor's RequiresReviewPaths
+            // with the sanitizer's ReviewPaths, de-dup, and emit one review-required UnmappedFieldDto
+            // per path so every OCR-derived field is flagged (FR-4.3). SourceValue is left empty: the
+            // confirmed value lives in the persisted draft's CanonicalJson; the review UI prompts
+            // against the canonical path rather than re-displaying a raw OCR string.
+            foreach (var path in extraction.RequiresReviewPaths
+                         .Concat(persisted.SanitizerReviewPaths)
+                         .Distinct(StringComparer.Ordinal))
+            {
+                reviewDtos.Add(new UnmappedFieldDto(
+                    SourceFieldName: path,
+                    SourceValue: string.Empty,
+                    SuggestedCanonicalField: path,
+                    Confidence: 1f)
+                {
+                    RequiresReview = true,
+                });
+            }
+
+            var warnings = extraction.Warnings.Concat(sanitizerWarnings).ToList();
+            if (extraction.DetectedRuleset != Application.Characters.Import.DdbRuleset.Unknown)
+            {
+                warnings.Add(
+                    $"Ruleset detected from the sheet as {effectiveRuleset} and applied automatically. Please confirm.");
+            }
+
             var reviewDto = new CharacterFieldReviewDto(
-                CharacterId: draftCharacter.Id,
+                CharacterId: persisted.Draft.Id,
                 ReviewRequired: true,
-                UnmappedFields: unmappedDtos,
-                Warnings: extraction.Warnings.Concat(sanitizerWarnings).ToList());
+                UnmappedFields: reviewDtos,
+                Warnings: warnings);
 
             return Ok(reviewDto);
         }
@@ -658,6 +706,20 @@ public sealed class CharactersController : ControllerBase
         // All fields mapped - return the extraction result for the frontend review UI
         return Ok(extraction);
     }
+
+    /// <summary>
+    /// Resolves the ruleset written to a PDF-import draft: when the extractor detected a DDB ruleset
+    /// from the SPECIES/RACE caption, that detected value overrides the form-supplied ruleset (NIT-5);
+    /// otherwise the form ruleset is kept.
+    /// </summary>
+    private static string ResolveEffectiveRuleset(
+        Application.Characters.Import.DdbRuleset detected,
+        string formRuleset) => detected switch
+    {
+        Application.Characters.Import.DdbRuleset.Dnd2024 => "2024",
+        Application.Characters.Import.DdbRuleset.Dnd2014 => "2014",
+        _ => formRuleset,
+    };
 
     /// <summary>
     /// Applies user-confirmed field mappings to a character's CanonicalJson and marks it as reviewed.
@@ -705,9 +767,12 @@ public sealed class CharactersController : ControllerBase
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Persists a draft character from a PDF extraction result so the review UI has an ID.
+    /// Persists a draft character from a PDF extraction result so the review UI has an ID. Returns a
+    /// <see cref="PersistedDraft"/> (the same record <see cref="PersistDraftFromCanonicalAsync"/>
+    /// returns) so the caller can fold the sanitizer's <c>ReviewPaths</c> into the review envelope
+    /// alongside the extractor's own <c>RequiresReviewPaths</c> (finding 1).
     /// </summary>
-    private async Task<CharacterDto> PersistDraftFromExtractionAsync(
+    private async Task<PersistedDraft> PersistDraftFromExtractionAsync(
         PdfCharacterExtractionResult extraction,
         string gameSystem,
         string ruleset,
@@ -738,7 +803,8 @@ public sealed class CharactersController : ControllerBase
 
         try
         {
-            return await _characters.CreateCharacterAsync(createRequest, cancellationToken);
+            var dto = await _characters.CreateCharacterAsync(createRequest, cancellationToken);
+            return new PersistedDraft(dto, sanitization.ReviewPaths);
         }
         catch (ArgumentException ex)
         {
@@ -765,7 +831,8 @@ public sealed class CharactersController : ControllerBase
                 CampaignId: campaignId,
                 OwnerParticipantId: null);
 
-            return await _characters.CreateCharacterAsync(fallbackRequest, cancellationToken);
+            var dto = await _characters.CreateCharacterAsync(fallbackRequest, cancellationToken);
+            return new PersistedDraft(dto, sanitization.ReviewPaths);
         }
     }
 

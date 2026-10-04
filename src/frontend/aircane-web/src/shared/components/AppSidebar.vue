@@ -41,14 +41,16 @@ function isActive(to: string): boolean {
     v-bg-asset="{ url: '/assets/ui/side-nav-background.png', fallback: '#0a0a1a' }"
   >
     <!-- Logo area -->
-    <div class="flex h-14 shrink-0 items-center gap-3 border-b border-surface-800/60 px-4">
-      <AircaneImg
-        src="/assets/ui/app-logo-mark.png"
-        alt="Aircane Tabletop"
-        type="thumbnail"
-        fallback-text="✦"
-        class="h-10 w-10 shrink-0 app-logo-mark"
-      />
+    <div class="flex h-16 shrink-0 items-center gap-3 border-b border-surface-800/60 px-4 pt-2">
+      <div class="app-logo-mark shrink-0">
+        <AircaneImg
+          src="/assets/ui/app-logo-mark.png"
+          alt="Aircane Tabletop"
+          type="icon"
+          fallback-color="transparent"
+          fallback-text="✦"
+        />
+      </div>
       <span
         v-if="!collapsed"
         class="text-lg font-bold tracking-tight text-white"
@@ -122,14 +124,18 @@ function isActive(to: string): boolean {
   border-left: 3px solid var(--color-purple);
   box-shadow: inset 0 0 20px rgba(124, 58, 237, 0.1);
 }
-/* Pin the logo mark to a fixed 40x40 square so the AircaneImg wrapper
-   cannot expand and overlap the nav list below it. */
+/* Pin the logo mark to a fixed 40x40 square. The inner AircaneImg wrapper
+   and its <img> fill this box, and object-fit:contain keeps the square
+   logo whole (no cropping, no overflow onto the nav list below). */
 .app-logo-mark {
   width: 40px;
   height: 40px;
   flex: 0 0 auto;
 }
-/* Logo mark should fit (not cover) within its square slot. */
+.app-logo-mark :deep(.aircane-img) {
+  width: 100%;
+  height: 100%;
+}
 .app-logo-mark :deep(img) {
   object-fit: contain;
 }

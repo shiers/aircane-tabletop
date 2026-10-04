@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { useCharacterStore } from './store'
-import { type CharacterDto, type CreateCharacterRequest, type UpdateCharacterRequest, type CharacterFieldReviewDto } from './api'
+import { type CharacterDto, type CreateCharacterRequest, type UpdateCharacterRequest } from './api'
 import CharacterForm from './components/CharacterForm.vue'
 import CharacterList from './components/CharacterList.vue'
 import ImportCharacterModal from './components/ImportCharacterModal.vue'
-import apiClient from '@/shared/api/client'
 import { computed } from 'vue'
 
 // ---------------------------------------------------------------------------
@@ -23,7 +21,6 @@ const props = defineProps<{
 // ---------------------------------------------------------------------------
 
 const store = useCharacterStore()
-const router = useRouter()
 
 // ---------------------------------------------------------------------------
 // UI state
@@ -33,11 +30,6 @@ const router = useRouter()
 const editingCharacter = ref<CharacterDto | null>(null)
 const showForm = ref(false)
 const showImportModal = ref(false)
-
-// PDF import state
-const pdfFileInput = ref<HTMLInputElement | null>(null)
-const pdfImporting = ref(false)
-const pdfImportError = ref<string | null>(null)
 
 onMounted(() => {
   if (props.campaignId) {
@@ -109,76 +101,6 @@ async function handleImportCompleted(): Promise<void> {
     await store.fetchCharacters(props.campaignId)
   }
 }
-
-// ---------------------------------------------------------------------------
-// PDF Import
-// ---------------------------------------------------------------------------
-
-function triggerPdfImport(): void {
-  pdfImportError.value = null
-  pdfFileInput.value?.click()
-}
-
-async function handlePdfFileChange(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-
-  // Reset so the same file can be re-selected
-  input.value = ''
-
-  pdfImporting.value = true
-  pdfImportError.value = null
-
-  try {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('gameSystem', 'D&D 5e')
-    formData.append('ruleset', '2014')
-    if (props.campaignId) formData.append('campaignId', props.campaignId)
-
-    const response = await apiClient.post('/api/characters/import/pdf', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-
-    const data = response.data as CharacterFieldReviewDto | { isOcrRequired?: boolean }
-
-    // If the backend returned a review DTO, redirect to the review page
-    if ('reviewRequired' in data && data.reviewRequired) {
-      const reviewData = data as CharacterFieldReviewDto
-      await router.push({
-        name: 'character-field-review',
-        params: { characterId: reviewData.characterId },
-        query: {
-          unmappedFields: encodeURIComponent(JSON.stringify(reviewData.unmappedFields)),
-          warnings: encodeURIComponent(JSON.stringify(reviewData.warnings ?? [])),
-        },
-      })
-      return
-    }
-
-    // All fields mapped - character was already persisted; refresh the list
-    if (props.campaignId) {
-      await store.fetchCharacters(props.campaignId)
-    }
-  } catch (err: unknown) {
-    if (
-      err &&
-      typeof err === 'object' &&
-      'response' in err &&
-      err.response &&
-      typeof err.response === 'object' &&
-      'data' in err.response
-    ) {
-      const data = err.response.data as { detail?: string; title?: string }
-      pdfImportError.value = data.detail ?? data.title ?? 'PDF import failed.'
-    } else {
-      pdfImportError.value = err instanceof Error ? err.message : 'PDF import failed.'
-    }
-  } finally {
-    pdfImporting.value = false
-  }
-}
 </script>
 
 <template>
@@ -199,44 +121,7 @@ async function handlePdfFileChange(event: Event): Promise<void> {
       <h2 class="text-xl font-semibold text-white">Your Characters</h2>
 
       <div v-if="!showForm" class="flex items-center gap-2">
-        <!-- Hidden PDF file input -->
-        <input
-          ref="pdfFileInput"
-          type="file"
-          accept=".pdf,application/pdf"
-          class="sr-only"
-          aria-label="Select PDF character sheet"
-          @change="handlePdfFileChange"
-        />
-
-        <!-- Import PDF button (art background, no extra border) -->
-        <button
-          :disabled="pdfImporting"
-          class="import-button import-button--pdf inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
-          v-bg-asset="{ url: '/assets/characters/import-pdf-button-art.png', fallback: 'transparent', size: '100% 100%' }"
-          @click="triggerPdfImport"
-        >
-          <svg
-            v-if="pdfImporting"
-            class="h-4 w-4 animate-spin"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-          </svg>
-          <svg v-else class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path
-              fill-rule="evenodd"
-              d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          {{ pdfImporting ? 'Importing…' : 'Import PDF' }}
-        </button>
-
-        <!-- Import JSON button (art background, no extra border) -->
+        <!-- Import Character button (art background, no extra border) -->
         <button
           class="import-button import-button--json inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400"
           v-bg-asset="{ url: '/assets/characters/import-json-button-art.png', fallback: 'transparent', size: '100% 100%' }"
@@ -252,7 +137,7 @@ async function handlePdfFileChange(event: Event): Promise<void> {
               d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"
             />
           </svg>
-          Import JSON
+          Import Character
         </button>
 
         <!-- Primary CTA — larger/more prominent than the Import buttons, mirroring the
@@ -287,28 +172,6 @@ async function handlePdfFileChange(event: Event): Promise<void> {
         />
       </svg>
       <span>{{ store.error }}</span>
-    </div>
-
-    <!-- PDF import error banner -->
-    <div
-      v-if="pdfImportError"
-      role="alert"
-      class="flex items-start gap-3 rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300"
-    >
-      <svg
-        class="mt-0.5 h-4 w-4 shrink-0 text-red-400"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        <path
-          fill-rule="evenodd"
-          d="M10 18a8 8 0 100-16 8 8 0 000 16zm-.75-9.25a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5zm.75 6a.75.75 0 100-1.5.75.75 0 000 1.5z"
-          clip-rule="evenodd"
-        />
-      </svg>
-      <span>PDF import failed: {{ pdfImportError }}</span>
     </div>
 
     <!-- Create / Edit form panel -->

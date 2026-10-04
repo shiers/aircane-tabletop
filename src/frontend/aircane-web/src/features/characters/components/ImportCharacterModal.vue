@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useCharacterStore } from '../store'
-import type { ImportCharacterJsonRequest, SourceImportResponse } from '../api'
+import type { CharacterFieldReviewDto, ImportCharacterJsonRequest, SourceImportResponse } from '../api'
 import {
   listGameSystems,
 } from '@/features/game-systems/api'
 import type { GameSystemDefinitionSummary } from '@/features/game-systems/types'
 import ImportReviewPanel from './ImportReviewPanel.vue'
 import { sourceBadge, SOURCE_OPTIONS } from './sourceBadges'
+import apiClient from '@/shared/api/client'
 
 // ---------------------------------------------------------------------------
 // Props / emits
@@ -28,6 +30,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useCharacterStore()
+const router = useRouter()
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -68,6 +71,10 @@ const gameSystems = ref<GameSystemDefinitionSummary[]>([])
 
 // D&D Beyond URL state
 const dndbeyondUrl = ref('')
+
+// PDF import state
+const pdfFileInput = ref<HTMLInputElement | null>(null)
+const pdfImporting = ref(false)
 
 const hasJsonContent = computed(() => jsonText.value.trim().length > 0)
 
@@ -219,6 +226,62 @@ async function submitDndBeyondUrl(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// PDF import
+// ---------------------------------------------------------------------------
+
+function triggerPdfImport(): void {
+  localErrors.value = []
+  pdfFileInput.value?.click()
+}
+
+async function handlePdfFileChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  // Reset so the same file can be re-selected
+  input.value = ''
+
+  pdfImporting.value = true
+  localErrors.value = []
+
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('gameSystem', 'D&D 5e')
+    formData.append('ruleset', '2014')
+    if (props.campaignId) formData.append('campaignId', props.campaignId)
+
+    const response = await apiClient.post('/api/characters/import/pdf', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+
+    const data = response.data as CharacterFieldReviewDto | { isOcrRequired?: boolean }
+
+    // If the backend returned a review DTO, redirect to the review page
+    if ('reviewRequired' in data && data.reviewRequired) {
+      const reviewData = data as CharacterFieldReviewDto
+      await router.push({
+        name: 'character-field-review',
+        params: { characterId: reviewData.characterId },
+        query: {
+          unmappedFields: encodeURIComponent(JSON.stringify(reviewData.unmappedFields)),
+          warnings: encodeURIComponent(JSON.stringify(reviewData.warnings ?? [])),
+        },
+      })
+      return
+    }
+
+    // All fields mapped - character was already persisted; refresh the list.
+    emit('completed')
+  } catch (err: unknown) {
+    localErrors.value = [extractErr(err)]
+  } finally {
+    pdfImporting.value = false
+  }
+}
+
 function extractErr(err: unknown): string {
   if (
     err &&
@@ -262,6 +325,7 @@ function reset(): void {
   localErrors.value = []
   activeTab.value = 'file'
   submitting.value = false
+  pdfImporting.value = false
 }
 
 function handleClose(): void {
@@ -513,20 +577,56 @@ function handleClose(): void {
             <!-- ── PDF tab ───────────────────────────────────────────────── -->
             <div v-else-if="activeTab === 'pdf'" class="space-y-4">
               <p class="text-sm text-gray-300">
-                PDF character sheets are imported from the
-                <strong>Import PDF</strong> button on the Characters page.
+                Upload a character sheet PDF to extract and review its fields.
               </p>
-              <p class="text-sm text-gray-400">
-                Export your character sheet as a PDF (form-fillable or text-readable works best), then
-                use Import PDF to extract and review its fields.
-              </p>
+              <input
+                ref="pdfFileInput"
+                type="file"
+                accept=".pdf,application/pdf"
+                class="sr-only"
+                aria-label="Select PDF character sheet"
+                @change="handlePdfFileChange"
+              />
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  :disabled="pdfImporting"
+                  class="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  @click="triggerPdfImport"
+                >
+                  <svg
+                    v-if="pdfImporting"
+                    class="h-4 w-4 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  {{ pdfImporting ? 'Importing…' : 'Choose PDF' }}
+                </button>
+              </div>
+              <p class="text-xs text-gray-400">Form-fillable or text-readable PDFs work best.</p>
+
+              <!-- Validation / import errors -->
+              <div
+                v-if="localErrors.length > 0"
+                role="alert"
+                class="rounded-lg border border-red-800 bg-red-950 px-4 py-3"
+              >
+                <ul class="list-inside list-disc space-y-0.5 text-sm text-red-300">
+                  <li v-for="(err, i) in localErrors" :key="i">{{ err }}</li>
+                </ul>
+              </div>
+
               <div class="flex items-center justify-end border-t border-gray-800 pt-4">
                 <button
                   type="button"
                   class="rounded-lg px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
                   @click="handleClose"
                 >
-                  Close
+                  Cancel
                 </button>
               </div>
             </div>

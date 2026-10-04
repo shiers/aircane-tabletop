@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "character": {
+    "name": "Test Character",
+    "attribs": [
+      { "name": "character_name", "current": "Test Character", "max": "" },
+      { "name": "race", "current": "Half-Elf", "max": "" },
+      { "name": "class", "current": "Bard", "max": "" },
+      { "name": "level", "current": "3", "max": "" },
+      { "name": "strength", "current": "10", "max": "" },
+      { "name": "dexterity", "current": "16", "max": "" },
+      { "name": "constitution", "current": "13", "max": "" },
+      { "name": "intelligence", "current": "12", "max": "" },
+      { "name": "wisdom", "current": "11", "max": "" },
+      { "name": "charisma", "current": "17", "max": "" },
+      { "name": "hp", "current": "21", "max": "24" },
+      { "name": "hp_max", "current": "24", "max": "" },
+      { "name": "ac", "current": "14", "max": "" }
+    ]
+  }
+}

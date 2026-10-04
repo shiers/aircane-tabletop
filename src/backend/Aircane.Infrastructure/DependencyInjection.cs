@@ -62,6 +62,10 @@ public static class DependencyInjection
         // Character source-import adapters: each mapper recognises one external sheet format.
         // CharacterFormatDetector orders them by Order (not DI order) and picks the first match.
         services.AddScoped<ICharacterSourceMapper, PathbuilderTwoMapper>();
+        services.AddScoped<ICharacterSourceMapper, FoundryDnd5eMapper>();
+        services.AddScoped<ICharacterSourceMapper, FoundryPf2eMapper>();
+        services.AddScoped<ICharacterSourceMapper, Roll20Mapper>();
+        services.AddScoped<ICharacterSourceMapper, GenericVttMapper>();
         services.AddScoped<CharacterFormatDetector>();
         services.AddScoped<ISessionHostingService, SessionHostingService>();
         // Token revocation is a singleton so the in-memory fast-path set survives across

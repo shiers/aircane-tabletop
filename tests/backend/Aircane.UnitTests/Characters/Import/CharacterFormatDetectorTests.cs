@@ -97,4 +97,61 @@ public sealed class CharacterFormatDetectorTests
         Assert.Equal(CharacterImportSource.Unknown, source);
         Assert.Null(mapper);
     }
+
+    /// <summary>The full registered set, in a deliberately shuffled order (Generic first).</summary>
+    private static CharacterFormatDetector AllMappersDetector() =>
+        new(new ICharacterSourceMapper[]
+        {
+            new GenericVttMapper(),
+            new Roll20Mapper(),
+            new FoundryPf2eMapper(),
+            new FoundryDnd5eMapper(),
+            new PathbuilderTwoMapper(),
+        });
+
+    private static JsonDocument LoadFixture(string name)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Characters", "Import", "Fixtures", name);
+        return JsonDocument.Parse(File.ReadAllText(path));
+    }
+
+    [Theory]
+    [InlineData("foundry-dnd5e.json", CharacterImportSource.FoundryDnd5e)]
+    [InlineData("foundry-pf2e.json", CharacterImportSource.FoundryPf2e)]
+    [InlineData("roll20.json", CharacterImportSource.Roll20)]
+    [InlineData("pathbuilder2e.json", CharacterImportSource.PathbuilderTwo)]
+    public void Detect_SpecificMappers_WinOverGeneric(string fixture, CharacterImportSource expected)
+    {
+        var detector = AllMappersDetector();
+        using var doc = LoadFixture(fixture);
+
+        var (source, mapper) = detector.Detect(doc);
+
+        Assert.Equal(expected, source);
+        Assert.NotNull(mapper);
+        Assert.NotEqual(CharacterImportSource.GenericVtt, source);
+    }
+
+    [Fact]
+    public void Detect_FoundryDnd5eAndPf2e_AreMutuallyExclusive()
+    {
+        var detector = AllMappersDetector();
+
+        using (var dnd5e = LoadFixture("foundry-dnd5e.json"))
+            Assert.Equal(CharacterImportSource.FoundryDnd5e, detector.Detect(dnd5e).Source);
+
+        using (var pf2e = LoadFixture("foundry-pf2e.json"))
+            Assert.Equal(CharacterImportSource.FoundryPf2e, detector.Detect(pf2e).Source);
+    }
+
+    [Fact]
+    public void Detect_FallsBackToGeneric_ForUnidentifiedButNamedDocument()
+    {
+        var detector = AllMappersDetector();
+        using var doc = LoadFixture("generic-vtt.json");
+
+        var (source, _) = detector.Detect(doc);
+
+        Assert.Equal(CharacterImportSource.GenericVtt, source);
+    }
 }

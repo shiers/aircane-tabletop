@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Aircane.Workers.Seeding;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -138,5 +139,129 @@ public class CharacterSourceImportIntegrationTests
 
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(json.RootElement.GetProperty("requiresSourceConfirmation").GetBoolean());
+    }
+
+    private const string FoundryDnd5eJson =
+        """
+        {
+          "name": "Test Character",
+          "type": "character",
+          "_stats": { "systemVersion": "3.3.1" },
+          "system": {
+            "abilities": {
+              "str": { "value": 16 }, "dex": { "value": 14 }, "con": { "value": 15 },
+              "int": { "value": 10 }, "wis": { "value": 12 }, "cha": { "value": 8 }
+            },
+            "attributes": {
+              "hp": { "value": 28, "max": 34 },
+              "ac": { "value": 17 },
+              "movement": { "walk": 30 }
+            },
+            "details": { "race": "Dwarf", "background": "Soldier", "level": 4 }
+          },
+          "items": [
+            { "type": "class", "name": "Fighter", "system": { "levels": 4 } },
+            { "type": "subclass", "name": "Champion" }
+          ]
+        }
+        """;
+
+    private const string Roll20Json =
+        """
+        {
+          "schema_version": 2,
+          "character": {
+            "name": "Test Character",
+            "attribs": [
+              { "name": "character_name", "current": "Test Character", "max": "" },
+              { "name": "class", "current": "Bard", "max": "" },
+              { "name": "level", "current": "3", "max": "" },
+              { "name": "dexterity", "current": "16", "max": "" },
+              { "name": "hp", "current": "21", "max": "24" },
+              { "name": "hp_max", "current": "24", "max": "" },
+              { "name": "ac", "current": "14", "max": "" }
+            ]
+          }
+        }
+        """;
+
+    [Fact]
+    public async Task Import_DetectsFoundryDnd5e_AndReturnsReviewWithGameSystem()
+    {
+        var body = new { canonicalJson = FoundryDnd5eJson };
+        var response = await _client.PostAsJsonAsync("/api/characters/import", body);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+
+        Assert.Equal("FoundryDnd5e", root.GetProperty("detectedSource").GetString());
+
+        var review = root.GetProperty("review");
+        var gsid = review.GetProperty("gameSystemDefinitionId").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(gsid));
+
+        var mapped = review.GetProperty("mappedFields");
+        Assert.Equal("Test Character", mapped.GetProperty("identity.name").GetString());
+        Assert.Equal("Fighter", mapped.GetProperty("class").GetString());
+        Assert.Equal("17", mapped.GetProperty("combat.armorClass").GetString());
+    }
+
+    [Fact]
+    public async Task Import_Roll20_TwoCallHandshake_FirstCallDoesNotPersist_SecondCallDoes()
+    {
+        // ── First call: no source, no game system → requires selection, persists NOTHING. ──
+        var beforeCount = await CountCharactersAsync();
+
+        var firstBody = new { canonicalJson = Roll20Json };
+        var firstResponse = await _client.PostAsJsonAsync("/api/characters/import", firstBody);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+
+        using (var firstJson = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync()))
+        {
+            var root = firstJson.RootElement;
+            Assert.True(root.GetProperty("requiresSourceConfirmation").GetBoolean());
+
+            var review = root.GetProperty("review");
+            Assert.True(review.GetProperty("requiresGameSystemSelection").GetBoolean());
+        }
+
+        Assert.Equal(beforeCount, await CountCharactersAsync());
+
+        // ── Second call: pin ?source=Roll20 AND a valid gameSystemDefinitionId → persists. ──
+        var dnd5eId = GameSystemIds.DnD5e2014;
+        var secondResponse = await _client.PostAsJsonAsync(
+            $"/api/characters/import?source=Roll20&gameSystemDefinitionId={dnd5eId}", firstBody);
+
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+
+        using var secondJson = JsonDocument.Parse(await secondResponse.Content.ReadAsStringAsync());
+        var secondRoot = secondJson.RootElement;
+
+        // Detection is pinned by the explicit source, not re-run.
+        Assert.Equal("Roll20", secondRoot.GetProperty("detectedSource").GetString());
+
+        var secondReview = secondRoot.GetProperty("review");
+        Assert.False(secondReview.GetProperty("requiresGameSystemSelection").GetBoolean());
+
+        var mapped = secondReview.GetProperty("mappedFields");
+        Assert.Equal("Bard", mapped.GetProperty("class").GetString());
+        Assert.Equal("16", mapped.GetProperty("abilities.dexterity").GetString());
+
+        Assert.Equal(beforeCount + 1, await CountCharactersAsync());
+    }
+
+    private async Task<int> CountCharactersAsync()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Aircane.Infrastructure.Persistence.AircaneDbContext>();
+        return await db.Characters.CountAsync();
+    }
+
+    private static class GameSystemIds
+    {
+        public static readonly Guid DnD5e2014 = Guid.Parse("10000000-0000-0000-0000-000000000001");
     }
 }

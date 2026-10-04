@@ -258,11 +258,14 @@ async function handlePdfFileChange(event: Event): Promise<void> {
           Import JSON
         </button>
 
+        <!-- Primary CTA — larger/more prominent than the Import buttons, mirroring the
+             "+ New Campaign" primary action on the Campaigns page. -->
         <button
-          class="inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          class="new-character-button focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          v-bg-asset="{ url: '/assets/characters/new-character-button-art.png', fallback: 'transparent', size: '100% 100%' }"
           @click="openCreateForm"
         >
-          + New Character
+          <span class="new-character-label">+ New Character</span>
         </button>
       </div>
     </div>
@@ -381,6 +384,36 @@ async function handlePdfFileChange(event: Event): Promise<void> {
 
 .import-button:hover {
   box-shadow: var(--glow-purple-lg);
+}
+
+/* Primary CTA — larger and more prominent than the Import buttons, matching the
+   "+ New Campaign" primary action on the Campaigns page. Art-independent CSS base
+   so it stays usable if the art fails to load. */
+.new-character-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+  min-height: 44px;
+  padding: 0 1.5rem;
+  border-radius: var(--border-radius-md);
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  box-shadow: var(--glow-purple);
+  transition: box-shadow 0.2s ease;
+}
+
+.new-character-button:hover {
+  box-shadow: var(--glow-purple-lg);
+}
+
+.new-character-label {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
 /* Detail side-panel art — stats live in the upper 60%. */

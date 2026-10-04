@@ -4,6 +4,7 @@ import type {
   GameSystemDefinitionDetail,
   ValidationResult,
   StarterTemplate,
+  FormDescriptor,
 } from './types'
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,18 @@ export async function validateGameSystem(definitionJson: string): Promise<Valida
 /** List available starter templates. */
 export async function listTemplates(): Promise<StarterTemplate[]> {
   const response = await apiClient.get<StarterTemplate[]>('/api/game-systems/templates')
+  return response.data
+}
+
+/**
+ * Preview the character-sheet form descriptor for a game system definition. Used by the import
+ * review panel to render the bound system's form (labels/sections/field types).
+ */
+export async function previewCharacterForm(gameSystemDefinitionId: string): Promise<FormDescriptor> {
+  const response = await apiClient.post<FormDescriptor>(
+    `/api/game-systems/${gameSystemDefinitionId}/preview-character-form`,
+    {},
+  )
   return response.data
 }
 

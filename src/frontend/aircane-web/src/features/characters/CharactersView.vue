@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCharacterStore } from './store'
-import { type CharacterDto, type CreateCharacterRequest, type UpdateCharacterRequest, type ImportCharacterJsonRequest, type CharacterFieldReviewDto } from './api'
+import { type CharacterDto, type CreateCharacterRequest, type UpdateCharacterRequest, type CharacterFieldReviewDto } from './api'
 import CharacterForm from './components/CharacterForm.vue'
 import CharacterList from './components/CharacterList.vue'
 import ImportCharacterModal from './components/ImportCharacterModal.vue'
@@ -33,7 +33,6 @@ const router = useRouter()
 const editingCharacter = ref<CharacterDto | null>(null)
 const showForm = ref(false)
 const showImportModal = ref(false)
-const importModalRef = ref<InstanceType<typeof ImportCharacterModal> | null>(null)
 
 // PDF import state
 const pdfFileInput = ref<HTMLInputElement | null>(null)
@@ -103,13 +102,11 @@ function closeImportModal(): void {
   showImportModal.value = false
 }
 
-async function handleImport(request: ImportCharacterJsonRequest): Promise<void> {
-  const result = await store.importCharacterFromJson(request)
-  if (result.success) {
-    closeImportModal()
-  } else {
-    // Push server-side validation errors back into the modal
-    importModalRef.value?.setErrors(result.errors)
+/** Called when the import modal finishes (character persisted + mappings confirmed). */
+async function handleImportCompleted(): Promise<void> {
+  closeImportModal()
+  if (props.campaignId) {
+    await store.fetchCharacters(props.campaignId)
   }
 }
 
@@ -359,12 +356,11 @@ async function handlePdfFileChange(event: Event): Promise<void> {
     <!-- Character list -->
     <CharacterList @edit="openEditForm" @view="openEditForm" />
 
-    <!-- Import JSON modal -->
+    <!-- Import character modal (Upload File / D&D Beyond URL / PDF tabs) -->
     <ImportCharacterModal
-      ref="importModalRef"
       :open="showImportModal"
       :campaign-id="campaignId"
-      @import="handleImport"
+      @completed="handleImportCompleted"
       @close="closeImportModal"
     />
   </div>

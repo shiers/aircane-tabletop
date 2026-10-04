@@ -43,6 +43,15 @@ export interface ImportCharacterJsonRequest {
   campaignId?: string | null
   ownerParticipantId?: string | null
   originalFileName?: string | null
+  /** Force a specific game system definition (used by the source-adapter import path). */
+  gameSystemDefinitionId?: string | null
+}
+
+/** Request body for the D&D Beyond URL import endpoint. */
+export interface DndBeyondUrlImportRequest {
+  characterUrl: string
+  gameSystemDefinitionId?: string | null
+  campaignId?: string | null
 }
 
 export interface CharacterImportResult {
@@ -219,6 +228,36 @@ export async function importCharacterFromJson(
   }
 }
 
+/**
+ * Import a character via the source-adapter path. Posts the raw JSON in `canonicalJson` with
+ * `gameSystem`/`ruleset` left blank; the backend detects the source (or uses the pinned `source`).
+ * Returns the {@link SourceImportResponse} envelope. `source` is only sent when the user overrides
+ * auto-detect; `gameSystemDefinitionId` pins the system for Roll20/Generic sheets.
+ */
+export async function importCharacterFromSource(
+  request: ImportCharacterJsonRequest,
+  options?: { source?: string; gameSystemDefinitionId?: string },
+): Promise<SourceImportResponse> {
+  const params: Record<string, string> = {}
+  if (options?.source) params.source = options.source
+  if (options?.gameSystemDefinitionId) params.gameSystemDefinitionId = options.gameSystemDefinitionId
+  const response = await apiClient.post<SourceImportResponse>('/api/characters/import', request, {
+    params,
+  })
+  return response.data
+}
+
+/** Import a character from a D&D Beyond character URL. Returns the {@link SourceImportResponse}. */
+export async function importCharacterFromDndBeyondUrl(
+  request: DndBeyondUrlImportRequest,
+): Promise<SourceImportResponse> {
+  const response = await apiClient.post<SourceImportResponse>(
+    '/api/characters/import/dndbeyond-url',
+    request,
+  )
+  return response.data
+}
+
 // ---------------------------------------------------------------------------
 // Field review DTOs
 // ---------------------------------------------------------------------------
@@ -228,6 +267,8 @@ export interface UnmappedFieldDto {
   sourceValue: string
   suggestedCanonicalField: string | null
   confidence: number
+  /** Force the review UI to require explicit confirmation of this field. */
+  requiresReview?: boolean
 }
 
 export interface CharacterFieldReviewDto {
@@ -235,6 +276,27 @@ export interface CharacterFieldReviewDto {
   reviewRequired: true
   unmappedFields: UnmappedFieldDto[]
   warnings: string[]
+  // ── Review-scoped signals from the source-adapter import path. ──
+  /** Game-system definition id the review form should render against. */
+  gameSystemDefinitionId?: string | null
+  /** ApplyMapping path → stringified value, used to seed the review form. */
+  mappedFields?: Record<string, string>
+  /** True for Roll20/Generic when the user must pick a system before mapping. */
+  requiresGameSystemSelection?: boolean
+}
+
+/**
+ * Envelope returned by the source-adapter import path (extended POST /api/characters/import and the
+ * D&D Beyond URL import). Carries the detected-source / confidence / ruleset ENVELOPE signals plus
+ * the {@link CharacterFieldReviewDto} that drives the review UI. `detectedSource` is a string.
+ */
+export interface SourceImportResponse {
+  detectedSource: string
+  confidence: string
+  requiresSourceConfirmation: boolean
+  ruleset: string | null
+  rulesetRequiresConfirmation: boolean
+  review: CharacterFieldReviewDto
 }
 
 export interface FieldMappingEntry {

@@ -6,11 +6,15 @@ import {
   updateCharacter,
   deleteCharacter,
   importCharacterFromJson,
+  importCharacterFromSource,
+  importCharacterFromDndBeyondUrl,
   type CharacterDto,
   type CreateCharacterRequest,
   type UpdateCharacterRequest,
   type ImportCharacterJsonRequest,
   type CharacterImportResult,
+  type SourceImportResponse,
+  type DndBeyondUrlImportRequest,
 } from './api'
 
 function extractMessage(err: unknown): string {
@@ -104,6 +108,39 @@ export const useCharacterStore = defineStore('characters', () => {
     }
   }
 
+  /** Import a character via the source-adapter path. Returns the review envelope. */
+  async function importCharacterFromSourceAction(
+    request: ImportCharacterJsonRequest,
+    options?: { source?: string; gameSystemDefinitionId?: string },
+  ): Promise<SourceImportResponse> {
+    loading.value = true
+    error.value = null
+    try {
+      return await importCharacterFromSource(request, options)
+    } catch (err) {
+      error.value = extractMessage(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** Import a character from a D&D Beyond character URL. Returns the review envelope. */
+  async function importCharacterFromDndBeyondUrlAction(
+    request: DndBeyondUrlImportRequest,
+  ): Promise<SourceImportResponse> {
+    loading.value = true
+    error.value = null
+    try {
+      return await importCharacterFromDndBeyondUrl(request)
+    } catch (err) {
+      error.value = extractMessage(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     // State
     characters,
@@ -115,5 +152,7 @@ export const useCharacterStore = defineStore('characters', () => {
     updateCharacter: updateCharacterAction,
     deleteCharacter: deleteCharacterAction,
     importCharacterFromJson: importCharacterFromJsonAction,
+    importCharacterFromSource: importCharacterFromSourceAction,
+    importCharacterFromDndBeyondUrl: importCharacterFromDndBeyondUrlAction,
   }
 })

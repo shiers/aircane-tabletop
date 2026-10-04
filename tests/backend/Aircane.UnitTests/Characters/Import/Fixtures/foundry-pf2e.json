@@ -1,0 +1,37 @@
+{
+  "name": "Test Character",
+  "type": "character",
+  "system": {
+    "abilities": {
+      "str": { "value": 4 },
+      "dex": { "value": 2 },
+      "con": { "value": 3 },
+      "int": { "value": 0 },
+      "wis": { "value": 1 },
+      "cha": { "value": -1 }
+    },
+    "attributes": {
+      "hp": { "value": 42, "max": 48 },
+      "ac": { "value": 20 },
+      "speed": { "value": 25 },
+      "classDC": { "value": 18 },
+      "saves": {
+        "fortitude": { "value": 10 },
+        "reflex": { "value": 8 },
+        "will": { "value": 6 }
+      }
+    },
+    "details": {
+      "ancestry": { "name": "Dwarf" },
+      "heritage": { "name": "Ancient-Blooded Dwarf" },
+      "background": { "name": "Warrior" },
+      "class": { "name": "Fighter" },
+      "level": { "value": 5 }
+    }
+  },
+  "items": [
+    { "type": "feat", "name": "Power Attack" },
+    { "type": "weapon", "name": "Warhammer" },
+    { "type": "action", "name": "Shield Block" }
+  ]
+}

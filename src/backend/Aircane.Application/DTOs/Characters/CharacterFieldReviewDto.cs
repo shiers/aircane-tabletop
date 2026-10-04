@@ -18,7 +18,11 @@ public sealed record UnmappedFieldDto(
     /// Confidence score for the suggestion, 0.0–1.0.
     /// 0.0 means no suggestion; 1.0 means the system is certain.
     /// </summary>
-    float Confidence);
+    float Confidence)
+{
+    /// <summary>Force the review UI to require explicit confirmation of this field.</summary>
+    public bool RequiresReview { get; init; } = false;
+}
 
 /// <summary>
 /// Response returned by the PDF import endpoint when one or more fields could not be
@@ -32,4 +36,19 @@ public sealed record CharacterFieldReviewDto(
     /// <summary>Fields that need manual mapping before the character is considered complete.</summary>
     IReadOnlyList<UnmappedFieldDto> UnmappedFields,
     /// <summary>Non-fatal warnings produced during extraction, e.g. invalid numeric values.</summary>
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings)
+{
+    // ── New, all defaulted so the existing PDF path serializes unchanged. These are the
+    //    review-SCOPED signals only; the source/confidence/ruleset ENVELOPE signals live on
+    //    SourceImportResponse, not here, to avoid two sources of truth. ──
+
+    /// <summary>Game-system definition id the review form should render against.</summary>
+    public Guid? GameSystemDefinitionId { get; init; }
+
+    /// <summary>ApplyMapping path → stringified value, used to seed the review form.</summary>
+    public IReadOnlyDictionary<string, string> MappedFields { get; init; }
+        = new Dictionary<string, string>();
+
+    /// <summary>True for Roll20/Generic when the user must pick a system before mapping.</summary>
+    public bool RequiresGameSystemSelection { get; init; }
+}

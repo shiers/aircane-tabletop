@@ -1,0 +1,62 @@
+{
+  "success": true,
+  "build": {
+    "name": "Test Character",
+    "class": "Fighter",
+    "dualClass": null,
+    "level": 5,
+    "ancestry": "Dwarf",
+    "heritage": "Ancient-Blooded Dwarf",
+    "background": "Warrior",
+    "alignment": "N",
+    "gender": "Not set",
+    "age": "Not set",
+    "deity": "Not set",
+    "size": 2,
+    "keyability": "str",
+    "languages": ["Common", "Dwarven"],
+    "abilities": {
+      "str": 18,
+      "dex": 14,
+      "con": 16,
+      "int": 10,
+      "wis": 12,
+      "cha": 8
+    },
+    "attributes": {
+      "ancestryhp": 10,
+      "classhp": 10,
+      "bonushp": 0,
+      "bonushpPerLevel": 0,
+      "speed": 20,
+      "speedBonus": 0,
+      "hp": 68,
+      "ac": 22,
+      "classDC": 15
+    },
+    "proficiencies": {
+      "classDC": 1,
+      "perception": 1,
+      "fortitude": 1,
+      "reflex": 1,
+      "will": 1
+    },
+    "perception": 1,
+    "fortitude": 1,
+    "reflex": 1,
+    "will": 1,
+    "lores": [
+      ["Warfare", 1],
+      ["Mining", 1]
+    ],
+    "feats": [
+      ["Power Attack", null, "Class Feat", 1],
+      ["Sudden Charge", null, "Class Feat", 2]
+    ],
+    "spellCasters": [],
+    "equipment": [
+      ["Breastplate", 1],
+      ["Warhammer", 1]
+    ]
+  }
+}

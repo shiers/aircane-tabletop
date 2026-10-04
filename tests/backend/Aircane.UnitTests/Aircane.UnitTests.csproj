@@ -31,6 +31,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="Characters\Import\Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\src\backend\Aircane.Domain\Aircane.Domain.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Aircane.Application\Aircane.Application.csproj" />
     <ProjectReference Include="..\..\..\src\backend\Aircane.Infrastructure\Aircane.Infrastructure.csproj" />

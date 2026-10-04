@@ -428,6 +428,42 @@ public class PdfCharacterExtractorTests
         Assert.False(result.IsOcrRequired);
     }
 
+    // ── D&D Beyond PDF hint overrides ─────────────────────────────────────────
+
+    [Fact]
+    public void MapToCanonical_DndBeyondHint_ProfBonus_BeatsHeuristicUnmapped()
+    {
+        // "ProfBonus" is NOT recognised by the generic heuristic (it expects "ProficiencyBonus"),
+        // so without the DDB hint it would land in UnmappedFields. The hint maps it.
+        var result = ExtractFromText("CharacterName: Thorn\nProfBonus: 4\n");
+
+        Assert.NotNull(result.MappedCharacter);
+        Assert.Equal(4, result.MappedCharacter!.Combat.ProficiencyBonus);
+        Assert.DoesNotContain("ProfBonus", result.UnmappedFields.Keys);
+    }
+
+    [Fact]
+    public void MapToCanonical_DndBeyondHint_HpCurrent_IsMappedToCurrentHitPoints()
+    {
+        // "HPCurrent" is a DDB field name not handled by the generic heuristic.
+        var result = ExtractFromText("CharacterName: Thorn\nHPCurrent: 27\n");
+
+        Assert.NotNull(result.MappedCharacter);
+        Assert.Equal(27, result.MappedCharacter!.Combat.CurrentHitPoints);
+        Assert.DoesNotContain("HPCurrent", result.UnmappedFields.Keys);
+    }
+
+    [Fact]
+    public void MapToCanonical_DndBeyondHint_ClassLevel_SplitsClassAndLevel()
+    {
+        var result = ExtractFromText("CharacterName: Thorn\nClassLevel: Wizard 7\n");
+
+        Assert.NotNull(result.MappedCharacter);
+        Assert.Single(result.MappedCharacter!.Classes);
+        Assert.Equal("Wizard", result.MappedCharacter.Classes[0].ClassName);
+        Assert.Equal(7, result.MappedCharacter.Classes[0].Level);
+    }
+
     // ── Helper: build a result from raw text ──────────────────────────────────
 
     /// <summary>

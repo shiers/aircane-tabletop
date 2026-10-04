@@ -3,6 +3,7 @@ using Aircane.Application.Abstractions.BackgroundJobs;
 using Aircane.Application.AiRuntime;
 using Aircane.Application.AiRuntime.Validators;
 using Aircane.Application.Characters;
+using Aircane.Application.Characters.Import;
 using Aircane.Application.GameSystems;
 using Aircane.Application.Library;
 using Aircane.Infrastructure.Adventures;
@@ -57,6 +58,11 @@ public static class DependencyInjection
         services.AddScoped<ICampaignService, CampaignService>();
         services.AddScoped<ICampaignStateService, CampaignStateService>();
         services.AddScoped<ICharacterService, CharacterService>();
+
+        // Character source-import adapters: each mapper recognises one external sheet format.
+        // CharacterFormatDetector orders them by Order (not DI order) and picks the first match.
+        services.AddScoped<ICharacterSourceMapper, PathbuilderTwoMapper>();
+        services.AddScoped<CharacterFormatDetector>();
         services.AddScoped<ISessionHostingService, SessionHostingService>();
         // Token revocation is a singleton so the in-memory fast-path set survives across
         // requests. Persistent (per-jti) revocation is backed by the RevokedTokens table,

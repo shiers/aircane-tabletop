@@ -11,6 +11,32 @@ Frontend root: `src/frontend/aircane-web`
 | `npm run test` (`vitest --run`) | **PASS** — 43 test files, 304 tests, 0 failures. No snapshots needed updating. |
 | `npm run lint` (`eslint . --ext .vue,.ts,.tsx --fix`) | **COULD NOT RUN (pre-existing gap)** — `eslint` is referenced by the `lint` script but is **not** declared in `package.json` devDependencies, so it is not installed (`node_modules/.bin/eslint` is absent). This is a pre-existing project configuration gap, not introduced by this change. Restoring a full ESLint toolchain means choosing + adding eslint, the Vue/TS parser, plugins, and a config — a dependency/tooling decision outside this layout task's scope. Build (which includes `vue-tsc` type-checking) and the full test suite are green; code matches existing `<script setup>` + scoped-style conventions. |
 
+## Review iteration 3 — findings addressed
+
+This iteration addressed the two MEDIUM confirmed findings in `review.json`:
+
+1. **Dashboard hero overlay position (MEDIUM).** Requirement #1 exempts the Dashboard only from
+   the 240px height, not from the "always bottom-left, 24px padding" title/subtitle placement.
+   `HomeView.vue` previously kept a bespoke `.hero-heading` positioned center-right
+   (`top:50%; left:58%; right:5%` with a vertical transform). That markup/CSS was removed and the
+   title + subtitle now use the shared `.app-hero__overlay` / `.app-hero__title` /
+   `.app-hero__subtitle` classes (absolute bottom-left, 24px padding, white 24px/700 title, grey
+   14px subtitle) — identical geometry to every other view. The Dashboard hero keeps its taller
+   `min-height:200px` (the allowed height exemption) and its left welcome-banner art; only the
+   title placement changed. The earlier "documented exception" is withdrawn.
+2. **No-ID and stale-state Join flow (MEDIUM).** `JoinSessionView.vue` no longer calls
+   `store.fetchSession` with an undefined id. `sessionId` now defaults to `''` and the `onMounted`
+   lookup returns early when there is no route id, so the `/sessions` index (no `:sessionId`
+   param) renders the join form immediately instead of hanging on an invalid, perpetually-loading
+   request. Lookup state is now tracked in dedicated local refs (`lookupLoading`, `lookupError`)
+   independent of the shared Pinia store, so a failed lookup no longer depends on
+   `!store.currentSession` (which could be stale from another flow). The loading panel keys off
+   `lookupLoading`; the standalone "Session not found" panel keys off `lookupError`; and the form's
+   `:hide-error` keys off `lookupError`. A lookup failure therefore consistently shows in the
+   standalone below-form panel, while a join-*submit* failure (no lookupError) shows inside the
+   form via `store.error`. The two channels are now driven by distinct state and cannot be
+   confused by stale session data.
+
 ## Review iteration 2 — findings addressed
 
 This iteration addressed the four findings in `review.json` (three MEDIUM confirmed, one MEDIUM disputed):
@@ -49,17 +75,13 @@ This iteration addressed the four findings in `review.json` (three MEDIUM confir
    fails, `currentSession` is set → `hideError` is false → the form shows its own submit error and
    the standalone panel stays hidden. The two error channels are now distinct and never duplicate.
 
-### Dashboard hero exception (documented, per review action)
+### Dashboard hero title placement (iteration 3)
 
-Requirement #1 overlays title+subtitle bottom-left; the task spec grants the Dashboard an explicit
-exemption ("The Dashboard hero may remain taller"). The Dashboard hero (`HomeView.vue`) is a
-bespoke two-part composition: a `.hero-welcome` banner-art panel on the left ~55% and the heading
-overlaid on the right portion so it reads clear of that art. Forcing the heading to the shared
-bottom-left overlay would overlap the welcome-banner art and change the intended Dashboard visual —
-a user-visible redesign beyond the task's layout/styling scope and beyond the stated height-only
-exemption. Per the reviewer's offered alternative ("obtain an explicit documented exception for its
-title placement"), the Dashboard title placement is kept as-is and documented here as an
-intentional exception. All non-dashboard views conform to the bottom-left title+subtitle contract.
+The earlier "documented exception" for keeping the Dashboard title center-right is withdrawn.
+Requirement #1 exempts the Dashboard only from the 240px hero height; the title/subtitle must still
+be bottom-left with 24px padding. `HomeView.vue` now uses the shared `.app-hero__overlay` classes
+for its title + subtitle (bottom-left, 24px padding), keeping only the taller hero height. All
+views — Dashboard included — now share the bottom-left title+subtitle geometry.
 
 ## Design approach
 
@@ -100,8 +122,11 @@ intentional exception. All non-dashboard views conform to the bottom-left title+
   `.app-hero__subtitle` (14px/#9ca3af). Applied to Campaigns, Characters, Library, RulesLookup,
   AiSettings, AdventureForge, JoinSession, About. The hero's own banner art is preserved via the
   existing `v-bg-asset` on the hero element.
-- [x] **Dashboard hero may stay taller.** `HomeView.vue` keeps its own `.hero` (min-height 200px)
-  and `.hero-heading` markup — not forced to 240px.
+- [x] **Dashboard hero may stay taller, but title is bottom-left like every view.**
+  `HomeView.vue` keeps its own `.hero` (min-height 200px) — not forced to 240px — but its title +
+  subtitle now use the shared `.app-hero__overlay`/`__title`/`__subtitle` classes (absolute
+  bottom-left, 24px padding, white 24px/700, grey 14px). The old center-right `.hero-heading`
+  markup and CSS were removed, so the Dashboard title geometry matches all other views.
 - [x] **No full-page background image on Rules Lookup, AI Settings, Adventure Forge, Join Session, About.**
   Each view's outer root had its full-page `v-bg-asset` removed. The opaque `#0a0a1a` fill
   (`.page-plain`) is now applied by `AppLayout.vue` to the shell `<main>` for these routes (by
@@ -139,19 +164,21 @@ intentional exception. All non-dashboard views conform to the bottom-left title+
   (28px vertical / 32px horizontal) for open-content-attributions, content-licensing-declaration,
   and application-license panels. The conflicting Tailwind `p-5` was removed from those elements
   so the scoped padding is authoritative.
-- [x] **Join Session shows the form before the error panel; no duplicate error.**
-  Template: `v-if loading` → `v-else-if joinResult` (joined confirmation) → `v-else` block that
-  ALWAYS renders `PlayerJoinForm` + QR card first. `:session-name` is `store.currentSession?.name`
-  (optional; the form falls back to generic copy when undefined), so the form renders even when the
-  session failed to load / no session is pre-populated. The "Session not found" panel renders BELOW
-  the form, guarded by `v-if="store.error && !store.currentSession"` — only on a load failure,
-  after the QR card. **Duplicate-error fix:** `PlayerJoinForm` renders `store.error` in its own
-  banner, so a load failure previously showed the error both inside the form and in the standalone
-  panel. The form now takes an optional `hideError` prop and `JoinSessionView` passes
-  `:hide-error="!!store.error && !store.currentSession"`, suppressing the form's internal banner on
-  a load failure so ONLY the standalone panel shows it. A *join submit* failure (session loaded →
-  `currentSession` set → `hideError` false) still shows inside the form, with the standalone panel
-  hidden. The two error paths are distinct; no duplicate.
+- [x] **Join Session shows the form before the error panel; no duplicate error; no-ID safe.**
+  Template: `v-if lookupLoading` → `v-else-if joinResult` (joined confirmation) → `v-else` block
+  that ALWAYS renders `PlayerJoinForm` + QR card first. The `onMounted` hook calls
+  `store.fetchSession` ONLY when a route `sessionId` is present; the `/sessions` index (no param)
+  skips the lookup entirely, so `lookupLoading` stays false and the form renders immediately
+  instead of spinning on an invalid `fetchSession(undefined)`. Lookup state lives in dedicated
+  local refs (`lookupLoading`, `lookupError`) rather than the shared store, so stale
+  `store.currentSession` from another flow cannot misroute the error. `:session-name` is
+  `lookupError ? undefined : store.currentSession?.name` (form falls back to generic copy). The
+  "Session not found" panel renders BELOW the form + QR card, guarded by `v-if="lookupError"` —
+  only on a load failure. **Duplicate-error fix:** `PlayerJoinForm` renders `store.error` in its
+  own banner; `JoinSessionView` passes `:hide-error="!!lookupError"`, so on a lookup failure the
+  form suppresses its internal banner and ONLY the standalone panel shows the error. A join-*submit*
+  failure (no `lookupError`) shows inside the form via `store.error`, with the standalone panel
+  hidden. The two error channels are distinct; no duplicate.
 - [x] **Section spacing is 32px between major sections on EVERY view.** Campaigns, Characters,
   Library already used `.page-sections` (32px). This iteration switched the remaining page-level
   `space-y-6` (24px) wrappers to `.page-sections` on AI Settings, Adventure Forge, Join Session,

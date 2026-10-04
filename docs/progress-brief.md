@@ -4,7 +4,7 @@
 > full project context. Claude uses it to have productive design/planning conversations, then
 > Shawn hands implementation work to AWS Kiro. Update this file after each significant session.
 >
-> **Last updated:** 2026-10-01 (decisions logged: Tauri desktop wrapper delivered, Proprietary app license, **Cloudflare internet tunnel delivered** with its security-hardening prerequisites, native mobile companion app → Flutter in P3; **in-app "Report a bug" feedback feature in progress** — see "Current Work" immediately below)
+> **Last updated:** 2026-10-04 (decisions logged: Tauri desktop wrapper delivered, Proprietary app license, **Cloudflare internet tunnel delivered** with its security-hardening prerequisites, native mobile companion app → Flutter in P3; **in-app "Report a bug" feedback feature delivered and merged to `dev`** — see "Latest Delivered" immediately below)
 > **MVP status:** ✅ Complete — all 9 phases shipped.
 > **Phase 10 (Built-in Rules Content Bundle):** ✅ Complete — 10.1–10.8 done & verified
 > (embedded bundles, license metadata, `LicensesController`, attribution UI, tests).
@@ -16,11 +16,11 @@
 
 ---
 
-## Current Work (In Progress) — In-App "Report a bug" Feedback Feature
+## Latest Delivered — In-App "Report a bug" Feedback Feature
 
-**Status: 🚧 being implemented, NOT yet committed.** A Kiro workflow (plan → implement →
-review loop) is building this now; the commit to `dev` is deliberately held until the reviewer
-approves and the build/tests are verified green. Do not assume this is shippable yet.
+**Status: ✅ delivered and merged to `dev`** (`9f7c8d8`, with doc follow-up `a95ecfd`). Built via a
+Kiro plan → implement → review workflow; reviewer approved and build/tests verified green before
+merge. The description below documents what shipped.
 
 **What it is:** a "Report a bug" button available throughout the app that auto-captures
 diagnostic context at submission time and posts a structured issue to **GitHub Issues** via the
@@ -417,7 +417,7 @@ override. Local release profile. MVP smoke-test checklist. Post-MVP backlog docu
 
 ---
 
-## Phase 10 — Built-in Rules Content Bundle (🚧 In Progress)
+## Phase 10 — Built-in Rules Content Bundle (✅ Complete; PF2e ORC text maintainer-gated)
 
 Ships open-licensed rules text as built-in library content the RAG pipeline can retrieve out
 of the box, with per-document license metadata and attribution obligations fulfillable via API.

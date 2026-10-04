@@ -22,10 +22,10 @@ the priority lists below with full detail; this section records *why* they were 
 
 ---
 
-## In Progress (not yet committed)
+## Recently Delivered (not yet in a priority bucket)
 
 ### In-App "Report a bug" Feedback Feature
-> **🚧 Being implemented via a Kiro plan→implement→review workflow; commit to `dev` is held until the reviewer approves and build/tests are green.** Not shippable yet.
+> **✅ Delivered and merged to `dev`** (`9f7c8d8`, with doc follow-up `a95ecfd`). Reviewed, build/tests green.
 
 A "Report a bug" button available throughout the app that auto-captures diagnostic context at
 submission time and posts a structured issue to **GitHub Issues** via the GitHub REST API, proxied
@@ -169,4 +169,4 @@ Localize the UI and support non-English source documents.
 
 ---
 
-*Last updated: 2026-10-01 — added the in-app "Report a bug" feedback feature as an In Progress item (being built via a Kiro workflow; commit held until reviewed + verified). Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter.*
+*Last updated: 2026-10-04 — in-app "Report a bug" feedback feature delivered and merged to `dev` (moved from In Progress to Recently Delivered). Earlier (2026-10-01): added the feedback feature as an In Progress item. Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter.*

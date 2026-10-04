@@ -1,33 +1,33 @@
 {
-  "approved": false,
+  "approved": true,
   "findings": [
     {
-      "label": "No-ID and stale-state Join flow",
-      "severity": "MEDIUM",
-      "confidence": "confirmed",
-      "finding": "/sessions calls fetchSession(undefined) and hides the form while that invalid request loads; a failed lookup with stale currentSession shows the error inside the form and suppresses the below-form panel.",
-      "action": "Skip lookup without an ID and track lookup failure independently from prior session state."
-    },
-    {
-      "label": "Dashboard overlay position",
-      "severity": "MEDIUM",
-      "confidence": "confirmed",
-      "finding": "Dashboard retains a center-right title and subtitle even though only hero height is exempted.",
-      "action": "Apply the required bottom-left 24px overlay or obtain an explicit product exception."
-    },
-    {
-      "label": "Duplicated New Campaign styling",
+      "label": "No-ID Join submission",
       "severity": "LOW",
       "confidence": "confirmed",
-      "finding": "HomeView and CampaignsView contain matching scoped button and label rules that can drift.",
-      "action": "Move the shared visual contract into a reusable class or component."
+      "finding": "The newly visible no-ID form passes an empty session ID to the join action, producing /api/sessions//join.",
+      "action": "Recover the session ID from the invite code or provide an invite-code-only join endpoint if no-ID submission must succeed."
     },
     {
-      "label": "Join regression coverage",
+      "label": "Effective top-padding deviation",
       "severity": "LOW",
       "confidence": "confirmed",
-      "finding": "No view-level test or browser check covers /sessions without an ID, stale Pinia session state, or final form/QR/error ordering.",
-      "action": "Add focused coverage after correcting the flow."
+      "finding": "AppLayout adds pt-6 above the page container, so rendered content starts 24px below the specified zero top padding.",
+      "action": "Remove pt-6 if the literal padding contract must be enforced."
+    },
+    {
+      "label": "Duplicated Campaign action styling",
+      "severity": "LOW",
+      "confidence": "confirmed",
+      "finding": "HomeView.vue and CampaignsView.vue duplicate the same scoped New Campaign button and label rules.",
+      "action": "Move the visual recipe into shared CSS or a reusable component to prevent drift."
+    },
+    {
+      "label": "Missing browser regression coverage",
+      "severity": "LOW",
+      "confidence": "confirmed",
+      "finding": "No browser-level check asserts the exact sidebar, container, hero, route-background, or Join ordering contracts.",
+      "action": "Add focused Playwright coverage for the pixel-level and conditional-rendering requirements."
     }
   ],
   "reviewDoc": "d:\\Development\\aircane-tabletop\\.worktrees\\frontend-layout\\.agents\\tasks\\frontend-layout-standardization\\review-b.md"

@@ -363,18 +363,22 @@ public sealed class DndBeyondApiMapper : ICharacterSourceMapper
 
         // Constitution contribution: con modifier * total level, when both are known.
         var conBonus = ComputeConHitPointBonus(root, character);
-        var max = baseHp + conBonus;
 
+        // Floor the derived values so the mapper never emits a negative HP that the validator would
+        // hard-reject: max at 0, current clamped to 0..max, temp at 0. The shared draft sanitizer
+        // enforces the same floors as a safety net, but flooring at the source keeps the mapped
+        // string values consistent with the stored numbers.
+        var max = Math.Max(0, baseHp + conBonus);
         character.Combat.MaxHitPoints = max;
         mapped[CanonicalCharacterPaths.CombatMaxHitPoints] = max.ToString(CultureInfo.InvariantCulture);
 
         var removed = TryGetInt(hpSource, "removedHitPoints", out var rem) ? rem : 0;
-        var current = max - removed;
+        var current = Math.Max(0, Math.Min(max, max - removed));
         character.Combat.CurrentHitPoints = current;
         mapped[CanonicalCharacterPaths.CombatHitPoints] = current.ToString(CultureInfo.InvariantCulture);
 
         if (TryGetInt(hpSource, "temporaryHitPoints", out var temp))
-            character.Combat.TemporaryHitPoints = temp;
+            character.Combat.TemporaryHitPoints = Math.Max(0, temp);
     }
 
     private static int ComputeConHitPointBonus(JsonElement root, CanonicalCharacter character)

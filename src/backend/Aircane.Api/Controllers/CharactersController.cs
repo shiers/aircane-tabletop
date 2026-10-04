@@ -304,10 +304,10 @@ public sealed class CharactersController : ControllerBase
             var ruleset = mapResult.Ruleset ?? "2014";
             var persistWarnings = new List<string>();
 
-            CharacterDto draft;
+            PersistedDraft persisted;
             try
             {
-                draft = await PersistDraftFromCanonicalAsync(
+                persisted = await PersistDraftFromCanonicalAsync(
                     mapResult.Character,
                     gameSystemName,
                     ruleset,
@@ -318,16 +318,20 @@ public sealed class CharactersController : ControllerBase
             }
             catch (ArgumentException ex)
             {
-                _logger.LogWarning(ex, "Adapter import could not persist a draft for {Source}.", detectedSource);
-                return BadRequest(new ProblemDetails
+                _logger.LogError(ex, "Adapter import could not persist a draft for {Source}.", detectedSource);
+                var problem = new ProblemDetails
                 {
                     Title = "Import failed",
-                    Detail = "The imported character data could not be saved.",
+                    Detail = "Import failed: " + ex.Message,
                     Status = StatusCodes.Status400BadRequest,
-                });
+                };
+                problem.Extensions["errors"] = ParseValidationErrors(ex.Message);
+                return BadRequest(problem);
             }
 
-            var review = BuildSourceReview(mapResult, draft.Id, resolvedDefinitionId, persistWarnings);
+            var draft = persisted.Draft;
+            var review = BuildSourceReview(
+                mapResult, draft.Id, resolvedDefinitionId, persistWarnings, persisted.SanitizerReviewPaths);
 
             var confidence = mapResult.Confidence == ImportConfidence.High ? "high" : "low";
             return Ok(new SourceImportResponse(
@@ -463,10 +467,10 @@ public sealed class CharactersController : ControllerBase
             var ruleset = mapResult.Ruleset ?? "2014";
             var persistWarnings = new List<string>();
 
-            CharacterDto draft;
+            PersistedDraft persisted;
             try
             {
-                draft = await PersistDraftFromCanonicalAsync(
+                persisted = await PersistDraftFromCanonicalAsync(
                     mapResult.Character,
                     summary.Name,
                     ruleset,
@@ -477,16 +481,22 @@ public sealed class CharactersController : ControllerBase
             }
             catch (ArgumentException ex)
             {
-                _logger.LogWarning(ex, "D&D Beyond URL import could not persist a draft.");
-                return BadRequest(new ProblemDetails
+                // The URL is never part of the exception message (it names fields + ranges only),
+                // so logging it at Error keeps the no-URL-in-logs guarantee intact.
+                _logger.LogError(ex, "D&D Beyond URL import could not persist a draft.");
+                var problem = new ProblemDetails
                 {
                     Title = "Import failed",
-                    Detail = "The imported character data could not be saved.",
+                    Detail = "Import failed: " + ex.Message,
                     Status = StatusCodes.Status400BadRequest,
-                });
+                };
+                problem.Extensions["errors"] = ParseValidationErrors(ex.Message);
+                return BadRequest(problem);
             }
 
-            var review = BuildSourceReview(mapResult, draft.Id, summary.Id, persistWarnings);
+            var draft = persisted.Draft;
+            var review = BuildSourceReview(
+                mapResult, draft.Id, summary.Id, persistWarnings, persisted.SanitizerReviewPaths);
 
             return Ok(new SourceImportResponse(
                 DetectedSource: CharacterImportSource.DndBeyondApi.ToString(),
@@ -625,9 +635,11 @@ public sealed class CharactersController : ControllerBase
         // When there are unmapped fields, persist a draft character and return the review DTO
         if (extraction.UnmappedFields.Count > 0)
         {
-            // Persist the draft character so the review UI has an ID to work with
+            // Persist the draft character so the review UI has an ID to work with. Sanitizer
+            // warnings (if any out-of-range value was clamped) are folded into the review warnings.
+            var sanitizerWarnings = new List<string>();
             var draftCharacter = await PersistDraftFromExtractionAsync(
-                extraction, gameSystem, ruleset, campaignId, file.FileName, cancellationToken);
+                extraction, gameSystem, ruleset, campaignId, file.FileName, sanitizerWarnings, cancellationToken);
 
             // Build the unmapped field DTOs with confidence scores
             var unmappedDtos = extraction.UnmappedFields
@@ -638,7 +650,7 @@ public sealed class CharactersController : ControllerBase
                 CharacterId: draftCharacter.Id,
                 ReviewRequired: true,
                 UnmappedFields: unmappedDtos,
-                Warnings: extraction.Warnings);
+                Warnings: extraction.Warnings.Concat(sanitizerWarnings).ToList());
 
             return Ok(reviewDto);
         }
@@ -701,9 +713,16 @@ public sealed class CharactersController : ControllerBase
         string ruleset,
         Guid? campaignId,
         string fileName,
+        List<string> warnings,
         CancellationToken cancellationToken)
     {
         var mapped = extraction.MappedCharacter ?? new Application.Characters.CanonicalCharacter();
+
+        // Clamp-and-flag out-of-range mapped values so a PDF import with (e.g.) a negative current
+        // HP persists cleanly as a flagged draft rather than falling back to the Unknown stub.
+        var sanitization = CharacterDraftSanitizer.Sanitize(mapped);
+        warnings.AddRange(sanitization.Warnings);
+
         var name = string.IsNullOrWhiteSpace(mapped.Identity.Name)
             ? System.IO.Path.GetFileNameWithoutExtension(fileName)
             : mapped.Identity.Name;
@@ -757,7 +776,7 @@ public sealed class CharactersController : ControllerBase
     /// only a defaulted name and clamped level, keeping every value the mapper produced, and records
     /// a warning onto <paramref name="warnings"/> so the review UI surfaces it.
     /// </summary>
-    private async Task<CharacterDto> PersistDraftFromCanonicalAsync(
+    private async Task<PersistedDraft> PersistDraftFromCanonicalAsync(
         CanonicalCharacter mapped,
         string gameSystem,
         string ruleset,
@@ -766,7 +785,14 @@ public sealed class CharactersController : ControllerBase
         List<string> warnings,
         CancellationToken cancellationToken)
     {
+        // Clamp-and-flag any review-worthy value into the strict validator's ranges BEFORE the
+        // first save, so a negative current HP / out-of-range ability / over-20 level persists as a
+        // flagged draft instead of hard-failing. The strict validator is unchanged.
+        var sanitization = CharacterDraftSanitizer.Sanitize(mapped);
+        warnings.AddRange(sanitization.Warnings);
+
         var name = DeriveDraftName(mapped, originalFileName);
+        // Recompute level from the SANITIZED classes so the request level and the stored JSON agree.
         var level = Math.Max(1, mapped.Classes.Sum(c => c.Level));
 
         var createRequest = new CreateCharacterRequest(
@@ -780,12 +806,16 @@ public sealed class CharactersController : ControllerBase
 
         try
         {
-            return await _characters.CreateCharacterAsync(createRequest, cancellationToken);
+            var dto = await _characters.CreateCharacterAsync(createRequest, cancellationToken);
+            return new PersistedDraft(dto, sanitization.ReviewPaths);
         }
         catch (ArgumentException ex)
         {
             // Preserve the mapped data as-is: default only the name (never substitute an Unknown
             // stub). We mutate the SAME CanonicalCharacter so all mapped values survive the retry.
+            // Sanitization already clamped the known numeric fields; a failure here is a value the
+            // sanitizer does not cover, so let the specific validator message propagate to the
+            // caller (which surfaces it instead of the old opaque 400).
             _logger.LogWarning(
                 "Adapter draft validation warning ({FileName}): {Message}. Persisting partial data as-is.",
                 originalFileName ?? "n/a", ex.Message);
@@ -803,8 +833,34 @@ public sealed class CharactersController : ControllerBase
                 CampaignId: campaignId,
                 OwnerParticipantId: null);
 
-            return await _characters.CreateCharacterAsync(retryRequest, cancellationToken);
+            var dto = await _characters.CreateCharacterAsync(retryRequest, cancellationToken);
+            return new PersistedDraft(dto, sanitization.ReviewPaths);
         }
+    }
+
+    /// <summary>
+    /// A persisted draft plus the extra review paths the <see cref="CharacterDraftSanitizer"/>
+    /// produced while clamping out-of-range values, so the caller can fold them into the review
+    /// envelope alongside the mapper's own <c>RequiresReviewPaths</c>.
+    /// </summary>
+    private sealed record PersistedDraft(CharacterDto Draft, IReadOnlyList<string> SanitizerReviewPaths);
+
+    /// <summary>
+    /// Splits the <see cref="CharacterService"/> validation message
+    /// ("Character validation failed: msgA; msgB") into the individual field messages, mirroring the
+    /// <c>Extensions["errors"]</c> shape produced by <see cref="ValidateAgainstCampaignSchemaAsync"/>.
+    /// The message names fields and ranges only; it never contains a URL or PDF content.
+    /// </summary>
+    private static IReadOnlyList<string> ParseValidationErrors(string message)
+    {
+        const string prefix = "Character validation failed:";
+        var body = message.StartsWith(prefix, StringComparison.Ordinal)
+            ? message[prefix.Length..]
+            : message;
+
+        return body
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
     }
 
     /// <summary>Derives the draft character name from the mapped data, falling back to the file name.</summary>
@@ -829,7 +885,8 @@ public sealed class CharactersController : ControllerBase
         SourceMapResult result,
         Guid characterId,
         Guid gameSystemDefinitionId,
-        IReadOnlyList<string> extraWarnings)
+        IReadOnlyList<string> extraWarnings,
+        IReadOnlyList<string> extraReviewPaths)
     {
         var unmapped = result.ExtraFields
             .Select(kvp => new UnmappedFieldDto(
@@ -842,10 +899,15 @@ public sealed class CharactersController : ControllerBase
             })
             .ToList();
 
-        // Mapped paths the mapper flagged for review (e.g. a derived HP value) are surfaced as
-        // review-required entries whose suggested canonical field is the mapped path itself, so the
-        // review UI can prompt confirmation while the value still lives in MappedFields.
-        foreach (var path in result.RequiresReviewPaths)
+        // Mapped paths flagged for review (by the mapper for a derived value, or by the draft
+        // sanitizer for a value it clamped) are surfaced as review-required entries whose suggested
+        // canonical field is the mapped path itself, so the review UI can prompt confirmation while
+        // the value still lives in MappedFields. De-duplicate so a path flagged by both appears once.
+        var reviewPaths = result.RequiresReviewPaths
+            .Concat(extraReviewPaths)
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var path in reviewPaths)
         {
             if (result.MappedFields.TryGetValue(path, out var value))
             {

@@ -104,6 +104,61 @@ public class DndBeyondUrlImportIntegrationTests : IAsyncLifetime
         Assert.Equal("17", mapped.GetProperty("combat.armorClass").GetString());
     }
 
+    // A character whose mapped ability score exceeds the validator's 1..30 range. The mapper keeps
+    // the raw value (and flags it for review); the draft sanitizer clamps it to 30 so the save
+    // succeeds instead of hard-failing with the old generic 400.
+    private static readonly string OutOfRangeDdbCharacterJson =
+        """
+        {
+          "id": 1234567,
+          "dateModified": "2024-01-01T00:00:00.000Z",
+          "name": "Out Of Range Hero",
+          "race": { "fullName": "Mountain Dwarf" },
+          "stats": [
+            { "id": 1, "value": 44 }, { "id": 2, "value": 14 }, { "id": 3, "value": 15 },
+            { "id": 4, "value": 10 }, { "id": 5, "value": 12 }, { "id": 6, "value": 8 }
+          ],
+          "hitPointInfo": { "baseHitPoints": 28, "removedHitPoints": 0, "temporaryHitPoints": 0 },
+          "armorClass": { "totalArmorClass": 17 },
+          "classes": [
+            { "level": 4, "definition": { "name": "Fighter", "sources": [ { "sourceId": 1 } ] } }
+          ]
+        }
+        """;
+
+    [Fact]
+    public async Task Import_OutOfRangeValues_IsSanitizedAndReturns200WithReview()
+    {
+        StubCharacterResponse(200, OutOfRangeDdbCharacterJson);
+
+        var body = new { characterUrl = $"https://www.dndbeyond.com/characters/{CharacterId}" };
+        var response = await _client.PostAsJsonAsync("/api/characters/import/dndbeyond-url", body);
+
+        var payload = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // The old opaque failure string must never be returned once sanitization salvages the draft.
+        Assert.DoesNotContain("The imported character data could not be saved.", payload, StringComparison.Ordinal);
+
+        using var json = JsonDocument.Parse(payload);
+        var review = json.RootElement.GetProperty("review");
+
+        // The clamped ability is flagged for review (surfaced as an unmapped review-required entry).
+        var unmapped = review.GetProperty("unmappedFields").EnumerateArray().ToList();
+        Assert.Contains(unmapped, f =>
+            f.GetProperty("suggestedCanonicalField").GetString() == "abilities.strength");
+
+        // A human-readable warning naming the adjusted field and the clamped target is present.
+        var warnings = review.GetProperty("warnings").EnumerateArray()
+            .Select(w => w.GetString() ?? string.Empty)
+            .ToList();
+        Assert.Contains(warnings, w =>
+            w.Contains("Strength", StringComparison.OrdinalIgnoreCase) && w.Contains("30", StringComparison.Ordinal));
+
+        // The no-URL-in-logs guard still holds for the sanitized path.
+        Assert.DoesNotContain(_logs.Messages, m => m.Contains("dndbeyond.com/characters", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Theory]
     [InlineData(403, "This character is private. Make your character sheet public on D&D Beyond to import it.")]
     [InlineData(404, "Character not found. Check the URL and try again.")]

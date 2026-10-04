@@ -36,8 +36,8 @@ function isActive(to: string): boolean {
 
 <template>
   <aside
-    class="flex h-full flex-col border-r border-surface-800/60 bg-surface-900 transition-all duration-300"
-    :class="collapsed ? 'w-16' : 'w-60'"
+    class="flex h-full shrink-0 flex-col border-r border-surface-800/60 bg-surface-900 transition-all duration-300"
+    :class="collapsed ? 'w-16' : 'sidebar-expanded'"
     v-bg-asset="{ url: '/assets/ui/side-nav-background.png', fallback: '#0a0a1a' }"
   >
     <!-- Logo area -->
@@ -114,6 +114,11 @@ function isActive(to: string): boolean {
 </template>
 
 <style scoped>
+/* Expanded sidebar is pinned to exactly 220px on every route (the component is
+   shared, so Dashboard and all other pages get the identical width). */
+.sidebar-expanded {
+  width: 220px;
+}
 .nav-item.active {
   background: rgba(124, 58, 237, 0.15);
   border-left: 3px solid var(--color-purple);

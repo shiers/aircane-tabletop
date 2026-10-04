@@ -56,36 +56,29 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div
-    class="min-h-full bg-cover bg-center bg-no-repeat"
-    v-bg-asset="{ url: '/assets/about/about-credits-background.png', fallback: '#0a0a1a' }"
-  >
-    <div class="mx-auto max-w-3xl space-y-8 p-6">
-      <!-- Hero banner: image has no baked-in text, so overlay the heading. -->
+  <div class="about-page min-h-full">
+    <div class="about-sections">
+      <!-- Hero banner with the title overlaid bottom-left (same as other views). -->
       <div
-        class="relative flex h-40 w-full items-center justify-center rounded-lg bg-cover bg-center"
+        class="app-hero"
         v-bg-asset="{ url: '/assets/about/about-hero-banner.png', fallback: '#0d0d2a' }"
         role="img"
         aria-label="About & Credits"
       >
-        <h1
-          class="text-3xl font-bold text-white"
-          style="text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8)"
-        >
-          About &amp; Credits
-        </h1>
+        <div class="app-hero__overlay">
+          <h1 class="app-hero__title">About &amp; Credits</h1>
+          <p class="app-hero__subtitle">
+            Aircane Tabletop — a local-first, AI-assisted tabletop RPG engine.
+          </p>
+        </div>
       </div>
-
-      <p class="text-sm text-gray-400">
-        Aircane Tabletop — a local-first, AI-assisted tabletop RPG engine.
-      </p>
 
       <!-- License cards (static): one per built-in open-content license. -->
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div
           v-for="card in licenseCards"
           :key="card.key"
-          class="license-card rounded-lg bg-cover bg-left p-5"
+          class="license-card rounded-lg bg-cover bg-left"
           v-bg-asset="{ url: card.art, fallback: '#0d0d2a', position: 'left center' }"
         >
           <div class="ml-auto w-[75%] min-w-[180px]">
@@ -107,7 +100,7 @@ onMounted(async () => {
 
       <!-- Open content attributions (dark panel) -->
       <section
-        class="about-panel rounded-lg bg-cover bg-left p-5"
+        class="about-panel rounded-lg bg-cover bg-left"
         v-bg-asset="{ url: '/assets/about/open-content-attributions-panel.png', fallback: '#0d0d2a', position: 'left center' }"
       >
         <div class="ml-auto w-[75%] min-w-[260px] space-y-4">
@@ -184,7 +177,7 @@ onMounted(async () => {
 
       <!-- ORC downstream declaration (dark panel) -->
       <section
-        class="about-panel rounded-lg bg-cover bg-left p-5"
+        class="about-panel rounded-lg bg-cover bg-left"
         v-bg-asset="{ url: '/assets/about/content-licensing-declaration-panel.png', fallback: '#0d0d2a', position: 'left center' }"
       >
         <div class="ml-auto w-[75%] min-w-[260px] space-y-3 text-sm text-gray-400">
@@ -227,7 +220,7 @@ onMounted(async () => {
 
       <!-- Application license (dark panel) -->
       <section
-        class="about-panel rounded-lg bg-cover bg-left p-5"
+        class="about-panel rounded-lg bg-cover bg-left"
         v-bg-asset="{ url: '/assets/about/application-license-panel.png', fallback: '#0d0d2a', position: 'left center' }"
       >
         <div class="ml-auto w-[75%] min-w-[260px] space-y-3">
@@ -254,9 +247,27 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* Increased breathing room: ≥40px vertical gap between every major section
+   (cards, dark panels, scroll ornaments). */
+.about-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
 /* Type C panels/cards — gold border so they stay bordered/legible with no art. */
 .license-card,
 .about-panel {
   border: var(--border-gold);
+}
+
+/* Parchment license cards: 32px padding on all sides (overrides Tailwind p-5). */
+.license-card {
+  padding: 32px;
+}
+
+/* Dark attribution panels: 28px vertical / 32px horizontal (overrides p-5). */
+.about-panel {
+  padding: 28px 32px;
 }
 </style>

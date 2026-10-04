@@ -89,23 +89,21 @@ async function submitForm() {
 </script>
 
 <template>
-  <div
-    class="forge-page bg-cover bg-fixed bg-center"
-    v-bg-asset="{ url: '/assets/adventure-forge/adventure-forge-background.png', fallback: '#0a0a1a' }"
-  >
-    <div class="mx-auto max-w-3xl space-y-6">
+  <div class="forge-page">
+    <div class="page-sections">
       <!-- Hero banner -->
       <div
-        class="forge-hero flex items-end bg-cover bg-center"
+        class="app-hero"
         v-bg-asset="{ url: '/assets/adventure-forge/adventure-forge-hero-banner.png', fallback: '#0d0d2a' }"
       >
-        <h1 class="forge-hero-title p-5 text-2xl font-bold text-white">Generate Adventure</h1>
+        <div class="app-hero__overlay">
+          <h1 class="app-hero__title">Generate Adventure</h1>
+          <p class="app-hero__subtitle">
+            Configure your adventure parameters and let the AI generate a playable adventure
+            tailored to your party.
+          </p>
+        </div>
       </div>
-
-      <p class="text-gray-400">
-        Configure your adventure parameters and let the AI generate a playable adventure tailored to
-        your party.
-      </p>
 
       <!-- Success result -->
       <output
@@ -343,20 +341,9 @@ async function submitForm() {
 </template>
 
 <style scoped>
+/* Solid dark page (no full-page art); the shell owns padding/centering. */
 .forge-page {
   min-height: 100%;
-  margin: -1rem;
-  padding: 1rem;
-}
-
-.forge-hero {
-  height: 160px;
-  border-radius: var(--border-radius-md);
-  overflow: hidden;
-}
-
-.forge-hero-title {
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
 }
 
 /* Field art: the real control sits transparent over the baked-in field image. */

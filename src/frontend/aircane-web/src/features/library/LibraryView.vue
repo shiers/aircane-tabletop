@@ -58,15 +58,18 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl space-y-6">
+  <div class="page-sections">
     <!-- Full-width hero banner -->
     <div
-      class="library-hero"
-      role="img"
-      aria-label="Document Library"
+      class="app-hero"
       v-bg-asset="{ url: '/assets/library/document-library-hero-background.png', fallback: '#0d0d2a' }"
     >
-      <h1 class="library-hero-title">Document Library</h1>
+      <div class="app-hero__overlay">
+        <h1 class="app-hero__title">Document Library</h1>
+        <p class="app-hero__subtitle">
+          Import, index, and manage the rules, adventures, and homebrew in your library.
+        </p>
+      </div>
     </div>
 
     <!-- Page header -->
@@ -225,26 +228,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.library-hero {
-  position: relative;
-  width: 100%;
-  min-height: 180px;
-  display: flex;
-  align-items: flex-end;
-  padding: 24px 28px;
-  border-radius: var(--border-radius-md);
-  overflow: hidden;
-  background-size: cover;
-  background-position: center;
-}
-
-.library-hero-title {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
-}
-
 /* Open Content Licenses button — art-independent CSS base so it stays usable. */
 .open-content-licenses-btn {
   display: inline-flex;

@@ -63,32 +63,24 @@ async function submitQuestion() {
 </script>
 
 <template>
-  <div
-    class="min-h-full bg-cover bg-center bg-no-repeat"
-    v-bg-asset="{ url: '/assets/rules/rules-lookup-background.png', fallback: '#0a0a1a' }"
-  >
-    <div class="mx-auto max-w-3xl space-y-6 p-6">
-      <!-- Hero banner: art has no baked-in text, so overlay the heading + subtitle. -->
-      <div
-        class="rules-hero relative flex h-40 w-full flex-col justify-center overflow-hidden rounded-lg bg-cover bg-center"
-        v-bg-asset="{ url: '/assets/rules/rules-lookup-hero-banner.png', fallback: '#0d0d2a' }"
-      >
-        <!-- Legibility scrim so white text stays readable over the busy art. -->
-        <div
-          class="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent"
-          aria-hidden="true"
-        ></div>
-        <div class="relative px-6">
-          <h1 class="text-2xl font-bold text-white" style="text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85)">
-            Rules Lookup
-          </h1>
-          <p class="mt-1 max-w-xl text-sm text-gray-200" style="text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85)">
-            Ask a rules question and get an AI-generated answer grounded in your indexed source
-            documents.
-          </p>
-        </div>
+  <div class="page-sections">
+    <!-- Hero banner -->
+    <div
+      class="app-hero"
+      v-bg-asset="{ url: '/assets/rules/rules-lookup-hero-banner.png', fallback: '#0d0d2a' }"
+      role="img"
+      aria-label="Rules Lookup"
+    >
+      <div class="app-hero__overlay">
+        <h1 class="app-hero__title">Rules Lookup</h1>
+        <p class="app-hero__subtitle">
+          Ask a rules question and get an AI-generated answer grounded in your indexed sources.
+        </p>
       </div>
+    </div>
 
+    <!-- Question + results column -->
+    <div class="page-sections">
       <!-- Question panel: ask-question-panel-art backs the panel, controls over the right 65% -->
       <div
         class="ask-question-panel rounded-lg bg-cover bg-left p-5"
@@ -179,7 +171,7 @@ async function submitQuestion() {
       <!-- Error banner -->
       <div
         v-if="error"
-        class="mt-6 rounded-md border border-red-800 bg-red-950 px-4 py-3 text-red-300"
+        class="rounded-md border border-red-800 bg-red-950 px-4 py-3 text-red-300"
         role="alert"
       >
         <p class="font-medium">Something went wrong</p>
@@ -187,7 +179,7 @@ async function submitQuestion() {
       </div>
 
       <!-- Result -->
-      <div v-if="result" class="mt-8 space-y-6">
+      <div v-if="result" class="space-y-6">
         <!-- Uncertainty warning -->
         <output
           v-if="!result.hasSourceSupport"

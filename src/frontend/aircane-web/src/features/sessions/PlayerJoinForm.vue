@@ -17,6 +17,12 @@ const props = defineProps<{
   sessionId: string
   /** Optional session name to display in the heading. */
   sessionName?: string
+  /**
+   * When true, the form hides its own API error banner. Used when a session
+   * lookup failed: the parent view shows a standalone "Session not found" panel
+   * for that case, so the form must not repeat the same store.error.
+   */
+  hideError?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -89,9 +95,9 @@ async function handleSubmit(): Promise<void> {
       Enter your display name and the invite code to join.
     </p>
 
-    <!-- API error banner -->
+    <!-- API error banner (suppressed when the parent owns the lookup error) -->
     <div
-      v-if="store.error"
+      v-if="store.error && !hideError"
       role="alert"
       class="mb-4 flex items-start gap-3 rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300"
     >

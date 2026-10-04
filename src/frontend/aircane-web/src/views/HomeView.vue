@@ -84,8 +84,8 @@ const quickActions = [
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-8">
-    <!-- Hero banner -->
+  <div class="space-y-8">
+    <!-- Hero banner (Dashboard hero may stay taller than the standard 240px) -->
     <section
       class="hero"
       v-bg-asset="{ url: '/assets/dashboard/dashboard-hero-background.png', fallback: '#0d0d2a' }"
@@ -96,10 +96,11 @@ const quickActions = [
         aria-hidden="true"
         v-bg-asset="{ url: '/assets/dashboard/dashboard-welcome-banner.png', fallback: '#0d0d2a', position: 'left center' }"
       />
-      <!-- Heading over the right portion -->
-      <div class="hero-heading">
-        <h1 class="text-2xl font-bold text-white sm:text-3xl">Welcome back, Dungeon Master</h1>
-        <p class="mt-1 text-sm text-gray-200">Your AI-assisted adventure begins here.</p>
+      <!-- Title + subtitle overlaid bottom-left with 24px padding, consistent
+           with the shared .app-hero overlay used on every other view. -->
+      <div class="app-hero__overlay">
+        <h1 class="app-hero__title">Welcome back, Dungeon Master</h1>
+        <p class="app-hero__subtitle">Your AI-assisted adventure begins here.</p>
       </div>
     </section>
 
@@ -236,16 +237,6 @@ const quickActions = [
   inset: 0 45% 0 0;
   background-size: cover;
   background-position: left center;
-}
-
-/* Heading over the right portion */
-.hero-heading {
-  position: absolute;
-  top: 50%;
-  right: 5%;
-  left: 58%;
-  transform: translateY(-50%);
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
 /* Feature card thumbnails */

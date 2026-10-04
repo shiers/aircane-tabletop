@@ -185,15 +185,15 @@ async function handlePdfFileChange(event: Event): Promise<void> {
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl space-y-6">
+  <div class="page-sections">
     <!-- Hero banner -->
     <section
-      class="hero"
+      class="app-hero"
       v-bg-asset="{ url: '/assets/characters/characters-hero-background.png', fallback: '#0d0d2a' }"
     >
-      <div class="hero-heading">
-        <h1 class="text-2xl font-bold text-white sm:text-3xl">Characters</h1>
-        <p class="mt-1 text-sm text-gray-200">Build, import, and manage your party.</p>
+      <div class="app-hero__overlay">
+        <h1 class="app-hero__title">Characters</h1>
+        <p class="app-hero__subtitle">Build, import, and manage your party.</p>
       </div>
     </section>
 
@@ -368,26 +368,6 @@ async function handlePdfFileChange(event: Event): Promise<void> {
 </template>
 
 <style scoped>
-/* Hero banner */
-.hero {
-  position: relative;
-  width: 100%;
-  min-height: 180px;
-  overflow: hidden;
-  border-radius: var(--border-radius-md);
-  background-size: cover;
-  background-position: center;
-}
-
-.hero-heading {
-  position: absolute;
-  top: 50%;
-  left: 5%;
-  right: 5%;
-  transform: translateY(-50%);
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
-}
-
 /* Import buttons — art-independent CSS base so they stay usable with no art. */
 .import-button {
   background-size: 100% 100%;

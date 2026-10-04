@@ -18,7 +18,7 @@ import type { JoinSessionResult } from './api'
 // ---------------------------------------------------------------------------
 
 const route = useRoute()
-const sessionId = route.params.sessionId as string
+const sessionId = (route.params.sessionId as string | undefined) ?? ''
 
 // ---------------------------------------------------------------------------
 // State
@@ -26,6 +26,14 @@ const sessionId = route.params.sessionId as string
 
 const store = useSessionStore()
 const joinResult = ref<JoinSessionResult | null>(null)
+
+/**
+ * Dedicated lookup state, tracked locally and independent of the shared store.
+ * This keeps a failed session lookup from being confused with a join-submit
+ * error (store.error) or with stale session state the store may still hold.
+ */
+const lookupLoading = ref(false)
+const lookupError = ref<string | null>(null)
 
 /** The current page URL so players can hand off the join link via QR. */
 const joinUrl = computed(() =>
@@ -37,7 +45,19 @@ const joinUrl = computed(() =>
 // ---------------------------------------------------------------------------
 
 onMounted(async () => {
-  await store.fetchSession(sessionId)
+  // No pre-populated session ID (e.g. the /sessions index): skip the lookup so
+  // the join form always renders instead of hanging on an invalid request.
+  if (!sessionId) return
+  lookupLoading.value = true
+  try {
+    await store.fetchSession(sessionId)
+  } catch {
+    // Record the failure in dedicated lookup state so the standalone
+    // "Session not found" panel owns it (store.error is left for join submits).
+    lookupError.value = store.error ?? 'Session not found.'
+  } finally {
+    lookupLoading.value = false
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -50,48 +70,29 @@ function handleJoined(result: JoinSessionResult): void {
 </script>
 
 <template>
-  <div
-    class="join-page -m-6 min-h-full p-6"
-    v-bg-asset="{ url: '/assets/join-session/join-session-background.png', fallback: '#0a0a1a' }"
-  >
-    <div class="mx-auto max-w-lg space-y-6">
-      <!-- Hero banner -->
+  <div class="join-page min-h-full">
+    <div class="page-sections mx-auto max-w-lg">
+      <!-- Hero banner with the title overlaid bottom-left -->
       <div
-        class="join-hero overflow-hidden rounded-xl"
-        aria-hidden="true"
+        class="app-hero"
         v-bg-asset="{ url: '/assets/join-session/join-session-hero-banner.png', fallback: '#0d0d2a' }"
-      />
-
-      <!-- Page header -->
-      <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-white">Join Session</h1>
+      >
+        <div class="app-hero__overlay">
+          <h1 class="app-hero__title">Join Session</h1>
+          <p class="app-hero__subtitle">
+            Enter your display name and invite code to join the table.
+          </p>
+        </div>
       </div>
 
-      <!-- Loading state -->
+      <!-- Loading state (only while an ID-backed lookup is in flight) -->
       <div
-        v-if="store.loading && !store.currentSession"
+        v-if="lookupLoading"
         class="flex items-center justify-center py-20"
         aria-live="polite"
         aria-busy="true"
       >
         <span class="text-gray-400">Loading session…</span>
-      </div>
-
-      <!-- Error loading session -->
-      <div
-        v-else-if="store.error && !store.currentSession"
-        role="alert"
-        class="not-found-panel flex min-h-[14rem] flex-col items-center justify-center rounded-xl px-6 py-8 text-center"
-        v-bg-asset="{ url: '/assets/join-session/session-not-found-error-panel.png', fallback: '#0d0d2a', position: 'left center' }"
-      >
-        <p class="mb-2 text-lg font-semibold text-red-300">Session not found</p>
-        <p class="text-sm text-red-400">{{ store.error }}</p>
-        <RouterLink
-          to="/"
-          class="mt-4 inline-block text-sm text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-        >
-          ← Back to home
-        </RouterLink>
       </div>
 
       <!-- Joined - waiting for approval -->
@@ -115,11 +116,13 @@ function handleJoined(result: JoinSessionResult): void {
         </p>
       </div>
 
-      <!-- Join form + QR hand-off -->
-      <template v-else-if="store.currentSession">
+      <!-- Join form + QR hand-off. The form always renders first (regardless of
+           whether the session loaded), with the error panel shown BELOW it. -->
+      <template v-else>
         <PlayerJoinForm
           :session-id="sessionId"
-          :session-name="store.currentSession.name"
+          :session-name="lookupError ? undefined : store.currentSession?.name"
+          :hide-error="!!lookupError"
           @joined="handleJoined"
         />
 
@@ -138,24 +141,32 @@ function handleJoined(result: JoinSessionResult): void {
             </p>
           </div>
         </div>
+
+        <!-- Session-not-found panel: only when the ID-backed lookup failed.
+             PlayerJoinForm surfaces join (API) errors itself, so this standalone
+             panel is scoped to the load failure (lookupError) to avoid a
+             duplicate error being shown. -->
+        <div
+          v-if="lookupError"
+          role="alert"
+          class="not-found-panel flex min-h-[14rem] flex-col items-center justify-center rounded-xl px-6 py-8 text-center"
+          v-bg-asset="{ url: '/assets/join-session/session-not-found-error-panel.png', fallback: '#0d0d2a', position: 'left center' }"
+        >
+          <p class="mb-2 text-lg font-semibold text-red-300">Session not found</p>
+          <p class="text-sm text-red-400">{{ lookupError }}</p>
+          <RouterLink
+            to="/"
+            class="mt-4 inline-block text-sm text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          >
+            ← Back to home
+          </RouterLink>
+        </div>
       </template>
     </div>
   </div>
 </template>
 
 <style scoped>
-.join-page {
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-}
-
-.join-hero {
-  height: 160px;
-  background-size: cover;
-  background-position: center;
-}
-
 .not-found-panel {
   border: var(--border-gold);
   background-size: cover;

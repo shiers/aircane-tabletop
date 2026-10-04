@@ -165,7 +165,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         {
             ct.ThrowIfCancellationRequested();
 
-            var ocr = await _ocrEngine.RecognizeAsync(imageBytes, ct);
+            var ocr = await _ocrEngine.RecognizeAsync(imageBytes, ct: ct);
             if (ocr.HasText)
                 recognizedParts.Add(ocr.Text.Trim());
         }
@@ -182,7 +182,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
             var bitmap = _rasterizer.RasterizePage(pdfBytes, page.PageNumber, ct);
             if (bitmap is { Length: > 0 })
             {
-                var ocr = await _ocrEngine.RecognizeAsync(bitmap, ct);
+                var ocr = await _ocrEngine.RecognizeAsync(bitmap, ct: ct);
                 if (ocr.HasText)
                     recognizedParts.Add(ocr.Text.Trim());
             }

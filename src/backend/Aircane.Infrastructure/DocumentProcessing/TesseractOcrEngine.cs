@@ -72,7 +72,8 @@ public sealed class TesseractOcrEngine : IOcrEngine, IDisposable
     }
 
     /// <inheritdoc />
-    public Task<OcrResult> RecognizeAsync(byte[] imageBytes, CancellationToken ct = default)
+    public Task<OcrResult> RecognizeAsync(
+        byte[] imageBytes, float? minConfidenceOverride = null, CancellationToken ct = default)
     {
         if (imageBytes is null || imageBytes.Length == 0)
             return Task.FromResult(OcrResult.Empty);
@@ -83,6 +84,8 @@ public sealed class TesseractOcrEngine : IOcrEngine, IDisposable
 
         ct.ThrowIfCancellationRequested();
 
+        var threshold = minConfidenceOverride ?? _minConfidence;
+
         try
         {
             // The wrapper is synchronous and CPU-bound; run inline.
@@ -92,11 +95,11 @@ public sealed class TesseractOcrEngine : IOcrEngine, IDisposable
             var text = page.Text ?? string.Empty;
             var confidence = page.MeanConfidence; // 0..1
 
-            if (confidence < _minConfidence)
+            if (confidence < threshold)
             {
                 _logger.LogDebug(
                     "OCR result discarded: mean confidence {Confidence:P0} below threshold {Threshold:P0}.",
-                    confidence, _minConfidence);
+                    confidence, threshold);
                 return Task.FromResult(OcrResult.Empty);
             }
 

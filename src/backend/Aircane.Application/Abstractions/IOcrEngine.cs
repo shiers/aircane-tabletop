@@ -28,13 +28,20 @@ public interface IOcrEngine
     /// Recognizes text from a single raster image (PNG, JPEG, TIFF, or BMP bytes).
     /// </summary>
     /// <param name="imageBytes">Encoded image bytes for one page or region.</param>
+    /// <param name="minConfidenceOverride">
+    /// Optional per-call confidence floor (0..1). When <c>null</c> the engine uses its configured
+    /// <c>OcrOptions.MinConfidence</c> page-level gate (unchanged document behaviour). The
+    /// region-anchored consumer passes <c>OcrOptions.RegionMinConfidence</c> (default 0) so a
+    /// low-confidence region value is kept-and-flagged by the consumer rather than silently dropped.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
     /// The recognized text, or an empty <see cref="OcrResult"/> when the engine is
     /// unavailable or nothing could be recognized. Implementations should not throw
     /// for recognition failures; they should return an empty result instead.
     /// </returns>
-    Task<OcrResult> RecognizeAsync(byte[] imageBytes, CancellationToken ct = default);
+    Task<OcrResult> RecognizeAsync(
+        byte[] imageBytes, float? minConfidenceOverride = null, CancellationToken ct = default);
 }
 
 /// <summary>

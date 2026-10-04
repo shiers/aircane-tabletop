@@ -13,6 +13,7 @@ public sealed class NullOcrEngine : IOcrEngine
 
     public string StatusDescription => "OCR is disabled (set Ocr:Enabled=true to enable).";
 
-    public Task<OcrResult> RecognizeAsync(byte[] imageBytes, CancellationToken ct = default)
+    public Task<OcrResult> RecognizeAsync(
+        byte[] imageBytes, float? minConfidenceOverride = null, CancellationToken ct = default)
         => Task.FromResult(OcrResult.Empty);
 }

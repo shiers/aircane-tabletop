@@ -152,7 +152,8 @@ public class OcrPipelineTests
         public bool IsAvailable => true;
         public string StatusDescription => "Stub OCR engine (test).";
 
-        public Task<OcrResult> RecognizeAsync(byte[] imageBytes, CancellationToken ct = default)
+        public Task<OcrResult> RecognizeAsync(
+            byte[] imageBytes, float? minConfidenceOverride = null, CancellationToken ct = default)
             => Task.FromResult(new OcrResult(_text, 0.95f));
     }
 }

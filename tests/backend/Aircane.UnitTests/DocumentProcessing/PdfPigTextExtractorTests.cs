@@ -249,7 +249,7 @@ public class PdfPigTextExtractorTests
         public string StatusDescription => "StubOcrEngine";
 
         public Task<Aircane.Application.Abstractions.OcrResult> RecognizeAsync(
-            byte[] imageBytes, CancellationToken ct = default)
+            byte[] imageBytes, float? minConfidenceOverride = null, CancellationToken ct = default)
             => Task.FromResult(new Aircane.Application.Abstractions.OcrResult(RecognizedText, 0.95f));
     }
 

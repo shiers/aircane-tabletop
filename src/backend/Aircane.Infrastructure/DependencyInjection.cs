@@ -251,6 +251,11 @@ public static class DependencyInjection
                 services.AddSingleton<Aircane.Application.Abstractions.IPdfRasterizer, DocnetPdfRasterizer>();
             else
                 services.AddSingleton<Aircane.Application.Abstractions.IPdfRasterizer, NullPdfRasterizer>();
+
+            // Caption/region-anchored OCR helper (FR-3): a reusable seam over the rasterizer + engine.
+            // No null-equivalent — consumers gate on ICaptionRegionOcr.IsAvailable, which is false when
+            // either dependency is unavailable.
+            services.AddSingleton<Aircane.Application.Abstractions.ICaptionRegionOcr, CaptionRegionOcr>();
         }
         else
         {

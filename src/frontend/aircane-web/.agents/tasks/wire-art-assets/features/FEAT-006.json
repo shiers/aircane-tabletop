@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-006",
+  "type": "feat",
+  "description": "Rules Lookup view art + GameSystemDropdown component (Phase 6) in src/features/ai/RulesLookupView.vue. Independent of other view FEATs; depends on FEAT-001 tokens. NOTE the real button filename quirk.",
+  "status": "completed",
+  "steps": [
+    "Create src/features/ai/components/ (new folder) and GameSystemDropdown.vue, props { modelValue: string | null; options: { id: string; name: string }[] }, emits update:modelValue. Render the dice icon /assets/ui/icon-dice.png, a native <select> styled over /assets/rules/game-system-field-art.png, and a gold chevron.",
+    "Add src/features/ai/components/__tests__/GameSystemDropdown.test.ts: mount with options, assert options render and selecting emits update:modelValue.",
+    "In RulesLookupView.vue apply /assets/rules/rules-lookup-background.png as the page background and /assets/rules/rules-lookup-hero-banner.png as the hero banner.",
+    "Apply /assets/rules/ask-question-panel-art.png as the question panel background with the textarea positioned over the right 65%.",
+    "Apply the Ask Question button art using the REAL filename /assets/rules/ask-question-button-.png (missing 'art', trailing hyphen) as background-image with background-size:100% 100%.",
+    "Apply /assets/rules/citation-card-art.png as the background of each citation/source result card with citation text (source title, page, excerpt) over the right 65% and /assets/rules/rules-scroll-thumbnail.png as a scroll icon far-left of each card.",
+    "Optionally replace the free-text Game System filter with GameSystemDropdown, preserving the existing submitQuestion request shape."
+  ],
+  "acceptance_criteria": [
+    "GameSystemDropdown exists with the specified props/emits and its test passes.",
+    "Rules page bg, hero, question panel, Ask Question button (using ask-question-button-.png), and citation cards with scroll icon are wired via absolute /assets/rules/... paths.",
+    "`npm run build` succeeds and `npm test` passes."
+  ],
+  "verification": [
+    "cd src/frontend/aircane-web && npm run build",
+    "cd src/frontend/aircane-web && npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "Created src/features/ai/components/GameSystemDropdown.vue (props { id?, modelValue: string|null, options: {id,name}[], disabled? }, emits update:modelValue; dice icon /assets/ui/icon-dice.png + transparent native <select> over /assets/rules/game-system-field-art.png + gold chevron) and its test (4 cases: options render incl. an 'Any' placeholder, selected value reflected, emits id on change, emits null on placeholder). Wired RulesLookupView.vue art via absolute /assets/rules/... paths: page bg rules-lookup-background.png (bg-cover), hero rules-lookup-hero-banner.png, question panel ask-question-panel-art.png (cover, text/controls over right 65%), Ask Question button uses the REAL filename ask-question-button-.png with background-size:100% 100%, citation cards use citation-card-art.png (cover) with rules-scroll-thumbnail.png as the far-left scroll icon and citation text over the right 65%. Replaced the free-text Game System filter with GameSystemDropdown; gameSystem ref is now string|null and the submitQuestion request shape is preserved (gameSystem.value?.trim() || null). NOTE: the RulesQuestionCitation type has no 'excerpt' field (only sourceTitle/pageNumber/sectionTitle/license*), so citation text shows source title, page, section, and license badge as before (no excerpt). Verified: npm run build (0 type errors) and npm test (33 files / 272 tests pass) both succeed from src/frontend/aircane-web."
+}

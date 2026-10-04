@@ -1,0 +1,27 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Document Library view art + DocumentStatusBadge component (Phase 4). Independent of other view FEATs; depends on FEAT-001 tokens.",
+  "status": "completed",
+  "steps": [
+    "Create src/features/library/components/DocumentStatusBadge.vue, props { status: 'parsed' | 'processing' | 'error' | 'ocr-required' }: processing=spinner, parsed=green, error=red, ocr-required=amber. Use /assets/library/document-status-parsed-badge.png and document-status-processing-badge.png for parsed/processing; render error/ocr-required with CSS (no PNG exists for those). Note the choice in a comment.",
+    "Add src/features/library/components/__tests__/DocumentStatusBadge.test.ts covering all four states.",
+    "In src/features/library/LibraryView.vue add a full-width hero using /assets/library/document-library-hero-background.png.",
+    "In components/WatchedFolderSection.vue apply /assets/library/watched-folders-banner.png as the section-header background with the 'Watched Folders' heading + description over the right 70%; apply add-watched-folder-button-art.png / open-content-licenses-button-art.png / register-folder-button-art.png as button background-image (background-size:100% 100%) on the matching buttons (open-content-licenses button is in LibraryView.vue).",
+    "In components/DocumentList.vue add a row thumbnail (img or background-image) chosen by detected source type: document-thumbnail-srd.png for sourceType Rules default, document-thumbnail-pf2e.png for Rules + Pathfinder 2e, document-thumbnail-lost-mine.png for Adventure default, document-thumbnail-homebrew-monsters.png for Homebrew default (all /assets/library/).",
+    "In components/DocumentUploadForm.vue apply /assets/library/upload-document-panel-art.png as the drag-and-drop zone background; do NOT add a CSS dashed border (it is baked into the image).",
+    "Add a document detail side panel background using /assets/library/document-detail-side-panel-art.png with metadata/actions/chunk info in the upper 60% (where the detail panel is rendered).",
+    "Add a library empty-state using /assets/library/library-empty-state-ornament.png centred when there are no documents, and a selected-row highlight via CSS only: .document-row.selected { box-shadow: inset 0 0 0 1px var(--color-purple), var(--glow-purple); background: rgba(124,58,237,0.08); }. Use DocumentStatusBadge for status display (coordinate with existing ImportStatusBadge.vue / ImportStatus enum)."
+  ],
+  "acceptance_criteria": [
+    "DocumentStatusBadge renders all four states and its test passes.",
+    "Library hero, watched-folders banner, three button arts, source-type row thumbnails, upload panel art (no added dashed border), detail panel art, empty state, and selected-row glow are wired via absolute /assets/library/... paths.",
+    "`npm run build` succeeds and `npm test` passes (existing library tests included)."
+  ],
+  "verification": [
+    "cd src/frontend/aircane-web && npm run build",
+    "cd src/frontend/aircane-web && npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented all Phase 4 steps. DocumentStatusBadge.vue uses a string-literal prop ('parsed'|'processing'|'error'|'ocr-required'); parsed/processing render the PNG badges (document-status-parsed-badge.png / document-status-processing-badge.png) with a CSS color fallback behind the text, while error (red) and ocr-required (amber) are CSS-only since no PNG exists — choice documented in a component comment. DocumentList maps the backend ImportStatus enum to badge states via badgeStatus(): Completed->parsed, Failed->error, OcrRequired->ocr-required, Pending/Processing->processing; the enum-based ImportStatusBadge.vue is left in place but no longer used by DocumentList. Row thumbnails chosen by source type: Rules->srd (pf2e when system/ruleset reads Pathfinder/pf2e), Adventure+Solo->lost-mine, Homebrew->homebrew-monsters, else srd. LibraryView gained a full-width hero (document-library-hero-background.png) and the Open Content Licenses button uses open-content-licenses-button-art.png (background-size:100% 100%, moved into LibraryView per step). WatchedFolderSection header uses watched-folders-banner.png with heading+desc over the right 70%; the add-watched-folder and register-folder button arts live on the toggle and submit buttons in RegisterFolderForm.vue (the actual matching buttons). DocumentUploadForm's upload section uses upload-document-panel-art.png with NO added CSS dashed border (baked into image). Added a clickable row -> document detail side panel (document-detail-side-panel-art.png, content in upper 60%), library-empty-state-ornament.png in the empty state, and the selected-row glow via CSS only (.document-row.selected). Action-cell clicks use @click.stop so they don't toggle selection. Verified: npm run build succeeds (0 type errors); npm test 262/262 pass (includes 4 new DocumentStatusBadge tests)."
+}

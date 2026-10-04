@@ -1,0 +1,27 @@
+{
+  "id": "FEAT-009",
+  "type": "feat",
+  "description": "Join Session view art + InviteCodeField/DisplayNameField components (Phase 9) in src/features/sessions/JoinSessionView.vue and PlayerJoinForm.vue. Independent of other view FEATs; depends on FEAT-001 tokens.",
+  "status": "completed",
+  "steps": [
+    "Create src/features/sessions/components/InviteCodeField.vue, props { modelValue: string; error?: string }, emits update:modelValue: 🗝 key icon, input placeholder 'Enter invite code...', maxlength 8, letter-spacing, a ✦ star ornament, and an inline error slot/area.",
+    "Create src/features/sessions/components/DisplayNameField.vue with the same shape but a person icon and no letter-spacing.",
+    "Add __tests__/InviteCodeField.test.ts and DisplayNameField.test.ts (typing emits update:modelValue; maxlength on invite code; error renders when provided).",
+    "In JoinSessionView.vue apply /assets/join-session/join-session-background.png as the page background and join-session-hero-banner.png as the hero.",
+    "Apply /assets/join-session/join-session-panel-art.png as the join form card background (fields overlaid) and session-not-found-error-panel.png as the error-state background with the message centred.",
+    "Apply /assets/join-session/join-session-button-art.png as the submit button background with 'Join Session →' overlaid, and /assets/join-session/friendly-error-ornament.png as a 32x32 img to the left of inline validation errors.",
+    "Add a QR card using /assets/join-session/join-by-qr-card.png with 'Join by QR Code' heading + subtext over the right 65% and the QR canvas/img over the left 35% (reuse the existing QRCode.vue component).",
+    "Replace the two inputs in PlayerJoinForm.vue with InviteCodeField / DisplayNameField, preserving validation, isValid, the 'joined' emit, and keeping __tests__/PlayerJoinForm.test.ts passing (adjust selectors in the test only if structurally required)."
+  ],
+  "acceptance_criteria": [
+    "InviteCodeField and DisplayNameField exist with the specified props/emits and their tests pass.",
+    "Join page bg, hero, form panel, not-found error panel, join button art, friendly-error ornament, and QR card are wired via absolute /assets/join-session/... paths.",
+    "`npm run build` succeeds and `npm test` passes (existing sessions tests, incl. PlayerJoinForm.test.ts)."
+  ],
+  "verification": [
+    "cd src/frontend/aircane-web && npm run build",
+    "cd src/frontend/aircane-web && npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented. Created src/features/sessions/components/InviteCodeField.vue (props { modelValue, error?, id? }, emits update:modelValue; 🗝 key icon, 'Enter invite code...' placeholder, maxlength 8, uppercase + 0.4em letter-spacing, ✦ star ornament, inline error row with the 32x32 friendly-error ornament) and DisplayNameField.vue (same shape, person icon, no letter-spacing). Added co-located tests InviteCodeField.test.ts and DisplayNameField.test.ts (typing emits update:modelValue, maxlength=8 on invite code, error renders/absent). JoinSessionView.vue: page bg (join-session-background.png, cover/fixed), hero (join-session-hero-banner.png), not-found error state uses session-not-found-error-panel.png with centred message, and a new QR card using join-by-qr-card.png (QR over left 35% via reused QRCode.vue encoding window.location.href, heading/subtext over right 65%). PlayerJoinForm.vue: join card uses join-session-panel-art.png (cover, left center), submit button uses join-session-button-art.png (background-size 100% 100%) with 'Join Session →' overlaid; the two inputs replaced with DisplayNameField/InviteCodeField. Preserved validation(), isValid, the 'joined' emit, store flow, labels, and the #join-display-name / #join-invite-code ids (added via each field's id prop) so PlayerJoinForm.test.ts and its selectors pass unchanged. Added an id prop to both fields (minimal, keeps label/aria/test wiring) — a sanctioned deviation from the bare { modelValue, error } shape in the spec. Verified from the frontend dir: `npm run build` succeeds (0 type errors) and `npm test` passes 296/296 (39 files)."
+}

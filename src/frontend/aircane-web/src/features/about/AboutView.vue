@@ -56,7 +56,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="about-page page-plain min-h-full">
+  <div class="about-page min-h-full">
     <div class="about-sections">
       <!-- Hero banner with the title overlaid bottom-left (same as other views). -->
       <div
@@ -67,12 +67,11 @@ onMounted(async () => {
       >
         <div class="app-hero__overlay">
           <h1 class="app-hero__title">About &amp; Credits</h1>
+          <p class="app-hero__subtitle">
+            Aircane Tabletop — a local-first, AI-assisted tabletop RPG engine.
+          </p>
         </div>
       </div>
-
-      <p class="text-sm text-gray-400">
-        Aircane Tabletop — a local-first, AI-assisted tabletop RPG engine.
-      </p>
 
       <!-- License cards (static): one per built-in open-content license. -->
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

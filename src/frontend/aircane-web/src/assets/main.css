@@ -95,8 +95,11 @@
     gap: 32px;
   }
 
-  /* Opaque dark fill so a view that drops its full-page art does NOT let the
-     body's app-background.png bleed through. */
+  /* Opaque dark fill for views that drop their full-page art. Applied by
+     AppLayout to the shell <main> for the plain-background routes so the solid
+     colour covers the ENTIRE content viewport (container gutters + top gap),
+     not just the routed view root, and the body's app-background.png cannot
+     bleed through. */
   .page-plain {
     background-color: #0a0a1a;
   }

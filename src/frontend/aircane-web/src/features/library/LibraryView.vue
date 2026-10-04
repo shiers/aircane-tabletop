@@ -66,6 +66,9 @@ onUnmounted(() => {
     >
       <div class="app-hero__overlay">
         <h1 class="app-hero__title">Document Library</h1>
+        <p class="app-hero__subtitle">
+          Import, index, and manage the rules, adventures, and homebrew in your library.
+        </p>
       </div>
     </div>
 

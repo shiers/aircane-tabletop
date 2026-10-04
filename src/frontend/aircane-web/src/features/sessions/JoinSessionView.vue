@@ -50,8 +50,8 @@ function handleJoined(result: JoinSessionResult): void {
 </script>
 
 <template>
-  <div class="join-page page-plain min-h-full">
-    <div class="mx-auto max-w-lg space-y-6">
+  <div class="join-page min-h-full">
+    <div class="page-sections mx-auto max-w-lg">
       <!-- Hero banner with the title overlaid bottom-left -->
       <div
         class="app-hero"
@@ -59,6 +59,9 @@ function handleJoined(result: JoinSessionResult): void {
       >
         <div class="app-hero__overlay">
           <h1 class="app-hero__title">Join Session</h1>
+          <p class="app-hero__subtitle">
+            Enter your display name and invite code to join the table.
+          </p>
         </div>
       </div>
 
@@ -99,6 +102,7 @@ function handleJoined(result: JoinSessionResult): void {
         <PlayerJoinForm
           :session-id="sessionId"
           :session-name="store.currentSession?.name"
+          :hide-error="!!store.error && !store.currentSession"
           @joined="handleJoined"
         />
 

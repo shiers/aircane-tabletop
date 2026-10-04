@@ -285,8 +285,8 @@ function isKeyMasked(value: string): boolean {
 </script>
 
 <template>
-  <div class="ai-settings-page page-plain">
-    <div class="space-y-6">
+  <div class="ai-settings-page">
+    <div class="page-sections">
       <!-- Hero banner with the title overlaid bottom-left -->
       <div
         class="app-hero"

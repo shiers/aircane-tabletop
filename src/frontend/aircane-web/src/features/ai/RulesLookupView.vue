@@ -63,7 +63,7 @@ async function submitQuestion() {
 </script>
 
 <template>
-  <div class="page-sections page-plain">
+  <div class="page-sections">
     <!-- Hero banner -->
     <div
       class="app-hero"
@@ -80,7 +80,7 @@ async function submitQuestion() {
     </div>
 
     <!-- Question + results column -->
-    <div class="space-y-6">
+    <div class="page-sections">
       <!-- Question panel: ask-question-panel-art backs the panel, controls over the right 65% -->
       <div
         class="ask-question-panel rounded-lg bg-cover bg-left p-5"
@@ -171,7 +171,7 @@ async function submitQuestion() {
       <!-- Error banner -->
       <div
         v-if="error"
-        class="mt-6 rounded-md border border-red-800 bg-red-950 px-4 py-3 text-red-300"
+        class="rounded-md border border-red-800 bg-red-950 px-4 py-3 text-red-300"
         role="alert"
       >
         <p class="font-medium">Something went wrong</p>
@@ -179,7 +179,7 @@ async function submitQuestion() {
       </div>
 
       <!-- Result -->
-      <div v-if="result" class="mt-8 space-y-6">
+      <div v-if="result" class="space-y-6">
         <!-- Uncertainty warning -->
         <output
           v-if="!result.hasSourceSupport"

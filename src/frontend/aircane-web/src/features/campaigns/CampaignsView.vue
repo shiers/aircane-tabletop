@@ -65,7 +65,7 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
       </button>
     </div>
 
-    <div class="space-y-6">
+    <div class="page-sections">
       <!-- Global error banner -->
       <div
         v-if="store.error"

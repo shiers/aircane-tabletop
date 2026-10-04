@@ -89,8 +89,8 @@ async function submitForm() {
 </script>
 
 <template>
-  <div class="forge-page page-plain">
-    <div class="space-y-6">
+  <div class="forge-page">
+    <div class="page-sections">
       <!-- Hero banner -->
       <div
         class="app-hero"
@@ -98,13 +98,12 @@ async function submitForm() {
       >
         <div class="app-hero__overlay">
           <h1 class="app-hero__title">Generate Adventure</h1>
+          <p class="app-hero__subtitle">
+            Configure your adventure parameters and let the AI generate a playable adventure
+            tailored to your party.
+          </p>
         </div>
       </div>
-
-      <p class="text-gray-400">
-        Configure your adventure parameters and let the AI generate a playable adventure tailored to
-        your party.
-      </p>
 
       <!-- Success result -->
       <output

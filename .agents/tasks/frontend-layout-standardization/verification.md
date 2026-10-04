@@ -7,10 +7,59 @@ Frontend root: `src/frontend/aircane-web`
 
 | Command | Result |
 | --- | --- |
-| `npm install` | OK — `node_modules` populated (was absent in the worktree). |
-| `npm run build` (`vue-tsc && vite build`) | **PASS** — 377 modules transformed, built in ~16s, no type errors. Only warnings are pre-existing `/*#__PURE__*/` annotation notes from `@microsoft/signalr` (unrelated to this change). |
+| `npm run build` (`vue-tsc && vite build`) | **PASS** — 377 modules transformed, built in ~17s, no type errors. Only warnings are pre-existing `/*#__PURE__*/` annotation notes from `@microsoft/signalr` (unrelated to this change). |
 | `npm run test` (`vitest --run`) | **PASS** — 43 test files, 304 tests, 0 failures. No snapshots needed updating. |
-| `npm run lint` (`eslint . --ext .vue,.ts,.tsx --fix`) | **COULD NOT RUN** — `eslint` is referenced by the `lint` script but is **not** declared in `package.json` devDependencies, so `npm install` never installed it (`node_modules/eslint` and `node_modules/.bin/eslint` are both absent). This is a pre-existing project configuration gap, not introduced by this change. Installing an unpinned eslint + plugin toolchain is outside the scope of this layout task, so lint was not force-installed. Build (which includes `vue-tsc` type-checking) and the full test suite are green. |
+| `npm run lint` (`eslint . --ext .vue,.ts,.tsx --fix`) | **COULD NOT RUN (pre-existing gap)** — `eslint` is referenced by the `lint` script but is **not** declared in `package.json` devDependencies, so it is not installed (`node_modules/.bin/eslint` is absent). This is a pre-existing project configuration gap, not introduced by this change. Restoring a full ESLint toolchain means choosing + adding eslint, the Vue/TS parser, plugins, and a config — a dependency/tooling decision outside this layout task's scope. Build (which includes `vue-tsc` type-checking) and the full test suite are green; code matches existing `<script setup>` + scoped-style conventions. |
+
+## Review iteration 2 — findings addressed
+
+This iteration addressed the four findings in `review.json` (three MEDIUM confirmed, one MEDIUM disputed):
+
+1. **Major-section spacing now 32px on every view (MEDIUM).** Switched the page-level section
+   wrappers that were `space-y-6` (24px) to the shared `.page-sections` primitive (32px):
+   `AiSettingsView` (outer wrapper), `AdventureGenerateView` (outer wrapper), `JoinSessionView`
+   (outer wrapper), `CampaignsView` (inner content block), and `RulesLookupView`'s content column.
+   Smaller spacing (`space-y-6`/`space-y-4`) is retained ONLY inside forms and cards (e.g. the
+   Adventure Forge `<form>` between its fieldsets, the Rules result sub-sections), not between
+   major page sections. Removed the now-redundant `mt-6`/`mt-8` margins on RulesLookup's error and
+   result blocks so the `.page-sections` flex gap is the single spacing authority there.
+2. **Hero overlay contract completed (MEDIUM).** Added an `.app-hero__subtitle` to the four views
+   that had a title-only overlay: Library ("Import, index, and manage…"), Adventure Forge (moved
+   the descriptive copy that sat below the hero up into the subtitle), Join Session ("Enter your
+   display name and invite code…"), and About (moved its "local-first, AI-assisted…" line into the
+   subtitle). Every non-dashboard hero now renders title + subtitle bottom-left. The **Dashboard
+   title placement** is kept as a documented exception (see "Dashboard hero exception" below)
+   rather than restructured, because moving it would alter the deliberate Dashboard hero
+   composition (title aligned to the right of the welcome-banner art) beyond the task's stated
+   Dashboard exemption.
+3. **Plain-page background now covers the whole content viewport (MEDIUM).** The `.page-plain`
+   fill (`#0a0a1a`) is now applied by `AppLayout.vue` to the shell `<main>` (via a route-name
+   check for `rules-lookup`, `ai-settings`, `adventure-generate`, `join-session`, `about`, and
+   `sessions`), so the solid colour covers the full content viewport — including the
+   `.page-container` 32px side / 48px bottom gutters and the `pt-6` top gap — instead of only the
+   routed view root. The per-view-root `.page-plain` classes were removed (the shell is now the
+   single authority); no per-view full-bleed hacks were reintroduced.
+4. **Join Session lookup-error duplication fixed (MEDIUM, disputed).** Verified against source:
+   `PlayerJoinForm.vue` **does** render `store.error` in an internal banner (Review B was correct;
+   Review A's grep was stale). On a failed session lookup, that internal banner AND the standalone
+   "Session not found" panel both showed the same message. Fix: added an optional `hideError` prop
+   to `PlayerJoinForm`; `JoinSessionView` passes `:hide-error="!!store.error && !store.currentSession"`
+   so on a load failure the form suppresses its internal banner and ONLY the standalone panel
+   (below the form + QR) shows the error. When a session loaded successfully and a join *submit*
+   fails, `currentSession` is set → `hideError` is false → the form shows its own submit error and
+   the standalone panel stays hidden. The two error channels are now distinct and never duplicate.
+
+### Dashboard hero exception (documented, per review action)
+
+Requirement #1 overlays title+subtitle bottom-left; the task spec grants the Dashboard an explicit
+exemption ("The Dashboard hero may remain taller"). The Dashboard hero (`HomeView.vue`) is a
+bespoke two-part composition: a `.hero-welcome` banner-art panel on the left ~55% and the heading
+overlaid on the right portion so it reads clear of that art. Forcing the heading to the shared
+bottom-left overlay would overlap the welcome-banner art and change the intended Dashboard visual —
+a user-visible redesign beyond the task's layout/styling scope and beyond the stated height-only
+exemption. Per the reviewer's offered alternative ("obtain an explicit documented exception for its
+title placement"), the Dashboard title placement is kept as-is and documented here as an
+intentional exception. All non-dashboard views conform to the bottom-left title+subtitle contract.
 
 ## Design approach
 
@@ -54,12 +103,15 @@ Frontend root: `src/frontend/aircane-web`
 - [x] **Dashboard hero may stay taller.** `HomeView.vue` keeps its own `.hero` (min-height 200px)
   and `.hero-heading` markup — not forced to 240px.
 - [x] **No full-page background image on Rules Lookup, AI Settings, Adventure Forge, Join Session, About.**
-  Each view's outer root had its full-page `v-bg-asset` removed and now carries `.page-plain`
-  (opaque `#0a0a1a`). Removed the related view-root CSS: `.ai-settings-page` /`.forge-page`
-  `background-*`/`background-attachment:fixed`, the `.forge-page { margin:-1rem }` and
-  `.join-page { -m-6 }` full-bleed hacks, and the `bg-cover bg-center`/`bg-fixed` root classes on
-  RulesLookup/About/Forge/Join. Opaque fill guarantees the body `app-background.png` cannot bleed
-  through.
+  Each view's outer root had its full-page `v-bg-asset` removed. The opaque `#0a0a1a` fill
+  (`.page-plain`) is now applied by `AppLayout.vue` to the shell `<main>` for these routes (by
+  route name), so it covers the ENTIRE content viewport — the `.page-container` gutters and the
+  `pt-6` top gap included — not just the routed view root (addresses the review's gutter finding).
+  Removed the related view-root CSS: `.ai-settings-page`/`.forge-page` `background-*`/
+  `background-attachment:fixed`, the `.forge-page { margin:-1rem }` and `.join-page { -m-6 }`
+  full-bleed hacks, and the `bg-cover bg-center`/`bg-fixed` root classes on RulesLookup/About/Forge/
+  Join. The opaque fill guarantees the body `app-background.png` cannot bleed through anywhere in
+  the content area.
 - [x] **Hero banners + panels still render after bg removal.** Hero banner art is on its own
   `.app-hero` element (scoped), untouched. Inner panels/cards keep their gold borders
   (`var(--border-gold)`) and panel-art `v-bg-asset` (ask-question-panel, citation-card,
@@ -88,22 +140,28 @@ Frontend root: `src/frontend/aircane-web`
   and application-license panels. The conflicting Tailwind `p-5` was removed from those elements
   so the scoped padding is authoritative.
 - [x] **Join Session shows the form before the error panel; no duplicate error.**
-  Template restructured: `v-if loading` → `v-else-if joinResult` (joined confirmation) →
-  `v-else` block that ALWAYS renders `PlayerJoinForm` + QR card first. `:session-name` is now
-  `store.currentSession?.name` (optional; the form falls back to generic copy when undefined), so
-  the form renders even when the session failed to load / no session is pre-populated. The
-  "Session not found" panel renders BELOW the form, guarded by
-  `v-if="store.error && !store.currentSession"` — i.e. only on a load failure, placed after the
-  QR card. `PlayerJoinForm` surfaces join (API) errors in its own banner; the standalone panel is
-  scoped to the load-failure case to keep the two error paths distinct. Note: on a load failure
-  the store's single `error` ref is set, so the form's internal banner and the standalone panel
-  can both reference the same message — the standalone panel adds the "Session not found" framing
-  + "Back to home" link, which is the intended load-failure UX and matches the task's "error panel
-  below the form" requirement.
+  Template: `v-if loading` → `v-else-if joinResult` (joined confirmation) → `v-else` block that
+  ALWAYS renders `PlayerJoinForm` + QR card first. `:session-name` is `store.currentSession?.name`
+  (optional; the form falls back to generic copy when undefined), so the form renders even when the
+  session failed to load / no session is pre-populated. The "Session not found" panel renders BELOW
+  the form, guarded by `v-if="store.error && !store.currentSession"` — only on a load failure,
+  after the QR card. **Duplicate-error fix:** `PlayerJoinForm` renders `store.error` in its own
+  banner, so a load failure previously showed the error both inside the form and in the standalone
+  panel. The form now takes an optional `hideError` prop and `JoinSessionView` passes
+  `:hide-error="!!store.error && !store.currentSession"`, suppressing the form's internal banner on
+  a load failure so ONLY the standalone panel shows it. A *join submit* failure (session loaded →
+  `currentSession` set → `hideError` false) still shows inside the form, with the standalone panel
+  hidden. The two error paths are distinct; no duplicate.
+- [x] **Section spacing is 32px between major sections on EVERY view.** Campaigns, Characters,
+  Library already used `.page-sections` (32px). This iteration switched the remaining page-level
+  `space-y-6` (24px) wrappers to `.page-sections` on AI Settings, Adventure Forge, Join Session,
+  the Campaigns inner content block, and the Rules Lookup content column. Hero-to-first-section and
+  section-to-section gaps are now a uniform 32px across all non-dashboard views. Smaller spacing is
+  retained only inside forms/cards (intra-section), not between major sections.
 - [x] **Navigation between views stays visually consistent.** Shared sidebar (220px), shared
-  1200px centred container, shared 240px hero + bottom-left title, and shared 32px section rhythm
-  are all driven from `AppLayout.vue` + `main.css`, so every in-scope route composes the identical
-  shell.
+  1200px centred container, shared 240px hero + bottom-left title + subtitle, shared 32px section
+  rhythm, and the shell-level `#0a0a1a` plain fill for the five background-removed routes are all
+  driven from `AppLayout.vue` + `main.css`, so every in-scope route composes the identical shell.
 
 ## Notes
 

@@ -139,6 +139,22 @@ Allow single-user or desktop installations to run without Docker/PostgreSQL by u
 
 ## Priority 3 - Quality of Life
 
+### Unify PDF Character Import onto the Source-Adapter Review Rail
+The PDF character import now lives as a tab inside the single **Import Character** modal (alongside
+Upload File and D&D Beyond URL), but it still runs on a **separate flow underneath**: it posts to
+`/api/characters/import/pdf` and, when fields need attention, redirects to the full-page
+`character-field-review` route — an *unmapped-fields* review distinct from the inline, FormDescriptor-
+driven `ImportReviewPanel` every other source uses. Two follow-ups to converge it:
+- **Fold the PDF path behind the same source rail** so extracted PDF fields produce a flat field
+  dictionary that funnels through `ApplyMapping`/`CanonicalCharacter` and the inline `ImportReviewPanel`,
+  retiring the second review UI (one review experience for all sources, less duplicated test surface).
+- **Drop the hardcoded `gameSystem=D&D 5e` / `ruleset=2014`** that the PDF upload currently sends in its
+  multipart form. A non-5e PDF is mislabeled today; the system/ruleset should be detected or chosen the
+  same way the JSON/source paths handle it (PF2e auto-set, 2014/2024 confirmable for 5e, user-selected
+  for unknown). *Deferred deliberately* from the button-consolidation change (Option A) because merging
+  the two review models touches the backend PDF endpoint, the review components, and their tests, and the
+  existing PDF flow works and is tested.
+
 ### Streaming Narration (All Providers)
 Ensure token-by-token streaming works consistently across all AI providers and UI modes.
 

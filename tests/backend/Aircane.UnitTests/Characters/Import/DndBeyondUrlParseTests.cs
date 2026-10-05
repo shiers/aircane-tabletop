@@ -15,6 +15,9 @@ public sealed class DndBeyondUrlParseTests
     [InlineData("https://www.dndbeyond.com/characters/1234567", "1234567")]
     [InlineData("https://www.dndbeyond.com/characters/1234567/", "1234567")]
     [InlineData("https://www.dndbeyond.com/characters/1234567/builder", "1234567")]
+    // Edit/builder URLs with deeper path segments (what a user gets when they click "Edit").
+    [InlineData("https://www.dndbeyond.com/characters/6263842/builder/home/basic", "6263842")]
+    [InlineData("https://www.dndbeyond.com/characters/6263842/builder/class/manage", "6263842")]
     [InlineData("https://www.dndbeyond.com/characters/6285266/DtVjrt", "6285266")]
     [InlineData("https://character-service.dndbeyond.com/characters/42", "42")]
     [InlineData("http://dndbeyond.com/characters/987", "987")]

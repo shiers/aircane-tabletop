@@ -5,10 +5,17 @@ content. Text-based PDFs work out of the box. **Scanned** PDFs (pages that are j
 images with no embedded text layer) need Optical Character Recognition (OCR) to be
 searchable.
 
-OCR is **optional and disabled by default** because it depends on a native library and
-language data that are not bundled with the app. When OCR is disabled or unavailable, a
-scanned PDF is imported and marked `OcrRequired` rather than failing — you can still see
-it in the library, it just won't be searchable until OCR runs.
+OCR is **enabled by default** and is now a first-class capability. The desktop app
+**bundles** everything OCR needs (the English language model and, on Windows, the native
+Tesseract engine), so OCR works with **zero setup** there. OCR also drives the D&D Beyond
+character-sheet PDF import, which rasterizes the sheet and reads values out of fixed
+regions — see [Region OCR tuning](#region-ocr-tuning-dpi-and-psm) below.
+
+OCR still **gates cleanly**: when it is turned off, or when the native engine / language
+data is missing in a non-bundled environment, a scanned PDF is imported and marked
+`OcrRequired` rather than failing — you can still see it in the library, it just won't be
+searchable until OCR runs. A **shared/hosted deployment MAY set `Ocr:Enabled=false`**
+(local-first OCR is not appropriate on a shared server).
 
 ## How it works
 
@@ -24,7 +31,50 @@ The OCR engine is loaded lazily and **gates cleanly**: if the native Tesseract l
 the language data is missing, the engine reports itself unavailable and the app keeps
 working — it never crashes the import.
 
-## Enabling OCR
+## Desktop app: bundled, zero setup
+
+On the desktop app you do not install or download anything — the build fetches and bundles
+the OCR assets next to the sidecar, and OCR is on by default. Two runtime pieces are
+needed, and the desktop build handles both:
+
+- **`eng.traineddata`** (the English model) — fetched and bundled on **every** target.
+- **Native Tesseract engine** — on **Windows** this comes from the `TesseractOCR` NuGet
+  payload via the self-contained sidecar publish, so no extra fetch is required (you still
+  need the [Visual C++ 2022 runtime](https://aka.ms/vs/17/release/vc_redist.x64.exe), which
+  the installer provides). On **Linux/macOS** the engine is system-provided unless the
+  manifest pins a native bundle (see below) — those pins are mechanism-only for now, so if
+  the system libs are absent OCR degrades gracefully rather than crashing.
+
+### How the desktop build bundles OCR assets (pin-manifest / build-fetch flow)
+
+Bundling mirrors the cloudflared sidecar precedent exactly:
+
+1. The assets are **pinned** in `desktop/src-tauri/binaries/ocr-assets-versions.json`
+   (tracked in git; gitignore-allowlisted). Each group (`tessdata`, optional `nativeLib`)
+   carries its own top-level `version` + `baseUrl` and per-target `assets` with
+   `asset`/`archive`/`sha256`.
+2. During the build, `desktop/build.ps1` / `build.sh` (step 2c) compose the download URL as
+   **three segments** — `baseUrl` + `/` + `version` + `/` + `asset` (`version` is a path
+   element, never baked into `baseUrl`) — exactly like the cloudflared step.
+3. The downloaded asset's SHA256 is verified against the pinned value **before** it is
+   trusted or extracted. **The build FAILS on any checksum mismatch**, so an unverified
+   binary is never bundled.
+4. Verified assets are placed next to the sidecar (`binaries/tessdata/eng.traineddata`, and
+   `binaries/ocr-native/` for native libs). The fetched binaries stay gitignored; only the
+   manifest is tracked.
+
+To update a pinned asset: re-download over HTTPS, recompute the SHA256, update
+`ocr-assets-versions.json`, and record the change here. The current `tessdata` pin is
+`eng.traineddata` from the Tesseract
+[`tessdata_fast`](https://github.com/tesseract-ocr/tessdata_fast) release tagged in the
+manifest. The Linux/macOS `nativeLib` SHA256 values are **documented placeholders** until
+real pinned release assets land.
+
+## Non-desktop setup (dev, Docker, servers, extra languages)
+
+Outside the desktop bundle (local dev of the backend alone, Docker, a hosted server, or
+adding a language beyond English) you provide the runtime pieces yourself. OCR is still
+enabled by default; you only need to make the engine and tessdata reachable.
 
 ### 1. Install the native Tesseract runtime
 
@@ -38,30 +88,37 @@ working — it never crashes the import.
 
 Download the `*.traineddata` files for the languages you need from the Tesseract
 [`tessdata_fast`](https://github.com/tesseract-ocr/tessdata_fast) repository (English is
-`eng.traineddata`) and place them in a `tessdata` directory.
+`eng.traineddata`) and place them in a `tessdata` directory. By default the app looks for a
+`tessdata` folder next to the backend binaries; point elsewhere with `Ocr:TessdataPath`. To
+avoid the manual copy you can instead opt in to
+[auto-downloading tessdata](#auto-downloading-tessdata-opt-in).
 
-By default the app looks for a `tessdata` folder next to the backend binaries. You can
-point elsewhere with `Ocr:TessdataPath`.
+### 3. Configuration
 
-### 3. Turn OCR on in configuration
-
-In `appsettings.json` (or an environment override), set:
+OCR is on by default, so no change is needed to turn it on. The shipped `appsettings.json`
+makes the defaults explicit:
 
 ```json
 "Ocr": {
   "Enabled": true,
   "TessdataPath": "",
   "Language": "English",
-  "MinConfidence": 0.3
+  "MinConfidence": 0.3,
+  "FullPageRasterization": true,
+  "RasterizationDpi": 300,
+  "RegionMinConfidence": 0.0
 }
 ```
 
 | Setting | Meaning |
 |---------|---------|
-| `Enabled` | Master switch. When `false`, a no-op engine is used and scanned PDFs stay `OcrRequired`. |
-| `TessdataPath` | Absolute or relative path to the `tessdata` directory. Empty = `tessdata` next to the app. |
-| `Language` | A `TesseractOCR` language name (e.g. `English`). Defaults to English. |
-| `MinConfidence` | 0..1. OCR page results below this mean confidence are discarded to avoid indexing garbage. |
+| `Enabled` | Master switch, **default `true`**. When `false`, a no-op engine is used and scanned PDFs stay `OcrRequired`. A shared/hosted deployment MAY set this to `false`. |
+| `TessdataPath` | Absolute or relative path to the `tessdata` directory. Empty = `tessdata` next to the app (the desktop bundle location). |
+| `Language` | A `TesseractOCR` language name (e.g. `English`). Defaults to English (the only bundled model). |
+| `MinConfidence` | 0..1. OCR **page**-level results below this mean confidence are discarded to avoid indexing garbage. Does not apply to the region path (see `RegionMinConfidence`). |
+| `FullPageRasterization` | Default `true`. Renders low-text/vector pages to a bitmap and OCRs them (needed by the character-sheet path). See [Full-page rasterization](#full-page-rasterization-scanned-pdfs-without-embedded-images). |
+| `RasterizationDpi` | Render resolution for full-page/region rasterization. Default `300`. A region tuning lever — see [Region OCR tuning](#region-ocr-tuning-dpi-and-psm). |
+| `RegionMinConfidence` | 0..1. Confidence gate for the **region-anchored** path (character sheets). Default `0.0`: never drop at the engine level — a low-confidence region value is kept and flagged for review rather than silently discarded. |
 
 Restart the backend after changing these values.
 
@@ -84,21 +141,22 @@ Some scanned PDFs draw each page as vectors/curves rather than as an embedded ra
 The default OCR path only sees embedded raster images, so it recovers nothing from these
 pages. Full-page rasterization renders the whole page to a bitmap and OCRs that instead.
 
-This is **opt-in** and adds a native dependency (PDFium via the MIT-licensed
-[`Docnet.Core`](https://github.com/GowenGit/docnet) package). Enable it alongside OCR:
+It is **on by default** (`FullPageRasterization: true`) because the character-sheet path
+needs it, and it adds a native dependency (PDFium via the MIT-licensed
+[`Docnet.Core`](https://github.com/GowenGit/docnet) package). The relevant settings:
 
 ```json
 "Ocr": {
   "Enabled": true,
   "FullPageRasterization": true,
-  "RasterizationDpi": 200
+  "RasterizationDpi": 300
 }
 ```
 
 | Setting | Meaning |
 |---------|---------|
-| `FullPageRasterization` | When `true` (and `Enabled`), pages with little text AND no embedded raster images are rendered to a bitmap and OCR'd. |
-| `RasterizationDpi` | Render resolution. Higher improves accuracy at the cost of memory/time. Default 200. |
+| `FullPageRasterization` | When `true` (and `Enabled`), pages with little text AND no embedded raster images are rendered to a bitmap and OCR'd. Default `true`. |
+| `RasterizationDpi` | Render resolution. Higher improves accuracy at the cost of memory/time. Default `300` (see [Region OCR tuning](#region-ocr-tuning-dpi-and-psm)). |
 
 ### PDFium native dependency
 
@@ -107,6 +165,35 @@ This is **opt-in** and adds a native dependency (PDFium via the MIT-licensed
 reports itself unavailable and the app logs a warning — full-page rasterization is skipped
 and the rest of OCR (embedded-image path) still works. On AnyCPU builds you may need to set
 the `DocnetRuntime` MSBuild property to force the correct native binary.
+
+## Region OCR tuning (DPI and PSM)
+
+The D&D Beyond character-sheet import does **region-anchored** OCR: it rasterizes a page
+once, then crops the small rectangle around each value (ability scores, AC, HP, speed,
+proficiency bonus, name, class & level, species/race, background) and OCRs each crop on its
+own. Single-value crops like a two-digit ability score behave very differently from a full
+page of prose, so recognition quality depends on **two independent levers** — do not assume
+DPI alone governs it:
+
+- **`RasterizationDpi` (resolution).** Default `300`. Character-sheet glyphs (e.g. the
+  number inside an ability-score circle) are small, so they need more resolution than a
+  bulk document scan. 300 is the manually-settled starting point; raise it (e.g. 400) if
+  small-region reads come back empty or wrong, lower it if memory/time is a concern. This is
+  a config-only change in `appsettings.json` — no code change.
+
+- **Page-segmentation mode (PSM).** Tesseract defaults to PSM 3 (fully automatic page
+  segmentation), which is tuned for a full page of text and recognizes **single tokens**
+  (one number, one short word) poorly no matter how high the DPI is. A single-value crop
+  generally wants a single-line / single-word / single-char mode (PSM 7/8/10). **DPI cannot
+  fix a PSM problem and PSM cannot fix a DPI problem** — if a region reads blank or garbled
+  at a known-good DPI, the segmentation mode is the next lever to check. Record the mode
+  that works for each region class when tuning against a real sheet.
+
+When adjusting these, change `RasterizationDpi` in `appsettings.json` and re-run the import;
+the settled values for the D&D Beyond sheet are recorded during local tuning (DPI/PSM only,
+no personal values). Because region recognition is validated end-to-end only against a local
+PDF, the automated test suite exercises the pipeline (crop geometry, mapping, review
+flagging) with a stub OCR engine rather than asserting real recognition accuracy.
 
 ## Auto-downloading tessdata (opt-in)
 

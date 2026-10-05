@@ -136,3 +136,13 @@ src/frontend/aircane-web/dist/desktop/qrcode.min.js
 *.bak
 *.tmp
 *.log
+
+# ============================================================
+# OCR local tuning artifacts (privacy — NFR-4)
+# ============================================================
+# The owner-supplied DnD Beyond character PDF is a LOCAL tuning artifact only.
+# It carries real personal data and must NEVER be committed, copied into a
+# tracked fixtures dir, or asserted on. Committed OCR fixtures are synthetic.
+sshiers_6285266.pdf
+# Local real-PDF OCR tuning findings (DPI/PSM only, no personal values) stay local.
+verification-ocr.md

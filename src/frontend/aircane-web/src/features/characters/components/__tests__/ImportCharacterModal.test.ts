@@ -23,19 +23,7 @@ vi.mock('@/features/game-systems/api', () => ({
   previewCharacterForm: vi.fn().mockResolvedValue({ sections: [] }),
 }))
 
-// ── Mock the shared apiClient (used by the PDF import path) ────────────────────
-vi.mock('@/shared/api/client', () => ({
-  default: { post: vi.fn(), get: vi.fn() },
-}))
-
-// ── Mock vue-router so the PDF import can call router.push ─────────────────────
-const pushMock = vi.fn()
-vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: pushMock }),
-}))
-
 import * as charactersApi from '../../api'
-import apiClient from '@/shared/api/client'
 
 function makeResponse(overrides: Partial<SourceImportResponse> = {}): SourceImportResponse {
   return {
@@ -77,10 +65,10 @@ describe('ImportCharacterModal', () => {
   })
 
   describe('tab switching', () => {
-    it('shows all three tabs and defaults to Upload File', () => {
+    it('shows exactly two tabs and defaults to Upload File', () => {
       const wrapper = mountModal()
       const tabs = wrapper.findAll('[role="tab"]')
-      expect(tabs.map((t) => t.text())).toEqual(['Upload File', 'D&D Beyond URL', 'PDF'])
+      expect(tabs.map((t) => t.text())).toEqual(['Upload File', 'D&D Beyond URL'])
       expect(wrapper.find('input[type="file"]').exists()).toBe(true)
     })
 
@@ -90,89 +78,6 @@ describe('ImportCharacterModal', () => {
       await urlTab.trigger('click')
       expect(wrapper.find('#ddb-url').exists()).toBe(true)
       expect(wrapper.text()).toContain('unofficial API')
-    })
-
-    it('switches to the PDF tab and renders a file picker', async () => {
-      const wrapper = mountModal()
-      const pdfTab = wrapper.findAll('[role="tab"]')[2]
-      await pdfTab.trigger('click')
-      expect(wrapper.text()).toContain('Choose PDF')
-      expect(wrapper.find('input[accept*="pdf"]').exists()).toBe(true)
-    })
-  })
-
-  describe('PDF import', () => {
-    function makeFileChangeEvent(): Event {
-      const file = new File(['%PDF-1.4'], 'sheet.pdf', { type: 'application/pdf' })
-      return {
-        target: {
-          files: [file],
-          value: '',
-        },
-      } as unknown as Event
-    }
-
-    it('posts the PDF to the import endpoint with the expected fields', async () => {
-      vi.mocked(apiClient.post).mockResolvedValue({ data: {} })
-      const wrapper = mountModal()
-      const pdfTab = wrapper.findAll('[role="tab"]')[2]
-      await pdfTab.trigger('click')
-
-      await (
-        wrapper.vm as unknown as { handlePdfFileChange: (e: Event) => Promise<void> }
-      ).handlePdfFileChange(makeFileChangeEvent())
-      await flushPromises()
-
-      expect(apiClient.post).toHaveBeenCalledWith(
-        '/api/characters/import/pdf',
-        expect.any(FormData),
-        expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } }),
-      )
-      const formData = vi.mocked(apiClient.post).mock.calls[0][1] as FormData
-      expect(formData.get('gameSystem')).toBe('D&D 5e')
-      expect(formData.get('ruleset')).toBe('2014')
-    })
-
-    it('redirects to the field-review page when review is required', async () => {
-      vi.mocked(apiClient.post).mockResolvedValue({
-        data: {
-          characterId: 'char-99',
-          reviewRequired: true,
-          unmappedFields: [],
-          warnings: [],
-        },
-      })
-      const wrapper = mountModal()
-      const pdfTab = wrapper.findAll('[role="tab"]')[2]
-      await pdfTab.trigger('click')
-
-      await (
-        wrapper.vm as unknown as { handlePdfFileChange: (e: Event) => Promise<void> }
-      ).handlePdfFileChange(makeFileChangeEvent())
-      await flushPromises()
-
-      expect(pushMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'character-field-review',
-          params: { characterId: 'char-99' },
-        }),
-      )
-      expect(wrapper.emitted('completed')).toBeFalsy()
-    })
-
-    it('emits completed on a non-review response', async () => {
-      vi.mocked(apiClient.post).mockResolvedValue({ data: {} })
-      const wrapper = mountModal()
-      const pdfTab = wrapper.findAll('[role="tab"]')[2]
-      await pdfTab.trigger('click')
-
-      await (
-        wrapper.vm as unknown as { handlePdfFileChange: (e: Event) => Promise<void> }
-      ).handlePdfFileChange(makeFileChangeEvent())
-      await flushPromises()
-
-      expect(wrapper.emitted('completed')).toBeTruthy()
-      expect(pushMock).not.toHaveBeenCalled()
     })
   })
 

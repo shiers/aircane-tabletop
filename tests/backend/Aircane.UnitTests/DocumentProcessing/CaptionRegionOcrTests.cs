@@ -102,6 +102,28 @@ public class CaptionRegionOcrTests
         Assert.Equal(0f, engine.LastMinConfidenceOverride);
     }
 
+    [Fact]
+    public async Task RecognizeRegions_RequestsPerRegionSegmentationMode_NumericSingleWord_TextSingleLine()
+    {
+        var sut = CreateSut(out _, out var engine);
+
+        // Order matters: the region path OCRs regions in iteration order, so Calls[i] ↔ regions[i].
+        var regions = new[]
+        {
+            new OcrRegion("STRENGTH", X: 0.0, Y: 0.0, Width: 1.0, Height: 0.4),       // numeric single-token
+            new OcrRegion("CHARACTER NAME", X: 0.0, Y: 0.0, Width: 1.0, Height: 0.4), // potentially multi-word
+        };
+
+        await sut.RecognizeRegionsAsync(new byte[] { 1 }, 1, regions);
+
+        Assert.Equal(2, engine.Calls.Count);
+        Assert.Equal(OcrSegmentationMode.SingleWord, engine.Calls[0].Mode);
+        Assert.Equal(OcrSegmentationMode.SingleLine, engine.Calls[1].Mode);
+
+        // The value regions must NEVER fall back to full-page auto (the bug that read nothing).
+        Assert.All(engine.Calls, c => Assert.NotEqual(OcrSegmentationMode.Default, c.Mode));
+    }
+
     // ── Helpers / test doubles ────────────────────────────────────────────────
 
     private static CaptionRegionOcr CreateSut(out StubRasterizer rasterizer, out MarkerOcrEngine engine)
@@ -182,11 +204,18 @@ public class CaptionRegionOcrTests
         public bool IsAvailable => Available;
         public string StatusDescription => "Marker OCR engine (test).";
         public float? LastMinConfidenceOverride { get; private set; }
+        public OcrSegmentationMode LastSegmentationMode { get; private set; }
+        public List<(string? Text, OcrSegmentationMode Mode)> Calls { get; } = new();
 
         public Task<OcrResult> RecognizeAsync(
-            byte[] imageBytes, float? minConfidenceOverride = null, CancellationToken ct = default)
+            byte[] imageBytes,
+            float? minConfidenceOverride = null,
+            OcrSegmentationMode segmentationMode = OcrSegmentationMode.Default,
+            CancellationToken ct = default)
         {
             LastMinConfidenceOverride = minConfidenceOverride;
+            LastSegmentationMode = segmentationMode;
+            Calls.Add((null, segmentationMode));
 
             // First pixel of a 32bpp bottom-up BMP: header (54) + B channel.
             if (imageBytes.Length <= 54)

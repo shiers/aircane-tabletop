@@ -199,6 +199,12 @@ public class PdfPigTextExtractorTests
         Assert.True(rasterizer.RasterizeCallCount > 0);
         Assert.Contains(result.Pages, p => p.Text.Contains("Recovered scanned text"));
         Assert.False(result.IsOcrRequired);
+
+        // The document OCR path must keep full-page/auto segmentation (no PSM hint) — unchanged
+        // behaviour. Only the region-anchored path requests single-word/single-line modes.
+        Assert.NotEmpty(ocr.SegmentationModes);
+        Assert.All(ocr.SegmentationModes,
+            m => Assert.Equal(Aircane.Application.Abstractions.OcrSegmentationMode.Default, m));
     }
 
     [Fact]
@@ -247,10 +253,18 @@ public class PdfPigTextExtractorTests
         public string RecognizedText { get; init; } = string.Empty;
         public bool IsAvailable => true;
         public string StatusDescription => "StubOcrEngine";
+        public List<Aircane.Application.Abstractions.OcrSegmentationMode> SegmentationModes { get; } = new();
 
         public Task<Aircane.Application.Abstractions.OcrResult> RecognizeAsync(
-            byte[] imageBytes, float? minConfidenceOverride = null, CancellationToken ct = default)
-            => Task.FromResult(new Aircane.Application.Abstractions.OcrResult(RecognizedText, 0.95f));
+            byte[] imageBytes,
+            float? minConfidenceOverride = null,
+            Aircane.Application.Abstractions.OcrSegmentationMode segmentationMode
+                = Aircane.Application.Abstractions.OcrSegmentationMode.Default,
+            CancellationToken ct = default)
+        {
+            SegmentationModes.Add(segmentationMode);
+            return Task.FromResult(new Aircane.Application.Abstractions.OcrResult(RecognizedText, 0.95f));
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

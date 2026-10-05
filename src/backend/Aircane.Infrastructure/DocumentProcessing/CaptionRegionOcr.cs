@@ -1,4 +1,5 @@
 using Aircane.Application.Abstractions;
+using Aircane.Application.Characters.Import;
 using Aircane.Application.DocumentProcessing;
 using Microsoft.Extensions.Logging;
 
@@ -26,6 +27,28 @@ public sealed class CaptionRegionOcr : ICaptionRegionOcr
 {
     private const int HeaderSize = 54; // 14-byte file header + 40-byte BITMAPINFOHEADER
     private const int BytesPerPixel = 4;
+
+    /// <summary>
+    /// Region keys (caption tokens from <see cref="DndBeyondPdfHints"/>) whose values are a single
+    /// numeric token. These OCR best under single-word segmentation (PSM 8). Every other region key
+    /// may hold a multi-word value (name, class &amp; level, species/race, background) and uses
+    /// single-line segmentation (PSM 7). Matched case-insensitively on the normalized caption token.
+    /// </summary>
+    private static readonly IReadOnlySet<string> SingleWordRegionKeys =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            DndBeyondPdfHints.StrengthCaption,
+            DndBeyondPdfHints.DexterityCaption,
+            DndBeyondPdfHints.ConstitutionCaption,
+            DndBeyondPdfHints.IntelligenceCaption,
+            DndBeyondPdfHints.WisdomCaption,
+            DndBeyondPdfHints.CharismaCaption,
+            DndBeyondPdfHints.ArmorCaption,
+            DndBeyondPdfHints.ArmorClassAliasCaption,
+            DndBeyondPdfHints.HitPointsCaption,
+            DndBeyondPdfHints.SpeedCaption,
+            DndBeyondPdfHints.ProficiencyBonusCaption,
+        };
 
     private readonly IPdfRasterizer _rasterizer;
     private readonly IOcrEngine _ocrEngine;
@@ -101,7 +124,8 @@ public sealed class CaptionRegionOcr : ICaptionRegionOcr
             OcrResult ocr;
             try
             {
-                ocr = await _ocrEngine.RecognizeAsync(crop, _ocrOptions.RegionMinConfidence, ct);
+                ocr = await _ocrEngine.RecognizeAsync(
+                    crop, _ocrOptions.RegionMinConfidence, SegmentationFor(region.Key), ct);
             }
             catch (OperationCanceledException)
             {
@@ -210,6 +234,17 @@ public sealed class CaptionRegionOcr : ICaptionRegionOcr
 
         return dst;
     }
+
+    /// <summary>
+    /// Chooses the page-segmentation hint for a value region. Single-token numeric fields (abilities,
+    /// AC, HP, speed, proficiency bonus) use <see cref="OcrSegmentationMode.SingleWord"/>; every other
+    /// region (potentially multi-word text values) defaults to <see cref="OcrSegmentationMode.SingleLine"/>.
+    /// Both recover text that full-page auto segmentation reads as empty on tight single-value crops.
+    /// </summary>
+    private static OcrSegmentationMode SegmentationFor(string regionKey)
+        => SingleWordRegionKeys.Contains(regionKey)
+            ? OcrSegmentationMode.SingleWord
+            : OcrSegmentationMode.SingleLine;
 
     private static double Clamp01(double v) => v < 0 ? 0 : v > 1 ? 1 : v;
 

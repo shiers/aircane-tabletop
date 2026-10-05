@@ -4,9 +4,8 @@ namespace Aircane.Application.Characters.Import;
 
 /// <summary>
 /// The single implementation of the D&amp;D Beyond "class &amp; level" split (e.g. <c>"Fighter 5"</c>
-/// → class <c>Fighter</c>, level <c>5</c>; <c>"Wizard 3 / Rogue 2"</c> → two classes). Shared by the
-/// AcroForm hint path (<c>PdfCharacterExtractor</c>) and the OCR caption path
-/// (<see cref="DndBeyondOcrMapper"/>) so there is exactly one split rule.
+/// → class <c>Fighter</c>, level <c>5</c>; <c>"Wizard 3 / Rogue 2"</c> → two classes). Used by the
+/// generic PDF class/level mapping (<c>PdfCharacterExtractor</c>) so there is exactly one split rule.
 /// </summary>
 public static partial class DndBeyondClassLevelSplit
 {

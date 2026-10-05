@@ -1,5 +1,4 @@
 using Aircane.Application.Abstractions;
-using Aircane.Application.Characters.Import;
 using Aircane.Application.DocumentProcessing;
 using Microsoft.Extensions.Logging;
 
@@ -29,25 +28,25 @@ public sealed class CaptionRegionOcr : ICaptionRegionOcr
     private const int BytesPerPixel = 4;
 
     /// <summary>
-    /// Region keys (caption tokens from <see cref="DndBeyondPdfHints"/>) whose values are a single
-    /// numeric token. These OCR best under single-word segmentation (PSM 8). Every other region key
-    /// may hold a multi-word value (name, class &amp; level, species/race, background) and uses
-    /// single-line segmentation (PSM 7). Matched case-insensitively on the normalized caption token.
+    /// Region keys (caption tokens) whose values are a single numeric token. These OCR best under
+    /// single-word segmentation (PSM 8). Every other region key may hold a multi-word value (name,
+    /// class &amp; level, species/race, background) and uses single-line segmentation (PSM 7).
+    /// Matched case-insensitively on the normalized caption token.
     /// </summary>
     private static readonly IReadOnlySet<string> SingleWordRegionKeys =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            DndBeyondPdfHints.StrengthCaption,
-            DndBeyondPdfHints.DexterityCaption,
-            DndBeyondPdfHints.ConstitutionCaption,
-            DndBeyondPdfHints.IntelligenceCaption,
-            DndBeyondPdfHints.WisdomCaption,
-            DndBeyondPdfHints.CharismaCaption,
-            DndBeyondPdfHints.ArmorCaption,
-            DndBeyondPdfHints.ArmorClassAliasCaption,
-            DndBeyondPdfHints.HitPointsCaption,
-            DndBeyondPdfHints.SpeedCaption,
-            DndBeyondPdfHints.ProficiencyBonusCaption,
+            "STRENGTH",
+            "DEXTERITY",
+            "CONSTITUTION",
+            "INTELLIGENCE",
+            "WISDOM",
+            "CHARISMA",
+            "ARMOR",
+            "ARMOR CLASS",
+            "HIT POINTS",
+            "SPEED",
+            "PROFICIENCY BONUS",
         };
 
     private readonly IPdfRasterizer _rasterizer;

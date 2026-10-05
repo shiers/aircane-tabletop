@@ -622,21 +622,6 @@ public sealed class CharactersController : ControllerBase
 
         if (extraction.IsOcrRequired)
         {
-            // A detected DDB printable sheet whose values are rasterized but OCR is unavailable:
-            // return an actionable 422 (not the old "OCR support is not available" dead-end).
-            if (extraction.OcrUnavailableForDdb)
-            {
-                return UnprocessableEntity(new ProblemDetails
-                {
-                    Title = "OCR required",
-                    Detail = "This looks like a D&D Beyond character sheet whose values are stored as images. " +
-                             "OCR is required to read it but is not available in this environment. " +
-                             "On the desktop app OCR is built in; on a server, enable Ocr:Enabled and install " +
-                             "Tesseract + eng.traineddata (see docs/setup/ocr.md).",
-                    Status = StatusCodes.Status422UnprocessableEntity,
-                });
-            }
-
             // The truly-empty / unreadable PDF case: no claim about OCR being unsupported.
             return UnprocessableEntity(new ProblemDetails
             {
@@ -647,34 +632,27 @@ public sealed class CharactersController : ControllerBase
             });
         }
 
-        // Persist a draft + return the review DTO whenever there are OCR-flagged review paths OR
-        // unmapped fields. OCR-mapped DDB drafts carry their values in MappedCharacter with the
-        // review flags in RequiresReviewPaths, so UnmappedFields alone is not sufficient.
-        if (extraction.RequiresReviewPaths.Count > 0 || extraction.UnmappedFields.Count > 0)
+        // Persist a draft + return the review DTO whenever there are unmapped fields. The generic
+        // AcroForm/text-layer path's values live in MappedCharacter; the sanitizer's ReviewPaths
+        // flag any clamped values on top of the unmapped set.
+        if (extraction.UnmappedFields.Count > 0)
         {
-            // Persist the draft character so the review UI has an ID to work with. When the extractor
-            // detected a DDB ruleset (SPECIES/RACE), it OVERRIDES the form ruleset on the persisted
-            // draft and is flagged requires-confirmation (NIT-5); otherwise keep the form ruleset.
-            var effectiveRuleset = ResolveEffectiveRuleset(extraction.DetectedRuleset, ruleset);
-
             var sanitizerWarnings = new List<string>();
             var persisted = await PersistDraftFromExtractionAsync(
-                extraction, gameSystem, effectiveRuleset, campaignId, file.FileName, sanitizerWarnings, cancellationToken);
+                extraction, gameSystem, ruleset, campaignId, file.FileName, sanitizerWarnings, cancellationToken);
 
             // Build the unmapped field DTOs with confidence scores for the genuinely-unknown fields.
             var reviewDtos = extraction.UnmappedFields
                 .Select(kvp => BuildUnmappedFieldDto(kvp.Key, kvp.Value))
                 .ToList();
 
-            // NEW PDF-branch review plumbing (finding 1): this is NOT a reuse of BuildSourceReview,
+            // PDF-branch review plumbing (finding 1): this is NOT a reuse of BuildSourceReview,
             // which reads SourceMapResult.MappedFields that the PDF path lacks (the PDF path's values
-            // live in MappedCharacter, a CanonicalCharacter). Merge the extractor's RequiresReviewPaths
-            // with the sanitizer's ReviewPaths, de-dup, and emit one review-required UnmappedFieldDto
-            // per path so every OCR-derived field is flagged (FR-4.3). SourceValue is left empty: the
-            // confirmed value lives in the persisted draft's CanonicalJson; the review UI prompts
-            // against the canonical path rather than re-displaying a raw OCR string.
-            foreach (var path in extraction.RequiresReviewPaths
-                         .Concat(persisted.SanitizerReviewPaths)
+            // live in MappedCharacter, a CanonicalCharacter). Emit one review-required UnmappedFieldDto
+            // per sanitizer ReviewPath so every clamped field is flagged. SourceValue is left empty:
+            // the confirmed value lives in the persisted draft's CanonicalJson; the review UI prompts
+            // against the canonical path rather than re-displaying a raw value.
+            foreach (var path in persisted.SanitizerReviewPaths
                          .Distinct(StringComparer.Ordinal))
             {
                 reviewDtos.Add(new UnmappedFieldDto(
@@ -688,11 +666,6 @@ public sealed class CharactersController : ControllerBase
             }
 
             var warnings = extraction.Warnings.Concat(sanitizerWarnings).ToList();
-            if (extraction.DetectedRuleset != Application.Characters.Import.DdbRuleset.Unknown)
-            {
-                warnings.Add(
-                    $"Ruleset detected from the sheet as {effectiveRuleset} and applied automatically. Please confirm.");
-            }
 
             var reviewDto = new CharacterFieldReviewDto(
                 CharacterId: persisted.Draft.Id,
@@ -706,20 +679,6 @@ public sealed class CharactersController : ControllerBase
         // All fields mapped - return the extraction result for the frontend review UI
         return Ok(extraction);
     }
-
-    /// <summary>
-    /// Resolves the ruleset written to a PDF-import draft: when the extractor detected a DDB ruleset
-    /// from the SPECIES/RACE caption, that detected value overrides the form-supplied ruleset (NIT-5);
-    /// otherwise the form ruleset is kept.
-    /// </summary>
-    private static string ResolveEffectiveRuleset(
-        Application.Characters.Import.DdbRuleset detected,
-        string formRuleset) => detected switch
-    {
-        Application.Characters.Import.DdbRuleset.Dnd2024 => "2024",
-        Application.Characters.Import.DdbRuleset.Dnd2014 => "2014",
-        _ => formRuleset,
-    };
 
     /// <summary>
     /// Applies user-confirmed field mappings to a character's CanonicalJson and marks it as reviewed.

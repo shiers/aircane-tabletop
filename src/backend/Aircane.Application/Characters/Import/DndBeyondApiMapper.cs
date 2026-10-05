@@ -24,18 +24,42 @@ public sealed class DndBeyondApiMapper : ICharacterSourceMapper
 
     /// <summary>
     /// Structural detection against an already-resolved root element (reused by the Companion
-    /// mapper which first unwraps <c>root.character</c>). Never throws.
+    /// mapper which first unwraps <c>root.character</c>). The live character-service v5 response
+    /// wraps the character in an <c>{ id, success, message, data, pagination }</c> envelope, so the
+    /// character fields are unwrapped from <c>data</c> first. Never throws.
     /// </summary>
     internal static bool CanMapRoot(JsonElement root)
     {
-        if (root.ValueKind != JsonValueKind.Object)
+        var character = UnwrapCharacter(root);
+        if (character.ValueKind != JsonValueKind.Object)
             return false;
 
-        return root.TryGetProperty("id", out _) &&
-               root.TryGetProperty("dateModified", out _) &&
-               root.TryGetProperty("classes", out _) &&
-               root.TryGetProperty("stats", out _) &&
-               root.TryGetProperty("race", out _);
+        return character.TryGetProperty("id", out _) &&
+               character.TryGetProperty("dateModified", out _) &&
+               character.TryGetProperty("classes", out _) &&
+               character.TryGetProperty("stats", out _) &&
+               character.TryGetProperty("race", out _);
+    }
+
+    /// <summary>
+    /// Resolves the actual character object from a root that may be the live character-service v5
+    /// envelope (<c>{ "data": { …character… } }</c>) or the already-unwrapped character object (the
+    /// shape saved to a file / used in tests). Returns the <c>data</c> element when present and the
+    /// character fields are not already on the root; otherwise returns the root unchanged.
+    /// </summary>
+    internal static JsonElement UnwrapCharacter(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+            return root;
+
+        // Already a bare character object.
+        if (root.TryGetProperty("stats", out _) && root.TryGetProperty("classes", out _))
+            return root;
+
+        if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+            return data;
+
+        return root;
     }
 
     public SourceMapResult Map(JsonDocument doc) => MapFromRoot(doc.RootElement);
@@ -45,8 +69,12 @@ public sealed class DndBeyondApiMapper : ICharacterSourceMapper
     /// so <see cref="DndBeyondCompanionMapper"/> can unwrap its <c>character</c> envelope and reuse
     /// the exact same field logic. Never throws.
     /// </summary>
-    internal static SourceMapResult MapFromRoot(JsonElement root)
+    internal static SourceMapResult MapFromRoot(JsonElement rootOrEnvelope)
     {
+        // The live character-service v5 response wraps the character under "data"; the file/test
+        // shape is already the bare character. Unwrap before reading any field.
+        var root = UnwrapCharacter(rootOrEnvelope);
+
         var character = new CanonicalCharacter();
         var mapped = new Dictionary<string, string>(StringComparer.Ordinal);
         var extra = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -83,6 +111,9 @@ public sealed class DndBeyondApiMapper : ICharacterSourceMapper
         // ── Combat ───────────────────────────────────────────────────────────────
         MapHitPoints(root, character, mapped);
         MapArmorClass(root, character, mapped);
+
+        // ── Currency ───────────────────────────────────────────────────────────
+        MapCurrency(root, character);
 
         // ── Extra fields (no ApplyMapping path) ─────────────────────────────────
         AddSpells(root, extra);
@@ -414,23 +445,58 @@ public sealed class DndBeyondApiMapper : ICharacterSourceMapper
         mapped[CanonicalCharacterPaths.CombatArmorClass] = ac.Value.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static void AddSpells(JsonElement root, IDictionary<string, string> extra)
+    /// <summary>
+    /// Maps the D&amp;D Beyond coin purse (<c>currencies: { cp, sp, ep, gp, pp }</c>) onto the
+    /// canonical <see cref="Currency"/>. Missing or non-numeric entries are left at 0. Never throws.
+    /// </summary>
+    private static void MapCurrency(JsonElement root, CanonicalCharacter character)
     {
-        if (!root.TryGetProperty("spells", out var spells))
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("currencies", out var currencies) ||
+            currencies.ValueKind != JsonValueKind.Object)
             return;
 
+        if (TryGetInt(currencies, "cp", out var cp))
+            character.Currency.Copper = Math.Max(0, cp);
+        if (TryGetInt(currencies, "sp", out var sp))
+            character.Currency.Silver = Math.Max(0, sp);
+        if (TryGetInt(currencies, "ep", out var ep))
+            character.Currency.Electrum = Math.Max(0, ep);
+        if (TryGetInt(currencies, "gp", out var gp))
+            character.Currency.Gold = Math.Max(0, gp);
+        if (TryGetInt(currencies, "pp", out var pp))
+            character.Currency.Platinum = Math.Max(0, pp);
+    }
+
+    private static void AddSpells(JsonElement root, IDictionary<string, string> extra)
+    {
         var names = new List<string>();
 
-        // DDB nests spells by caster (class/race/item). Walk any array of {definition:{name}} or
-        // {name} shaped objects we encounter one level deep.
-        if (spells.ValueKind == JsonValueKind.Object)
+        // The character's known/prepared spellbook lives under classSpells[].spells[] (each entry a
+        // {definition:{name}} object); racial/feat/item spells live under the "spells" object keyed
+        // by caster. Both are {definition:{name}} / {name} shaped, so collect from each.
+        if (root.TryGetProperty("spells", out var spells))
         {
-            foreach (var group in spells.EnumerateObject())
-                CollectSpellNames(group.Value, names);
+            if (spells.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var group in spells.EnumerateObject())
+                    CollectSpellNames(group.Value, names);
+            }
+            else if (spells.ValueKind == JsonValueKind.Array)
+            {
+                CollectSpellNames(spells, names);
+            }
         }
-        else if (spells.ValueKind == JsonValueKind.Array)
+
+        if (root.TryGetProperty("classSpells", out var classSpells) &&
+            classSpells.ValueKind == JsonValueKind.Array)
         {
-            CollectSpellNames(spells, names);
+            foreach (var caster in classSpells.EnumerateArray())
+            {
+                if (caster.ValueKind == JsonValueKind.Object &&
+                    caster.TryGetProperty("spells", out var casterSpells))
+                    CollectSpellNames(casterSpells, names);
+            }
         }
 
         if (names.Count > 0)

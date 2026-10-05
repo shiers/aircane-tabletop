@@ -15,6 +15,7 @@ public sealed class DndBeyondUrlParseTests
     [InlineData("https://www.dndbeyond.com/characters/1234567", "1234567")]
     [InlineData("https://www.dndbeyond.com/characters/1234567/", "1234567")]
     [InlineData("https://www.dndbeyond.com/characters/1234567/builder", "1234567")]
+    [InlineData("https://www.dndbeyond.com/characters/6285266/DtVjrt", "6285266")]
     [InlineData("https://character-service.dndbeyond.com/characters/42", "42")]
     [InlineData("http://dndbeyond.com/characters/987", "987")]
     public void ParseCharacterId_ValidInput_ReturnsNumericId(string input, string expected)

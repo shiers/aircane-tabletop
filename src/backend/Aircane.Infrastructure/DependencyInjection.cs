@@ -96,12 +96,10 @@ public static class DependencyInjection
         RegisterOcrEngine(services, configuration);
 
         services.AddScoped<IPdfTextExtractor, PdfPigTextExtractor>();
-        // ICaptionRegionOcr is only registered in the OCR-enabled arm, so resolve it optionally
-        // (GetService, not GetRequiredService); the extractor gates on IsAvailable regardless.
+        // Generic AcroForm + text-layer character extraction. The DDB printable-sheet OCR branch
+        // was removed; the extractor no longer depends on ICaptionRegionOcr.
         services.AddScoped<IPdfCharacterExtractor>(sp => new PdfCharacterExtractor(
-            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PdfCharacterExtractor>>(),
-            sp.GetService<Aircane.Application.Abstractions.ICaptionRegionOcr>(),
-            sp.GetService<Aircane.Application.DocumentProcessing.OcrOptions>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PdfCharacterExtractor>>()));
         services.AddSingleton<ITextChunker, SlidingWindowTextChunker>();
         services.AddScoped<IDocumentImportJob, DocumentImportJob>();
         services.AddScoped<IFolderScanJob, FolderScanJob>();

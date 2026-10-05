@@ -53,7 +53,7 @@ public sealed class DndBeyondUrlImportService : IDndBeyondUrlImportService
                 _logger.LogDebug("Fetching D&D Beyond character {CharacterId}.", id);
 
                 using var response = await _httpClient
-                    .GetAsync($"character/v5/character/{id}", ct)
+                    .GetAsync($"character/v5/character/{id}?includeCustomItems=true", ct)
                     .ConfigureAwait(false);
 
                 _logger.LogDebug(

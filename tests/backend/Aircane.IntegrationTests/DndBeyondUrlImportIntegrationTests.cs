@@ -24,6 +24,12 @@ public class DndBeyondUrlImportIntegrationTests : IAsyncLifetime
 {
     private const int CharacterId = 1234567;
 
+    // Synthetic (non-real-person) character shaped like the v5 character-service response. DEX and
+    // CHA are deliberately spread across every bonus layer the mapper sums so the assertions prove
+    // base + bonusStats + modifier are added:
+    //   DEX = base 14 + bonusStats +1 + race modifier +1 = 16
+    //   CHA = base 16 + class modifier +2                 = 18
+    // Also carries nested spells (by caster) and an inventory array so spell/item capture is covered.
     private static readonly string DdbCharacterJson =
         """
         {
@@ -33,12 +39,51 @@ public class DndBeyondUrlImportIntegrationTests : IAsyncLifetime
           "race": { "fullName": "Mountain Dwarf", "subRaceShortName": "Mountain" },
           "stats": [
             { "id": 1, "value": 16 }, { "id": 2, "value": 14 }, { "id": 3, "value": 15 },
-            { "id": 4, "value": 10 }, { "id": 5, "value": 12 }, { "id": 6, "value": 8 }
+            { "id": 4, "value": 10 }, { "id": 5, "value": 12 }, { "id": 6, "value": 16 }
           ],
+          "bonusStats": [
+            { "id": 1, "value": 0 }, { "id": 2, "value": 1 }, { "id": 3, "value": 0 },
+            { "id": 4, "value": 0 }, { "id": 5, "value": 0 }, { "id": 6, "value": 0 }
+          ],
+          "overrideStats": [
+            { "id": 1, "value": null }, { "id": 2, "value": null }, { "id": 3, "value": null },
+            { "id": 4, "value": null }, { "id": 5, "value": null }, { "id": 6, "value": null }
+          ],
+          "modifiers": {
+            "race": [
+              { "type": "bonus", "subType": "dexterity-score", "value": 1 }
+            ],
+            "class": [
+              { "type": "bonus", "subType": "charisma-score", "value": 2 }
+            ],
+            "feat": [],
+            "item": []
+          },
           "hitPointInfo": { "baseHitPoints": 28, "removedHitPoints": 0, "temporaryHitPoints": 0 },
           "armorClass": { "totalArmorClass": 17 },
           "classes": [
             { "level": 4, "definition": { "name": "Fighter", "sources": [ { "sourceId": 1 } ] } }
+          ],
+          "currencies": { "cp": 0, "sp": 0, "ep": 0, "gp": 120, "pp": 0 },
+          "spells": {
+            "race": [
+              { "definition": { "name": "Light" } }
+            ],
+            "class": [],
+            "item": []
+          },
+          "classSpells": [
+            {
+              "spells": [
+                { "definition": { "name": "Fire Bolt" } },
+                { "definition": { "name": "Shield" } }
+              ]
+            }
+          ],
+          "inventory": [
+            { "definition": { "name": "Longsword" } },
+            { "definition": { "name": "Chain Mail" } },
+            { "definition": { "name": "Explorer's Pack" } }
           ]
         }
         """;
@@ -102,6 +147,32 @@ public class DndBeyondUrlImportIntegrationTests : IAsyncLifetime
         Assert.Equal("Test Character", mapped.GetProperty("identity.name").GetString());
         Assert.Equal("16", mapped.GetProperty("abilities.strength").GetString());
         Assert.Equal("17", mapped.GetProperty("combat.armorClass").GetString());
+
+        // DEX and CHA must reflect the summed bonus layers, not just the base stats array:
+        //   DEX = base 14 + bonusStats +1 + race modifier +1 = 16
+        //   CHA = base 16 + class modifier +2                 = 18
+        Assert.Equal("16", mapped.GetProperty("abilities.dexterity").GetString());
+        Assert.Equal("18", mapped.GetProperty("abilities.charisma").GetString());
+
+        // Spells and inventory have no canonical ApplyMapping path, so they surface in the review as
+        // unmapped fields. Confirm both the names and the joined values are captured.
+        var unmapped = review.GetProperty("unmappedFields").EnumerateArray().ToList();
+
+        var spells = unmapped.SingleOrDefault(f =>
+            f.GetProperty("sourceFieldName").GetString() == "Spells");
+        Assert.NotEqual(JsonValueKind.Undefined, spells.ValueKind);
+        var spellValue = spells.GetProperty("sourceValue").GetString() ?? string.Empty;
+        Assert.Contains("Fire Bolt", spellValue, StringComparison.Ordinal);
+        Assert.Contains("Shield", spellValue, StringComparison.Ordinal);
+        Assert.Contains("Light", spellValue, StringComparison.Ordinal);
+
+        var inventory = unmapped.SingleOrDefault(f =>
+            f.GetProperty("sourceFieldName").GetString() == "Inventory");
+        Assert.NotEqual(JsonValueKind.Undefined, inventory.ValueKind);
+        var inventoryValue = inventory.GetProperty("sourceValue").GetString() ?? string.Empty;
+        Assert.Contains("Longsword", inventoryValue, StringComparison.Ordinal);
+        Assert.Contains("Chain Mail", inventoryValue, StringComparison.Ordinal);
+        Assert.Contains("Explorer's Pack", inventoryValue, StringComparison.Ordinal);
     }
 
     // A character whose mapped ability score exceeds the validator's 1..30 range. The mapper keeps

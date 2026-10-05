@@ -530,14 +530,14 @@ function handleClose(): void {
                 />
                 <p class="mt-1 text-xs text-gray-400">
                   Make sure your character is public under
-                  <a
-                    href="https://www.dndbeyond.com/account/sharing"
+                  <!-- <a
+                    href="https://dndbeyond-support.wizards.com/hc/en-us/articles/7747238449556-Export-Sheet"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="text-aircane-300 underline hover:text-aircane-200"
-                  >
+                  > -->
                     sharing settings
-                  </a>.
+                  <!-- </a>. -->
                 </p>
               </div>
 

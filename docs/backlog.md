@@ -135,6 +135,31 @@ Allow single-user or desktop installations to run without Docker/PostgreSQL by u
 > Delivered" above (PR #15). The one standing caveat is that the D&D Beyond URL path relies on an
 > unofficial API that may change.
 
+### D&D Beyond Printable-Sheet Value Localization (OCR geometry — blocks real DDB PDF extraction)
+The OCR infrastructure for DDB PDF character import shipped (first-class default-on OCR, desktop-bundled
+Tesseract, caption-signature detection, region OCR with per-region PSM) and the pipeline runs end-to-end:
+a real DDB 2024 printable sheet is detected, 15 regions are OCR'd, ruleset auto-detects as 2024, a review
+draft is persisted, and nothing crashes. **But it does not yet extract the actual values.** Verified live
+against a real DDB export: the caption-anchored value regions in `DndBeyondSheetLayout` land on the
+caption words or empty space, not the value glyphs — e.g. the "ARMOR" region OCRs the caption word
+"ARMOR" at *rising* confidence as DPI increases, and the ability boxes return noise (`ee`/`ae`). An
+exhaustive per-region offset sweep (Dy 0.6–3.0 × multiple widths) and DPI escalation (300/450/600)
+recovered no real values, so this is a value-localization/geometry problem, not PSM/DPI tuning (the PSM
+wiring is correct and already shipped — crops now return text instead of nothing). Needs an investigation
+to choose a strategy, not incremental tuning. Candidate approaches:
+- **Re-derive the DDB sheet value geometry** from the real layout (where each value glyph sits relative
+  to its caption), likely per sheet version (2014 vs 2024 differ).
+- **Whole-page OCR + spatial parsing** instead of fixed caption-anchored crops (OCR the page, then
+  associate recognized value tokens to captions by position).
+- **Lean on the verified-working alternatives and treat DDB-printable OCR as best-effort:** the
+  **AcroForm path already works** for form-fillable sheets (verified: official WotC fillable sheet
+  enumerates 334 fields and `DndBeyondPdfHints.FieldMap` keys match the real field names verbatim — no
+  OCR needed), and the **character-service JSON API** path exists (now that the import-draft persistence
+  400 is fixed). Likely product direction: guide DDB users toward a fillable export / JSON, with
+  rasterized-printable OCR as a best-effort fallback.
+This is why the DDB *printable-PDF* import specifically does not yet populate fields; the broader
+character-import feature (JSON sources, form-fillable PDFs) is unaffected.
+
 ---
 
 ## Priority 3 - Quality of Life

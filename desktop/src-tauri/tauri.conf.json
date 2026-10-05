@@ -39,7 +39,10 @@
       "icons/icon.ico"
     ],
     "externalBin": ["binaries/aircane-server", "binaries/cloudflared"],
-    "resources": [],
+    "resources": {
+      "binaries/tessdata/*": "tessdata/",
+      "binaries/ocr-native/*": "ocr-native/"
+    },
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"

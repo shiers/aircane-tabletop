@@ -109,6 +109,10 @@ desktop/src-tauri/binaries/*
 # The pinned cloudflared version + checksum manifest IS tracked (used to verify the
 # binary fetched at build time). The binaries themselves stay ignored.
 !desktop/src-tauri/binaries/cloudflared-versions.json
+# The pinned OCR asset version + checksum manifest IS tracked (used to verify the
+# tessdata model + optional native libs fetched at build time). The fetched
+# tessdata/* and ocr-native/* binaries themselves stay ignored under binaries/*.
+!desktop/src-tauri/binaries/ocr-assets-versions.json
 # Generated Tauri gen/ (schemas, Android/iOS scaffolding) — recreated by the CLI.
 desktop/src-tauri/gen/
 # Vendored at build time from the frontend's qrcode dependency (next to the

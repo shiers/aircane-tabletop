@@ -1,0 +1,20 @@
+{
+  "_comment": "Pinned OCR asset versions + SHA256 checksums, verified at build time by desktop/build.ps1 / build.sh. URL composition mirrors cloudflared-versions.json EXACTLY: for each group the download URL is <group>.baseUrl + '/' + <group>.version + '/' + <asset> (three segments; version is a path element, NOT baked into baseUrl). 'tessdata' is required on every target. 'nativeLib' is OPTIONAL per target: Windows gets native libtesseract from the TesseractOCR NuGet payload (self-contained publish), so no nativeLib entry is needed there; Linux/macOS need a native bundle for zero-setup — add a pinned entry when available. The Linux/macOS nativeLib sha256 values below are DOCUMENTED PLACEHOLDERS (mechanism-only this iteration): populate them with real pinned release assets + hashes before relying on zero-setup native OCR on those platforms. Update deliberately: re-download over HTTPS, recompute sha256, record in docs/setup/ocr.md. The build FAILS on checksum mismatch.",
+  "tessdata": {
+    "version": "4.1.0",
+    "baseUrl": "https://github.com/tesseract-ocr/tessdata_fast/raw",
+    "assets": {
+      "all": { "asset": "eng.traineddata", "archive": "none", "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2" }
+    }
+  },
+  "nativeLib": {
+    "version": "PLACEHOLDER-pinned-libtesseract-release-tag",
+    "baseUrl": "https://example.invalid/aircane-ocr-native",
+    "assets": {
+      "x86_64-unknown-linux-gnu": { "asset": "tesseract-linux-x64.tar.gz", "archive": "tgz", "members": ["libtesseract.so.5", "libleptonica.so.6"], "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+      "aarch64-unknown-linux-gnu": { "asset": "tesseract-linux-arm64.tar.gz", "archive": "tgz", "members": ["libtesseract.so.5", "libleptonica.so.6"], "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+      "x86_64-apple-darwin": { "asset": "tesseract-macos-x64.tar.gz", "archive": "tgz", "members": ["libtesseract.5.dylib", "libleptonica.6.dylib"], "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+      "aarch64-apple-darwin": { "asset": "tesseract-macos-arm64.tar.gz", "archive": "tgz", "members": ["libtesseract.5.dylib", "libleptonica.6.dylib"], "sha256": "0000000000000000000000000000000000000000000000000000000000000000" }
+    }
+  }
+}

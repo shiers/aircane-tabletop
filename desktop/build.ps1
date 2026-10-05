@@ -126,6 +126,97 @@ else {
 }
 Write-Host "cloudflared : $CfDest"
 
+# ── 2c. Fetch OCR assets (pinned + checksum-verified) ──────────────────────────
+# OCR is a first-class capability bundled with the desktop app. The English
+# Tesseract model (eng.traineddata) is required on every target; the optional
+# native Tesseract/Leptonica libs are fetched per target when pinned (Windows
+# gets its native libtesseract from the TesseractOCR NuGet self-contained publish,
+# so it has no nativeLib entry). Every asset is fetched from the URL composed by
+# the SAME three-segment rule as cloudflared — <group>.baseUrl/<group>.version/<asset>
+# — and verified against the pinned SHA256 in binaries/ocr-assets-versions.json.
+# The build FAILS on a checksum mismatch, so an unverified asset is never bundled.
+# See docs/setup/ocr.md.
+Write-Host '==> Fetching OCR assets'
+$OcrManifestPath = Join-Path $BinariesDir 'ocr-assets-versions.json'
+if (-not (Test-Path $OcrManifestPath)) {
+  Write-Error "OCR assets manifest not found at '$OcrManifestPath'."
+  exit 1
+}
+$OcrManifest = Get-Content -Raw -Path $OcrManifestPath | ConvertFrom-Json
+
+# -- tessdata (required on every target): eng.traineddata --
+$TessdataDir = Join-Path $BinariesDir 'tessdata'
+$TessdataDest = Join-Path $TessdataDir 'eng.traineddata'
+$TessAsset = $OcrManifest.tessdata.assets.all.asset
+$TessUrl = "$($OcrManifest.tessdata.baseUrl)/$($OcrManifest.tessdata.version)/$($TessAsset)"
+Write-Host "tessdata    : $($OcrManifest.tessdata.version) ($TessAsset)"
+
+if (Test-Path $TessdataDest) {
+  Write-Host "tessdata already present; skipping download."
+}
+else {
+  New-Item -ItemType Directory -Force -Path $TessdataDir | Out-Null
+  $TessDownload = Join-Path $BinariesDir $TessAsset
+  Invoke-WebRequest -Uri $TessUrl -OutFile $TessDownload -UseBasicParsing
+
+  # Verify the checksum of the downloaded asset BEFORE trusting/bundling it.
+  $ActualHash = (Get-FileHash -Algorithm SHA256 -Path $TessDownload).Hash.ToLowerInvariant()
+  $ExpectedHash = $OcrManifest.tessdata.assets.all.sha256.ToLowerInvariant()
+  if ($ActualHash -ne $ExpectedHash) {
+    Remove-Item -Force -Path $TessDownload
+    Write-Error "tessdata checksum mismatch for '$TessAsset'.`n  expected: $ExpectedHash`n  actual:   $ActualHash`nRefusing to bundle an unverified asset."
+    exit 1
+  }
+  Write-Host "tessdata checksum OK ($ExpectedHash)."
+  Move-Item -Force -Path $TessDownload -Destination $TessdataDest
+}
+Write-Host "tessdata    : $TessdataDest"
+
+# -- nativeLib (optional per target): native Tesseract/Leptonica libs --
+$OcrNativeDir = Join-Path $BinariesDir 'ocr-native'
+$NativeEntry = $OcrManifest.nativeLib.assets.$RustTarget
+if ($null -eq $NativeEntry) {
+  Write-Host "No pinned native OCR lib for '$RustTarget'; relying on NuGet/system libs."
+}
+else {
+  New-Item -ItemType Directory -Force -Path $OcrNativeDir | Out-Null
+  $NativeUrl = "$($OcrManifest.nativeLib.baseUrl)/$($OcrManifest.nativeLib.version)/$($NativeEntry.asset)"
+  Write-Host "ocr-native  : $($OcrManifest.nativeLib.version) ($($NativeEntry.asset))"
+  $NativeDownload = Join-Path $BinariesDir $NativeEntry.asset
+  Invoke-WebRequest -Uri $NativeUrl -OutFile $NativeDownload -UseBasicParsing
+
+  # Verify the checksum of the downloaded archive BEFORE extracting it.
+  $ActualHash = (Get-FileHash -Algorithm SHA256 -Path $NativeDownload).Hash.ToLowerInvariant()
+  $ExpectedHash = $NativeEntry.sha256.ToLowerInvariant()
+  if ($ActualHash -ne $ExpectedHash) {
+    Remove-Item -Force -Path $NativeDownload
+    Write-Error "native OCR lib checksum mismatch for '$($NativeEntry.asset)'.`n  expected: $ExpectedHash`n  actual:   $ActualHash`nRefusing to bundle an unverified asset."
+    exit 1
+  }
+  Write-Host "ocr-native checksum OK ($ExpectedHash)."
+
+  if ($NativeEntry.archive -eq 'tgz') {
+    $OcrExtractDir = Join-Path $BinariesDir 'ocr-extract'
+    New-Item -ItemType Directory -Force -Path $OcrExtractDir | Out-Null
+    tar -xzf $NativeDownload -C $OcrExtractDir
+    foreach ($member in $NativeEntry.members) {
+      $MemberPath = Join-Path $OcrExtractDir $member
+      if (-not (Test-Path $MemberPath)) {
+        Write-Error "Expected '$member' inside '$($NativeEntry.asset)' but it was not found."
+        exit 1
+      }
+      Move-Item -Force -Path $MemberPath -Destination (Join-Path $OcrNativeDir (Split-Path -Leaf $member))
+    }
+    Remove-Item -Recurse -Force -Path $OcrExtractDir
+    Remove-Item -Force -Path $NativeDownload
+  }
+  else {
+    Write-Error "Unknown archive type '$($NativeEntry.archive)' for native OCR lib in ocr-assets-versions.json."
+    exit 1
+  }
+  Write-Host "ocr-native  : $OcrNativeDir"
+}
+
 # ── 3. Vendor the QR library used by the tray QR window (offline-safe) ────────
 # The wrapper's shell pages (loading/error/qr .html) live in the frontend's
 # public/desktop/ folder, so Vite already copied them into dist/desktop during

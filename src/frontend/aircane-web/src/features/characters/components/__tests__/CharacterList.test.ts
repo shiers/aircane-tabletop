@@ -105,6 +105,79 @@ describe('CharacterList', () => {
     expect(pill.classes()).toContain('campaign-pill--unassigned')
   })
 
+  describe('campaign assignment', () => {
+    const campaigns = [
+      { id: 'camp-1', name: 'Lost Mines' },
+      { id: 'camp-2', name: 'Dragon Heist' },
+    ]
+
+    it('does not render the assign select when no campaigns prop is given', () => {
+      const wrapper = mountList({ characters: [makeCharacter({ id: 'a', name: 'Alpha' })] })
+      expect(wrapper.find('#assign-a').exists()).toBe(false)
+    })
+
+    it('does not render the assign select when campaigns is empty', () => {
+      const wrapper = mountList({
+        characters: [makeCharacter({ id: 'a', name: 'Alpha' })],
+        campaigns: [],
+      })
+      expect(wrapper.find('#assign-a').exists()).toBe(false)
+    })
+
+    it('renders a labelled assign select per card when campaigns are provided', () => {
+      const wrapper = mountList({
+        characters: [makeCharacter({ id: 'a', name: 'Alpha', campaignId: 'camp-1' })],
+        campaigns,
+      })
+      const select = wrapper.find('#assign-a')
+      expect(select.exists()).toBe(true)
+      // Unassign + one option per campaign.
+      expect(select.findAll('option').map((o) => o.text())).toEqual([
+        'Unassign',
+        'Lost Mines',
+        'Dragon Heist',
+      ])
+      // Current value reflects the character's campaign.
+      expect((select.element as HTMLSelectElement).value).toBe('camp-1')
+      expect(wrapper.find('label[for="assign-a"]').text()).toContain('Assign Alpha to a campaign')
+    })
+
+    it('emits assign with the chosen campaignId when the select changes', async () => {
+      const wrapper = mountList({
+        characters: [makeCharacter({ id: 'a', name: 'Alpha', campaignId: null })],
+        campaigns,
+      })
+      await wrapper.find('#assign-a').setValue('camp-2')
+
+      const emitted = wrapper.emitted('assign')
+      expect(emitted).toBeTruthy()
+      expect(emitted![0][1]).toBe('camp-2')
+      expect((emitted![0][0] as CharacterDto).id).toBe('a')
+    })
+
+    it('emits assign with null when the select is set to Unassign', async () => {
+      const wrapper = mountList({
+        characters: [makeCharacter({ id: 'a', name: 'Alpha', campaignId: 'camp-1' })],
+        campaigns,
+      })
+      await wrapper.find('#assign-a').setValue('')
+
+      const emitted = wrapper.emitted('assign')
+      expect(emitted).toBeTruthy()
+      expect(emitted![0][1]).toBe(null)
+    })
+
+    it('does not emit assign when the selected value equals the current campaign', async () => {
+      const wrapper = mountList({
+        characters: [makeCharacter({ id: 'a', name: 'Alpha', campaignId: 'camp-1' })],
+        campaigns,
+      })
+      // Setting the select to its current value should be a no-op.
+      await wrapper.find('#assign-a').setValue('camp-1')
+      expect(wrapper.emitted('assign')).toBeFalsy()
+    })
+  })
+
   describe('delete action', () => {
     afterEach(() => {
       vi.restoreAllMocks()

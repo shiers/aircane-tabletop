@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useCharacterStore } from './store'
 import { type CharacterDto, type CreateCharacterRequest, type UpdateCharacterRequest } from './api'
 import CharacterForm from './components/CharacterForm.vue'
@@ -21,6 +21,9 @@ const store = useCharacterStore()
 const editingCharacter = ref<CharacterDto | null>(null)
 const showForm = ref(false)
 const showImportModal = ref(false)
+
+/** The create/edit form section, scrolled into view when opened. */
+const formSection = ref<HTMLElement | null>(null)
 
 /** The campaigns used for the filter control and the per-character assign select. */
 const campaigns = ref<CampaignDto[]>([])
@@ -68,14 +71,26 @@ const detailStatTiles = computed(() => {
 // Create / edit form
 // ---------------------------------------------------------------------------
 
+/** Scroll the page up to the character sheet/form once it is rendered. */
+async function scrollToForm(): Promise<void> {
+  await nextTick()
+  if (formSection.value) {
+    formSection.value.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  } else {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+}
+
 function openCreateForm(): void {
   editingCharacter.value = null
   showForm.value = true
+  void scrollToForm()
 }
 
 function openEditForm(character: CharacterDto): void {
   editingCharacter.value = character
   showForm.value = true
+  void scrollToForm()
 }
 
 function closeForm(): void {
@@ -115,11 +130,11 @@ async function handleImportCompleted(): Promise<void> {
 // Assign / unassign / reassign
 // ---------------------------------------------------------------------------
 
-/** Handle a change on a character's campaign assignment select. '' = unassign. */
-async function handleAssignmentChange(character: CharacterDto, event: Event): Promise<void> {
-  const value = (event.target as HTMLSelectElement).value
-  const campaignId = value === '' ? null : value
-  if (campaignId === character.campaignId) return
+/** Assign, reassign, or unassign a character's campaign. null = unassign. */
+async function handleAssignmentChange(
+  character: CharacterDto,
+  campaignId: string | null,
+): Promise<void> {
   await store.setCharacterCampaign(character.id, campaignId)
 }
 </script>
@@ -213,6 +228,7 @@ async function handleAssignmentChange(character: CharacterDto, event: Event): Pr
     <!-- Create / Edit form panel -->
     <section
       v-if="showForm"
+      ref="formSection"
       aria-labelledby="character-form-heading"
       class="grid gap-6 lg:grid-cols-[1fr_320px]"
     >
@@ -251,44 +267,14 @@ async function handleAssignmentChange(character: CharacterDto, event: Event): Pr
       </aside>
     </section>
 
-    <!-- Per-character assignment controls -->
-    <section
-      v-if="!showForm && filtered.length > 0"
-      aria-label="Campaign assignments"
-      class="grid gap-2 rounded-xl border border-surface-700/50 bg-surface-850 p-4"
-    >
-      <h3 class="text-sm font-semibold text-gray-300">Campaign assignments</h3>
-      <ul class="grid list-none gap-2 p-0">
-        <li
-          v-for="character in filtered"
-          :key="character.id"
-          class="flex items-center justify-between gap-3 rounded-lg bg-surface-900/40 px-3 py-2"
-        >
-          <span class="truncate text-sm text-white">{{ character.name }}</span>
-          <label class="sr-only" :for="`assign-${character.id}`">
-            Assign {{ character.name }} to a campaign
-          </label>
-          <select
-            :id="`assign-${character.id}`"
-            class="rounded-lg border border-surface-700/50 bg-surface-850 px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-            :value="character.campaignId ?? ''"
-            @change="handleAssignmentChange(character, $event)"
-          >
-            <option value="">Unassign</option>
-            <option v-for="campaign in campaigns" :key="campaign.id" :value="campaign.id">
-              {{ campaign.name }}
-            </option>
-          </select>
-        </li>
-      </ul>
-    </section>
-
     <!-- Character list -->
     <CharacterList
       :characters="filtered"
       :show-campaign-label="true"
+      :campaigns="campaigns"
       @edit="openEditForm"
       @view="openEditForm"
+      @assign="handleAssignmentChange"
     />
 
     <!-- Import character modal (Upload File / D&D Beyond URL tabs). No campaign-id:

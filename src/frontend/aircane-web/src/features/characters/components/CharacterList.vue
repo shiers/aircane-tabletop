@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useCharacterStore } from '../store'
 import { abilityModifier, type CharacterDto } from '../api'
+import { type CampaignDto } from '@/features/campaigns/api'
 import AbilityScoreTile from './AbilityScoreTile.vue'
 import RoleBadge from './RoleBadge.vue'
 import AircaneImg from '@/shared/components/AircaneImg.vue'
@@ -12,12 +13,29 @@ const props = defineProps<{
   characters?: CharacterDto[]
   /** When true, show the campaign label pill (name or "Unassigned") on each card. */
   showCampaignLabel?: boolean
+  /**
+   * Campaigns available for per-card assignment. When absent/empty the assign
+   * select is not rendered (keeps the per-campaign roster view unchanged).
+   */
+  campaigns?: CampaignDto[]
 }>()
 
 const emit = defineEmits<{
   (e: 'edit', character: CharacterDto): void
   (e: 'view', character: CharacterDto): void
+  (e: 'assign', character: CharacterDto, campaignId: string | null): void
 }>()
+
+/** Whether to show the per-card campaign assignment select. */
+const showCampaignAssign = computed<boolean>(() => !!props.campaigns && props.campaigns.length > 0)
+
+/** Handle a change on a character's campaign assignment select. '' = unassign. */
+function handleAssignmentChange(character: CharacterDto, event: Event): void {
+  const value = (event.target as HTMLSelectElement).value
+  const campaignId = value === '' ? null : value
+  if (campaignId === (character.campaignId ?? null)) return
+  emit('assign', character, campaignId)
+}
 
 const store = useCharacterStore()
 const deletingId = ref<string | null>(null)
@@ -198,6 +216,24 @@ async function handleDelete(character: CharacterDto): Promise<void> {
           />
         </div>
 
+        <!-- Campaign assignment -->
+        <div v-if="showCampaignAssign" class="card-assign">
+          <label class="sr-only" :for="`assign-${character.id}`">
+            Assign {{ character.name }} to a campaign
+          </label>
+          <select
+            :id="`assign-${character.id}`"
+            class="assign-select"
+            :value="character.campaignId ?? ''"
+            @change="handleAssignmentChange(character, $event)"
+          >
+            <option value="">Unassign</option>
+            <option v-for="campaign in props.campaigns" :key="campaign.id" :value="campaign.id">
+              {{ campaign.name }}
+            </option>
+          </select>
+        </div>
+
         <!-- Actions -->
         <div class="card-actions">
           <button
@@ -327,6 +363,26 @@ async function handleDelete(character: CharacterDto): Promise<void> {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
+}
+
+.card-assign {
+  display: flex;
+  flex-direction: column;
+}
+
+.assign-select {
+  width: 100%;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid rgb(55 65 81 / 0.5);
+  background: var(--color-bg-panel);
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+  color: #e5e7eb;
+}
+
+.assign-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-gold);
 }
 
 .card-actions {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useCharacterStore } from './store'
 import { type CharacterDto, type CreateCharacterRequest, type UpdateCharacterRequest } from './api'
 import CharacterForm from './components/CharacterForm.vue'
@@ -31,6 +31,9 @@ const editingCharacter = ref<CharacterDto | null>(null)
 const showForm = ref(false)
 const showImportModal = ref(false)
 
+/** The create/edit form section, scrolled into view when opened. */
+const formSection = ref<HTMLElement | null>(null)
+
 onMounted(() => {
   if (props.campaignId) {
     store.fetchCharacters(props.campaignId)
@@ -58,14 +61,26 @@ const detailStatTiles = computed(() => {
   ]
 })
 
+/** Scroll the page up to the character sheet/form once it is rendered. */
+async function scrollToForm(): Promise<void> {
+  await nextTick()
+  if (formSection.value) {
+    formSection.value.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  } else {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+}
+
 function openCreateForm(): void {
   editingCharacter.value = null
   showForm.value = true
+  void scrollToForm()
 }
 
 function openEditForm(character: CharacterDto): void {
   editingCharacter.value = character
   showForm.value = true
+  void scrollToForm()
 }
 
 function closeForm(): void {
@@ -177,6 +192,7 @@ async function handleImportCompleted(): Promise<void> {
     <!-- Create / Edit form panel -->
     <section
       v-if="showForm"
+      ref="formSection"
       aria-labelledby="character-form-heading"
       class="grid gap-6 lg:grid-cols-[1fr_320px]"
     >

@@ -273,7 +273,6 @@ async function handleAssignmentChange(
       :show-campaign-label="true"
       :campaigns="campaigns"
       @edit="openEditForm"
-      @view="openEditForm"
       @assign="handleAssignmentChange"
     />
 

@@ -98,14 +98,15 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $bundle = 'desktop/src-tauri/target/release/bundle'
-          $hit = Get-ChildItem -Path $bundle -Recurse -Filter 'eng.traineddata' -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '[\\/]tessdata[\\/]eng\.traineddata$' }
-          if (-not $hit) {
-            Write-Error "Bundled resource tessdata/eng.traineddata not found under $bundle. The map-form resources layout did not land where resource_dir() expects."
+          # Windows bundles are .msi/.exe installers with resources packed inside,
+          # so check the exe dir: on Windows resource_dir() is the exe's dir, and
+          # tauri-build stages resources there with the same layout the installers ship.
+          $hit = 'desktop/src-tauri/target/release/tessdata/eng.traineddata'
+          if (-not (Test-Path $hit -PathType Leaf)) {
+            Write-Error "Bundled resource not found at $hit. The map-form resources layout did not land where resource_dir() expects."
             exit 1
           }
-          Write-Host "OK: found $($hit[0].FullName)"
+          Write-Host "OK: found $hit"
 
       - name: Assert bundled OCR model (Unix)
         if: matrix.os != 'windows-latest'

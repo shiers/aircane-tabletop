@@ -166,6 +166,21 @@ describe('ImportCharacterModal', () => {
     })
   })
 
+  describe('library import (no campaignId prop)', () => {
+    it('sends campaignId: null when no campaign prop is provided', async () => {
+      vi.mocked(charactersApi.importCharacterFromSource).mockResolvedValue(makeResponse())
+      const wrapper = mountModal()
+      ;(wrapper.vm as unknown as { jsonText: string }).jsonText = '{"build":{}}'
+      await (wrapper.vm as unknown as { submitFile: () => Promise<void> }).submitFile()
+      await flushPromises()
+
+      expect(charactersApi.importCharacterFromSource).toHaveBeenCalledWith(
+        expect.objectContaining({ campaignId: null }),
+        expect.anything(),
+      )
+    })
+  })
+
   describe('D&D Beyond URL submit', () => {
     it('posts the entered URL and shows the review panel', async () => {
       vi.mocked(charactersApi.importCharacterFromDndBeyondUrl).mockResolvedValue(

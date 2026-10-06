@@ -1152,32 +1152,65 @@ public sealed class CharactersController : ControllerBase
     }
 
     /// <summary>
-    /// Lists characters scoped to a campaign.
-    /// Pass <c>participantId</c> to scope results to a specific participant (player view).
+    /// Lists characters. When <c>campaignId</c> is supplied, returns that campaign's roster
+    /// (pass <c>participantId</c> to scope to a specific participant/player view). When
+    /// <c>campaignId</c> is omitted, returns the entire global character library, including
+    /// unassigned characters.
     /// </summary>
     [HttpGet]
     [Authorize(Policy = AuthorizationPolicies.Authenticated)]
     [ProducesResponseType(typeof(IReadOnlyList<CharacterDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ListCharacters(
         [FromQuery] Guid? campaignId,
         [FromQuery] Guid? participantId,
         CancellationToken cancellationToken)
     {
-        if (!campaignId.HasValue)
+        if (campaignId.HasValue)
+        {
+            var scoped = await _characters.ListByCampaignAsync(
+                campaignId.Value,
+                participantId,
+                cancellationToken);
+
+            return Ok(scoped);
+        }
+
+        var all = await _characters.ListAllAsync(cancellationToken);
+        return Ok(all);
+    }
+
+    /// <summary>
+    /// Assigns, reassigns, or unassigns a character's campaign by setting CampaignId.
+    /// Returns 200 with the updated character. Returns 404 when the character does not exist.
+    /// Returns 400 when a non-null target campaign does not exist. No other field is changed.
+    /// </summary>
+    [HttpPut("{id:guid}/campaign")]
+    [ProducesResponseType(typeof(CharacterDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetCharacterCampaign(
+        Guid id,
+        [FromBody] SetCharacterCampaignRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var dto = await _characters.SetCampaignAsync(id, request.CampaignId, cancellationToken);
+            return Ok(dto);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (ArgumentException ex)
+        {
             return BadRequest(new ProblemDetails
             {
                 Title = "Validation failed",
-                Detail = "campaignId query parameter is required.",
+                Detail = ex.Message,
                 Status = StatusCodes.Status400BadRequest,
             });
-
-        var characters = await _characters.ListByCampaignAsync(
-            campaignId.Value,
-            participantId,
-            cancellationToken);
-
-        return Ok(characters);
+        }
     }
 
     // ── Template endpoints ────────────────────────────────────────────────────

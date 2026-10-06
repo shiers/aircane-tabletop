@@ -6,6 +6,7 @@ namespace Aircane.Application.DTOs.Characters;
 public sealed record CharacterDto(
     Guid Id,
     Guid? CampaignId,
+    string? CampaignName,
     Guid? OwnerParticipantId,
     string Name,
     string GameSystem,

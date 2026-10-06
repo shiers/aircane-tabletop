@@ -1,23 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useCharacterStore } from './store'
 import { type CharacterDto, type CreateCharacterRequest, type UpdateCharacterRequest } from './api'
 import CharacterForm from './components/CharacterForm.vue'
 import CharacterList from './components/CharacterList.vue'
 import ImportCharacterModal from './components/ImportCharacterModal.vue'
-import { computed } from 'vue'
+import { listCampaigns, type CampaignDto } from '@/features/campaigns/api'
 
 // ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
-const props = defineProps<{
-  /** Campaign ID to scope the character list. Required for list/create. */
-  campaignId?: string
-}>()
-
-// ---------------------------------------------------------------------------
-// Store / Router
+// Store
 // ---------------------------------------------------------------------------
 
 const store = useCharacterStore()
@@ -31,16 +22,31 @@ const editingCharacter = ref<CharacterDto | null>(null)
 const showForm = ref(false)
 const showImportModal = ref(false)
 
-onMounted(() => {
-  if (props.campaignId) {
-    store.fetchCharacters(props.campaignId)
+/** The campaigns used for the filter control and the per-character assign select. */
+const campaigns = ref<CampaignDto[]>([])
+
+/** 'all' | 'unassigned' | <campaignId> */
+const selectedCampaignFilter = ref<string>('all')
+
+onMounted(async () => {
+  await store.fetchAllCharacters()
+  try {
+    campaigns.value = await listCampaigns()
+  } catch {
+    // Campaigns are only needed for the filter/assign controls; a failure here
+    // should not block the library list itself.
+    campaigns.value = []
   }
 })
 
-/**
- * The four summary stat tiles shown in the detail side-panel while editing an
- * existing character, read from the character's canonical JSON.
- */
+/** The library list after applying the active campaign filter. */
+const filtered = computed<CharacterDto[]>(() => {
+  const filter = selectedCampaignFilter.value
+  if (filter === 'all') return store.characters
+  if (filter === 'unassigned') return store.characters.filter((c) => c.campaignName === null)
+  return store.characters.filter((c) => c.campaignId === filter)
+})
+
 const detailStatTiles = computed(() => {
   const c = editingCharacter.value
   if (!c) return []
@@ -57,6 +63,10 @@ const detailStatTiles = computed(() => {
     { key: 'proficiency', label: 'Proficiency', value: combat.proficiencyBonus ?? '—' },
   ]
 })
+
+// ---------------------------------------------------------------------------
+// Create / edit form
+// ---------------------------------------------------------------------------
 
 function openCreateForm(): void {
   editingCharacter.value = null
@@ -80,10 +90,12 @@ async function handleFormSubmit(payload: CreateCharacterRequest | UpdateCharacte
     await store.createCharacter(payload as CreateCharacterRequest)
   }
   closeForm()
+  // Refresh the authoritative list/labels after a create or edit.
+  await store.fetchAllCharacters()
 }
 
 // ---------------------------------------------------------------------------
-// JSON Import modal
+// Import modal
 // ---------------------------------------------------------------------------
 
 function openImportModal(): void {
@@ -94,12 +106,21 @@ function closeImportModal(): void {
   showImportModal.value = false
 }
 
-/** Called when the import modal finishes (character persisted + mappings confirmed). */
 async function handleImportCompleted(): Promise<void> {
   closeImportModal()
-  if (props.campaignId) {
-    await store.fetchCharacters(props.campaignId)
-  }
+  await store.fetchAllCharacters()
+}
+
+// ---------------------------------------------------------------------------
+// Assign / unassign / reassign
+// ---------------------------------------------------------------------------
+
+/** Handle a change on a character's campaign assignment select. '' = unassign. */
+async function handleAssignmentChange(character: CharacterDto, event: Event): Promise<void> {
+  const value = (event.target as HTMLSelectElement).value
+  const campaignId = value === '' ? null : value
+  if (campaignId === character.campaignId) return
+  await store.setCharacterCampaign(character.id, campaignId)
 }
 </script>
 
@@ -111,17 +132,34 @@ async function handleImportCompleted(): Promise<void> {
       v-bg-asset="{ url: '/assets/characters/characters-hero-background.png', fallback: '#0d0d2a' }"
     >
       <div class="app-hero__overlay">
-        <h1 class="app-hero__title">Characters</h1>
-        <p class="app-hero__subtitle">Build, import, and manage your party.</p>
+        <h1 class="app-hero__title">Character Library</h1>
+        <p class="app-hero__subtitle">
+          Every character you own, assigned to a campaign or waiting in your library.
+        </p>
       </div>
     </section>
 
     <!-- Page header -->
-    <div class="flex items-center justify-between">
-      <h2 class="text-xl font-semibold text-white">Your Characters</h2>
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <h2 class="text-xl font-semibold text-white">Your Characters</h2>
+
+        <!-- Campaign filter -->
+        <label class="sr-only" for="campaign-filter">Filter by campaign</label>
+        <select
+          id="campaign-filter"
+          v-model="selectedCampaignFilter"
+          class="rounded-lg border border-surface-700/50 bg-surface-850 px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+        >
+          <option value="all">All campaigns</option>
+          <option value="unassigned">Unassigned</option>
+          <option v-for="campaign in campaigns" :key="campaign.id" :value="campaign.id">
+            {{ campaign.name }}
+          </option>
+        </select>
+      </div>
 
       <div v-if="!showForm" class="flex items-center gap-2">
-        <!-- Import Character button (art background, no extra border) -->
         <button
           class="import-button import-button--json inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400"
           v-bg-asset="{ url: '/assets/characters/import-json-button-art.png', fallback: 'transparent', size: '100% 100%' }"
@@ -140,8 +178,6 @@ async function handleImportCompleted(): Promise<void> {
           Import Character
         </button>
 
-        <!-- Primary CTA — larger/more prominent than the Import buttons, mirroring the
-             "+ New Campaign" primary action on the Campaigns page. -->
         <button
           class="new-character-button focus:outline-none focus:ring-2 focus:ring-aircane-400"
           v-bg-asset="{ url: '/assets/characters/new-character-button-art.png', fallback: 'transparent', size: '100% 100%' }"
@@ -185,15 +221,14 @@ async function handleImportCompleted(): Promise<void> {
           {{ editingCharacter ? 'Edit Character' : 'New Character' }}
         </h2>
 
+        <!-- No campaign-id: characters created from the library are Unassigned. -->
         <CharacterForm
           :character="editingCharacter ?? undefined"
-          :campaign-id="campaignId"
           @submit="handleFormSubmit"
           @cancel="closeForm"
         />
       </div>
 
-      <!-- Detail side-panel: summary stat tiles in the upper 60% (edit mode) -->
       <aside
         v-if="editingCharacter"
         class="detail-panel"
@@ -216,13 +251,50 @@ async function handleImportCompleted(): Promise<void> {
       </aside>
     </section>
 
-    <!-- Character list -->
-    <CharacterList @edit="openEditForm" @view="openEditForm" />
+    <!-- Per-character assignment controls -->
+    <section
+      v-if="!showForm && filtered.length > 0"
+      aria-label="Campaign assignments"
+      class="grid gap-2 rounded-xl border border-surface-700/50 bg-surface-850 p-4"
+    >
+      <h3 class="text-sm font-semibold text-gray-300">Campaign assignments</h3>
+      <ul class="grid list-none gap-2 p-0">
+        <li
+          v-for="character in filtered"
+          :key="character.id"
+          class="flex items-center justify-between gap-3 rounded-lg bg-surface-900/40 px-3 py-2"
+        >
+          <span class="truncate text-sm text-white">{{ character.name }}</span>
+          <label class="sr-only" :for="`assign-${character.id}`">
+            Assign {{ character.name }} to a campaign
+          </label>
+          <select
+            :id="`assign-${character.id}`"
+            class="rounded-lg border border-surface-700/50 bg-surface-850 px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+            :value="character.campaignId ?? ''"
+            @change="handleAssignmentChange(character, $event)"
+          >
+            <option value="">Unassign</option>
+            <option v-for="campaign in campaigns" :key="campaign.id" :value="campaign.id">
+              {{ campaign.name }}
+            </option>
+          </select>
+        </li>
+      </ul>
+    </section>
 
-    <!-- Import character modal (Upload File / D&D Beyond URL tabs) -->
+    <!-- Character list -->
+    <CharacterList
+      :characters="filtered"
+      :show-campaign-label="true"
+      @edit="openEditForm"
+      @view="openEditForm"
+    />
+
+    <!-- Import character modal (Upload File / D&D Beyond URL tabs). No campaign-id:
+         imports from the library are Unassigned. -->
     <ImportCharacterModal
       :open="showImportModal"
-      :campaign-id="campaignId"
       @completed="handleImportCompleted"
       @close="closeImportModal"
     />
@@ -230,7 +302,6 @@ async function handleImportCompleted(): Promise<void> {
 </template>
 
 <style scoped>
-/* Import buttons — art-independent CSS base so they stay usable with no art. */
 .import-button {
   background-size: 100% 100%;
   background-repeat: no-repeat;
@@ -245,9 +316,6 @@ async function handleImportCompleted(): Promise<void> {
   box-shadow: var(--glow-purple-lg);
 }
 
-/* Primary CTA — larger and more prominent than the Import buttons, matching the
-   "+ New Campaign" primary action on the Campaigns page. Art-independent CSS base
-   so it stays usable if the art fails to load. */
 .new-character-button {
   display: inline-flex;
   align-items: center;
@@ -275,7 +343,6 @@ async function handleImportCompleted(): Promise<void> {
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
-/* Detail side-panel art — stats live in the upper 60%. */
 .detail-panel {
   position: relative;
   min-height: 260px;
@@ -302,7 +369,6 @@ async function handleImportCompleted(): Promise<void> {
   height: 100%;
 }
 
-/* Stat tile art (background-size: 100% 100%) with value/label overlaid. */
 .stat-tile {
   display: flex;
   flex-direction: column;

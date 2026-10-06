@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
   listCharacters,
+  listAllCharacters,
+  setCharacterCampaign,
   createCharacter,
   updateCharacter,
   deleteCharacter,
@@ -40,6 +42,36 @@ export const useCharacterStore = defineStore('characters', () => {
       error.value = extractMessage(err)
     } finally {
       loading.value = false
+    }
+  }
+
+  /** Fetch every character in the global library (no campaign scope). */
+  async function fetchAllCharacters(): Promise<void> {
+    loading.value = true
+    error.value = null
+    try {
+      characters.value = await listAllCharacters()
+    } catch (err) {
+      error.value = extractMessage(err)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** Assign, reassign, or unassign a character's campaign and patch the row in place. */
+  async function setCharacterCampaignAction(
+    id: string,
+    campaignId: string | null,
+  ): Promise<CharacterDto> {
+    error.value = null
+    try {
+      const dto = await setCharacterCampaign(id, campaignId)
+      const idx = characters.value.findIndex((c) => c.id === id)
+      if (idx !== -1) characters.value[idx] = dto
+      return dto
+    } catch (err) {
+      error.value = extractMessage(err)
+      throw err
     }
   }
 
@@ -148,6 +180,8 @@ export const useCharacterStore = defineStore('characters', () => {
     error,
     // Actions
     fetchCharacters,
+    fetchAllCharacters,
+    setCharacterCampaign: setCharacterCampaignAction,
     createCharacter: createCharacterAction,
     updateCharacter: updateCharacterAction,
     deleteCharacter: deleteCharacterAction,

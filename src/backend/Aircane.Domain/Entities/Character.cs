@@ -9,7 +9,7 @@ namespace Aircane.Domain.Entities;
 /// </summary>
 public class Character : EntityBase
 {
-    public Guid? CampaignId { get; init; }
+    public Guid? CampaignId { get; set; }
     public Guid? OwnerParticipantId { get; set; }
     public string Name { get; set; }
     public string GameSystem { get; init; }

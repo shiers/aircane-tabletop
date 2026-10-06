@@ -7,6 +7,7 @@ import apiClient from '@/shared/api/client'
 export interface CharacterDto {
   id: string
   campaignId: string | null
+  campaignName: string | null
   ownerParticipantId: string | null
   name: string
   gameSystem: string
@@ -181,6 +182,21 @@ export async function listCharacters(campaignId: string, participantId?: string)
   const params: Record<string, string> = { campaignId }
   if (participantId) params.participantId = participantId
   const response = await apiClient.get<CharacterDto[]>('/api/characters', { params })
+  return response.data
+}
+
+/** List every character in the global library, regardless of campaign assignment. */
+export async function listAllCharacters(): Promise<CharacterDto[]> {
+  const response = await apiClient.get<CharacterDto[]>('/api/characters')
+  return response.data
+}
+
+/** Assign, reassign, or (with null) unassign a character's campaign. Returns the updated character. */
+export async function setCharacterCampaign(
+  id: string,
+  campaignId: string | null,
+): Promise<CharacterDto> {
+  const response = await apiClient.put<CharacterDto>(`/api/characters/${id}/campaign`, { campaignId })
   return response.data
 }
 

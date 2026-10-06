@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useCharacterStore } from '../store'
 import { abilityModifier, type CharacterDto } from '../api'
 import AbilityScoreTile from './AbilityScoreTile.vue'
 import RoleBadge from './RoleBadge.vue'
 import AircaneImg from '@/shared/components/AircaneImg.vue'
 import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
+
+const props = defineProps<{
+  /** Optional explicit list to render. Falls back to the store's characters when omitted. */
+  characters?: CharacterDto[]
+  /** When true, show the campaign label pill (name or "Unassigned") on each card. */
+  showCampaignLabel?: boolean
+}>()
 
 const emit = defineEmits<{
   (e: 'edit', character: CharacterDto): void
@@ -14,6 +21,9 @@ const emit = defineEmits<{
 
 const store = useCharacterStore()
 const deletingId = ref<string | null>(null)
+
+/** The list to render: the explicit prop when provided, otherwise the store's characters. */
+const effectiveList = computed<CharacterDto[]>(() => props.characters ?? store.characters)
 
 function parseLevel(character: CharacterDto): number {
   return character.level
@@ -113,7 +123,7 @@ async function handleDelete(character: CharacterDto): Promise<void> {
 
     <!-- Loading skeleton -->
     <div
-      v-if="store.loading && store.characters.length === 0"
+      v-if="store.loading && effectiveList.length === 0"
       class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
       aria-busy="true"
       aria-label="Loading characters"
@@ -123,7 +133,7 @@ async function handleDelete(character: CharacterDto): Promise<void> {
 
     <!-- Empty state -->
     <div
-      v-else-if="!store.loading && store.characters.length === 0"
+      v-else-if="!store.loading && effectiveList.length === 0"
       class="flex flex-col items-center py-12 text-center text-gray-400"
     >
       <img
@@ -138,7 +148,7 @@ async function handleDelete(character: CharacterDto): Promise<void> {
 
     <!-- Character cards -->
     <ul v-else class="grid list-none gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3">
-      <li v-for="character in store.characters" :key="character.id" class="character-card">
+      <li v-for="character in effectiveList" :key="character.id" class="character-card">
         <!-- Framed card: portrait (upper 65%) + stats (lower 35%).
              The frame art bakes in its own border — no CSS border is added. -->
         <div class="card-media">
@@ -166,6 +176,13 @@ async function handleDelete(character: CharacterDto): Promise<void> {
             <div class="card-badges">
               <RoleBadge :role="role(character)" />
               <span class="level-pill">Lv {{ parseLevel(character) }}</span>
+              <span
+                v-if="showCampaignLabel"
+                class="campaign-pill"
+                :class="{ 'campaign-pill--unassigned': character.campaignName === null }"
+              >
+                {{ character.campaignName ?? 'Unassigned' }}
+              </span>
             </div>
           </div>
         </div>
@@ -289,6 +306,21 @@ async function handleDelete(character: CharacterDto): Promise<void> {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-gold);
+}
+
+.campaign-pill {
+  padding: 2px 10px;
+  border-radius: var(--border-radius-pill);
+  background: var(--color-bg-panel);
+  border: var(--border-gold-dim);
+  font-size: 12px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.campaign-pill--unassigned {
+  color: #9ca3af;
+  font-style: italic;
 }
 
 .card-abilities {

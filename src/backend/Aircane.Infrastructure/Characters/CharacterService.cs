@@ -210,7 +210,69 @@ public sealed class CharacterService : ICharacterService
             .OrderBy(c => c.Name)
             .ToListAsync(cancellationToken);
 
-        return characters.Select(ToDto).ToList();
+        // One scalar lookup for the single campaign being listed; null if the campaign was deleted.
+        var campaignName = await _db.Campaigns
+            .Where(c => c.Id == campaignId)
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return characters.Select(c => ToDto(c, campaignName)).ToList();
+    }
+
+    // ── ListAllAsync ──────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CharacterDto>> ListAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // Query-syntax LEFT JOIN with a TERMINAL orderby so Npgsql guarantees the SQL ORDER BY.
+        // Yields CampaignName == null for both a null CampaignId and an orphaned CampaignId.
+        var rows = await (
+            from c in _db.Characters.AsNoTracking()
+            join camp in _db.Campaigns on c.CampaignId equals camp.Id into gj
+            from camp in gj.DefaultIfEmpty()
+            orderby c.Name
+            select new { Character = c, CampaignName = camp != null ? camp.Name : (string?)null }
+        ).ToListAsync(cancellationToken);
+
+        return rows.Select(r => ToDto(r.Character, r.CampaignName)).ToList();
+    }
+
+    // ── SetCampaignAsync ──────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<CharacterDto> SetCampaignAsync(
+        Guid characterId,
+        Guid? campaignId,
+        CancellationToken cancellationToken = default)
+    {
+        var character = await _db.Characters
+            .FirstOrDefaultAsync(c => c.Id == characterId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Character '{characterId}' not found.");
+
+        // One query validates existence AND yields the label. Campaign.Name is required,
+        // so a non-null name proves the campaign exists. Read before mutating so a missing
+        // campaign throws with nothing persisted.
+        string? campaignName = null;
+        if (campaignId.HasValue)
+        {
+            campaignName = await _db.Campaigns
+                .Where(c => c.Id == campaignId.Value)
+                .Select(c => c.Name)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (campaignName is null)
+                throw new ArgumentException($"Campaign '{campaignId}' not found.");
+        }
+
+        character.CampaignId = campaignId;              // null => unassign
+        character.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Character {CharacterId} campaign set to {CampaignId}", characterId, campaignId);
+
+        return ToDto(character, campaignName);
     }
 
     // ── ImportCharacterAsync ──────────────────────────────────────────────────
@@ -647,9 +709,10 @@ public sealed class CharacterService : ICharacterService
 
     // ── Mapping ───────────────────────────────────────────────────────────────
 
-    private static CharacterDto ToDto(Character c) => new(
+    private static CharacterDto ToDto(Character c, string? campaignName = null) => new(
         Id: c.Id,
         CampaignId: c.CampaignId,
+        CampaignName: campaignName,
         OwnerParticipantId: c.OwnerParticipantId,
         Name: c.Name,
         GameSystem: c.GameSystem,

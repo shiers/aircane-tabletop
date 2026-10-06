@@ -1,9 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import CharacterList from '../CharacterList.vue'
 import { useCharacterStore } from '../../store'
 import type { CharacterDto } from '../../api'
+
+// Mock the api module so the store's `deleteCharacter` binding is the mock (no network call).
+vi.mock('../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api')>()
+  return { ...actual, deleteCharacter: vi.fn().mockResolvedValue(undefined) }
+})
 
 function makeCharacter(overrides: Partial<CharacterDto> = {}): CharacterDto {
   return {
@@ -97,5 +103,63 @@ describe('CharacterList', () => {
     expect(pill.exists()).toBe(true)
     expect(pill.text()).toBe('Unassigned')
     expect(pill.classes()).toContain('campaign-pill--unassigned')
+  })
+
+  describe('delete action', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('renders a labelled delete control per character', () => {
+      const wrapper = mountList({
+        characters: [makeCharacter({ id: 'a', name: 'Alpha' }), makeCharacter({ id: 'b', name: 'Beta' })],
+      })
+
+      expect(wrapper.find('button[aria-label="Delete Alpha"]').exists()).toBe(true)
+      expect(wrapper.find('button[aria-label="Delete Beta"]').exists()).toBe(true)
+    })
+
+    it('calls the store delete action after the user confirms', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const store = useCharacterStore()
+      const deleteSpy = vi.spyOn(store, 'deleteCharacter').mockResolvedValue()
+
+      const wrapper = mountList({ characters: [makeCharacter({ id: 'a', name: 'Alpha' })] })
+      await wrapper.find('button[aria-label="Delete Alpha"]').trigger('click')
+
+      expect(window.confirm).toHaveBeenCalledWith('Delete "Alpha"? This cannot be undone.')
+      expect(deleteSpy).toHaveBeenCalledWith('a')
+    })
+
+    it('does not call the store delete action when the user cancels the confirm', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      const store = useCharacterStore()
+      const deleteSpy = vi.spyOn(store, 'deleteCharacter').mockResolvedValue()
+
+      const wrapper = mountList({ characters: [makeCharacter({ id: 'a', name: 'Alpha' })] })
+      await wrapper.find('button[aria-label="Delete Alpha"]').trigger('click')
+
+      expect(deleteSpy).not.toHaveBeenCalled()
+    })
+
+    it('removes the character from the displayed list once the store deletes it', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const store = useCharacterStore()
+      store.characters = [
+        makeCharacter({ id: 'a', name: 'Alpha' }),
+        makeCharacter({ id: 'b', name: 'Beta' }),
+      ]
+      // Falls back to store.characters (no characters prop), so the list reflects store mutations.
+      // The real store action runs and calls the mocked api.deleteCharacter (no network).
+      const wrapper = mountList()
+      expect(wrapper.findAll('.character-card').length).toBe(2)
+
+      await wrapper.find('button[aria-label="Delete Alpha"]').trigger('click')
+      await flushPromises()
+
+      expect(store.characters.map((c) => c.id)).toEqual(['b'])
+      expect(wrapper.text()).not.toContain('Alpha')
+      expect(wrapper.text()).toContain('Beta')
+    })
   })
 })

@@ -133,6 +133,7 @@ public class AircaneDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.CampaignId).IsRequired(false);
             entity.Property(e => e.OwnerParticipantId).IsRequired(false);
+            entity.Property(e => e.Role).HasConversion<int>().IsRequired();
             entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
             entity.Property(e => e.GameSystem).HasMaxLength(100).IsRequired();
             entity.Property(e => e.Ruleset).HasMaxLength(100).IsRequired();

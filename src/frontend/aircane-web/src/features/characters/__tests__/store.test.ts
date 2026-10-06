@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useCharacterStore } from '../store'
-import type { CharacterDto } from '../api'
+import { CharacterRole, type CharacterDto } from '../api'
 
 // ── Mock the characters api ────────────────────────────────────────────────────
 vi.mock('../api', async (importOriginal) => {
@@ -21,6 +21,7 @@ function makeCharacter(overrides: Partial<CharacterDto> = {}): CharacterDto {
     campaignId: null,
     campaignName: null,
     ownerParticipantId: null,
+    role: CharacterRole.Player,
     name: 'Warduke',
     gameSystem: 'D&D 5e',
     ruleset: '2014',

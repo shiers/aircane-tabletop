@@ -79,7 +79,8 @@ public sealed class CharacterService : ICharacterService
             canonicalJson: canonicalJson,
             currentStateJson: currentStateJson,
             campaignId: request.CampaignId,
-            ownerParticipantId: request.OwnerParticipantId);
+            ownerParticipantId: request.OwnerParticipantId,
+            role: request.Role);
 
         _db.Characters.Add(character);
         await _db.SaveChangesAsync(cancellationToken);
@@ -127,6 +128,9 @@ public sealed class CharacterService : ICharacterService
 
         if (request.OwnerParticipantId.HasValue)
             character.OwnerParticipantId = request.OwnerParticipantId.Value;
+
+        if (request.Role.HasValue)
+            character.Role = request.Role.Value;
 
         if (request.CanonicalJson is not null)
         {
@@ -714,6 +718,7 @@ public sealed class CharacterService : ICharacterService
         CampaignId: c.CampaignId,
         CampaignName: campaignName,
         OwnerParticipantId: c.OwnerParticipantId,
+        Role: c.Role,
         Name: c.Name,
         GameSystem: c.GameSystem,
         Ruleset: c.Ruleset,

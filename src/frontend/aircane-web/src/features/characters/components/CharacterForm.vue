@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, watch, computed } from 'vue'
 import {
+  CharacterRole,
   buildDefaultCanonical,
   formatModifier,
   type CharacterDto,
@@ -45,6 +46,7 @@ const form = reactive({
   gameSystem: props.character?.gameSystem ?? 'D&D 5e',
   ruleset: props.character?.ruleset ?? '2014',
   level: props.character?.level ?? 1,
+  role: props.character?.role ?? CharacterRole.Player,
   // Identity
   raceOrAncestry: existingCanonical.value.identity?.raceOrAncestry ?? '',
   background: existingCanonical.value.identity?.background ?? '',
@@ -77,6 +79,7 @@ watch(
     form.gameSystem = c.gameSystem
     form.ruleset = c.ruleset
     form.level = c.level
+    form.role = c.role ?? CharacterRole.Player
     form.raceOrAncestry = canonical.identity?.raceOrAncestry ?? ''
     form.background = canonical.identity?.background ?? ''
     form.className = canonical.classes?.[0]?.className ?? ''
@@ -92,6 +95,11 @@ watch(
     form.speed = canonical.combat?.speed ?? 30
   },
 )
+
+const roleOptions = [
+  { value: CharacterRole.Player, label: 'Player' },
+  { value: CharacterRole.Npc, label: 'NPC' },
+]
 
 // ---------------------------------------------------------------------------
 // Ability score helpers
@@ -179,6 +187,7 @@ async function handleSubmit(): Promise<void> {
       const payload: UpdateCharacterRequest = {
         name: form.name.trim(),
         level: form.level,
+        role: form.role,
         canonicalJson,
       }
       emit('submit', payload)
@@ -191,6 +200,7 @@ async function handleSubmit(): Promise<void> {
         level: form.level,
         canonicalJson,
         campaignId: props.campaignId ?? null,
+        role: form.role,
       }
       emit('submit', payload)
     }
@@ -221,6 +231,25 @@ async function handleSubmit(): Promise<void> {
           placeholder="e.g. Aldric Stonehammer"
           class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
         />
+      </div>
+
+      <!-- Role -->
+      <div role="radiogroup" aria-labelledby="char-role-label">
+        <span id="char-role-label" class="mb-1 block text-sm font-medium text-gray-300">Role</span>
+        <div class="inline-flex rounded-lg border border-gray-700 bg-gray-800 p-0.5">
+          <button
+            v-for="option in roleOptions"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="form.role === option.value"
+            class="rounded-md px-4 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-aircane-500"
+            :class="form.role === option.value ? 'bg-aircane-600 text-white' : 'text-gray-400 hover:text-gray-200'"
+            @click="form.role = option.value"
+          >
+            {{ option.label }}
+          </button>
+        </div>
       </div>
 
       <!-- Race / Ancestry + Background -->

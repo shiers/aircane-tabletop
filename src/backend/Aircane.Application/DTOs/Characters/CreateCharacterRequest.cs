@@ -1,3 +1,5 @@
+using Aircane.Domain.Enums;
+
 namespace Aircane.Application.DTOs.Characters;
 
 /// <summary>
@@ -10,4 +12,5 @@ public sealed record CreateCharacterRequest(
     int Level,
     string CanonicalJson,
     Guid? CampaignId = null,
-    Guid? OwnerParticipantId = null);
+    Guid? OwnerParticipantId = null,
+    CharacterRole Role = CharacterRole.Player);

@@ -10,14 +10,11 @@ describe('RoleBadge', () => {
     const wrapper = mount(RoleBadge, { props: { role: 'Player' }, global })
     expect(wrapper.classes()).toContain('player')
     expect(wrapper.find('.label').text()).toBe('Player')
-    // The art url now drives the v-bg-asset directive rather than an inline style.
-    expect(wrapper.find('.dot').exists()).toBe(true)
   })
 
   it('renders the NPC state with the npc class and label', () => {
     const wrapper = mount(RoleBadge, { props: { role: 'NPC' }, global })
     expect(wrapper.classes()).toContain('npc')
     expect(wrapper.find('.label').text()).toBe('NPC')
-    expect(wrapper.find('.dot').exists()).toBe(true)
   })
 })

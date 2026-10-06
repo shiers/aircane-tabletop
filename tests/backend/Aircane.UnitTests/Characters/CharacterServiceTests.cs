@@ -1,6 +1,7 @@
 using Aircane.Application.Abstractions;
 using Aircane.Application.Characters;
 using Aircane.Application.DTOs.Characters;
+using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Characters;
 using Aircane.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -117,6 +118,26 @@ public class CharacterServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateCharacterAsync_RoleNotSpecified_DefaultsToPlayer()
+    {
+        var result = await _sut.CreateCharacterAsync(BuildCreateRequest());
+
+        Assert.Equal(CharacterRole.Player, result.Role);
+        var saved = await _db.Characters.FindAsync(result.Id);
+        Assert.Equal(CharacterRole.Player, saved!.Role);
+    }
+
+    [Fact]
+    public async Task CreateCharacterAsync_NpcRole_PersistsNpc()
+    {
+        var request = BuildCreateRequest() with { Role = CharacterRole.Npc };
+
+        var result = await _sut.CreateCharacterAsync(request);
+
+        Assert.Equal(CharacterRole.Npc, result.Role);
+    }
+
+    [Fact]
     public async Task CreateCharacterAsync_InvalidCanonicalJson_ThrowsArgumentException()
     {
         var request = new CreateCharacterRequest(
@@ -206,6 +227,30 @@ public class CharacterServiceTests : IDisposable
 
         Assert.Equal("Renamed Hero", updated.Name);
         Assert.Equal(created.Level, updated.Level);
+    }
+
+    [Fact]
+    public async Task UpdateCharacterAsync_RoleOnly_UpdatesRole()
+    {
+        var created = await _sut.CreateCharacterAsync(BuildCreateRequest());
+
+        var updated = await _sut.UpdateCharacterAsync(
+            created.Id,
+            new UpdateCharacterRequest(Role: CharacterRole.Npc));
+
+        Assert.Equal(CharacterRole.Npc, updated.Role);
+    }
+
+    [Fact]
+    public async Task UpdateCharacterAsync_RoleOmitted_KeepsExistingRole()
+    {
+        var created = await _sut.CreateCharacterAsync(BuildCreateRequest() with { Role = CharacterRole.Npc });
+
+        var updated = await _sut.UpdateCharacterAsync(
+            created.Id,
+            new UpdateCharacterRequest(Name: "Renamed"));
+
+        Assert.Equal(CharacterRole.Npc, updated.Role);
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using Aircane.Domain.Enums;
+
 namespace Aircane.Application.DTOs.Characters;
 
 /// <summary>
@@ -9,4 +11,5 @@ public sealed record UpdateCharacterRequest(
     string? CanonicalJson = null,
     string? CurrentStateJson = null,
     Guid? OwnerParticipantId = null,
-    Guid? CampaignId = null);
+    Guid? CampaignId = null,
+    CharacterRole? Role = null);

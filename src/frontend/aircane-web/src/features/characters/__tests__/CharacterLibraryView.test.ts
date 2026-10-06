@@ -58,7 +58,7 @@ let lastCharacterListProps: CharacterListProps | null = null
 // Stub emits an `assign` event so the view's @assign handler can be exercised.
 const CharacterListStub = {
   props: ['characters', 'showCampaignLabel', 'campaigns'],
-  emits: ['edit', 'view', 'assign'],
+  emits: ['edit', 'assign'],
   setup(props: CharacterListProps) {
     lastCharacterListProps = props
     return () => null
@@ -193,7 +193,7 @@ describe('CharacterLibraryView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.findComponent(CharacterListStub).vm.$emit('view', alpha)
+    await wrapper.findComponent(CharacterListStub).vm.$emit('edit', alpha)
     await flushPromises()
 
     expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })

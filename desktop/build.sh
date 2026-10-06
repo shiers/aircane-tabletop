@@ -242,7 +242,17 @@ echo "tessdata    : $TESSDATA_DEST"
 
 # -- nativeLib (optional per target): native Tesseract/Leptonica libs --
 OCR_NATIVE_DIR="$BINARIES_DIR/ocr-native"
-if NATIVE_ASSET="$(read_ocr nativeLib "$RUST_TARGET" asset)"; then
+# tauri.conf.json maps the `binaries/ocr-native/*` resource glob, which fails the
+# build when it matches nothing. Keep a marker file so the dir is never empty.
+mkdir -p "$OCR_NATIVE_DIR"
+echo "Bundled native OCR libs (empty when the target relies on NuGet/system libs)." > "$OCR_NATIVE_DIR/README.txt"
+# An all-zero sha256 marks a documented placeholder entry, not a real pinned
+# asset; treat it as "no pinned lib" instead of downloading from example.invalid.
+NATIVE_PLACEHOLDER_SHA="0000000000000000000000000000000000000000000000000000000000000000"
+if NATIVE_ASSET="$(read_ocr nativeLib "$RUST_TARGET" asset)" \
+   && [ "$(read_ocr nativeLib "$RUST_TARGET" sha256)" = "$NATIVE_PLACEHOLDER_SHA" ]; then
+  echo "Native OCR lib for '$RUST_TARGET' is a placeholder in ocr-assets-versions.json; relying on system libs."
+elif NATIVE_ASSET="$(read_ocr nativeLib "$RUST_TARGET" asset)"; then
   NATIVE_VERSION="$(read_ocr nativeLib version)"
   NATIVE_BASEURL="$(read_ocr nativeLib baseUrl)"
   NATIVE_ARCHIVE="$(read_ocr nativeLib "$RUST_TARGET" archive)"

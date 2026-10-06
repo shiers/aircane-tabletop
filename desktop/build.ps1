@@ -174,9 +174,17 @@ Write-Host "tessdata    : $TessdataDest"
 
 # -- nativeLib (optional per target): native Tesseract/Leptonica libs --
 $OcrNativeDir = Join-Path $BinariesDir 'ocr-native'
+# tauri.conf.json maps the `binaries/ocr-native/*` resource glob, which fails the
+# build when it matches nothing. Keep a marker file so the dir is never empty.
+New-Item -ItemType Directory -Force -Path $OcrNativeDir | Out-Null
+Set-Content -Path (Join-Path $OcrNativeDir 'README.txt') -Value 'Bundled native OCR libs (empty when the target relies on NuGet/system libs).'
 $NativeEntry = $OcrManifest.nativeLib.assets.$RustTarget
 if ($null -eq $NativeEntry) {
   Write-Host "No pinned native OCR lib for '$RustTarget'; relying on NuGet/system libs."
+}
+elseif ($NativeEntry.sha256 -match '^0{64}$') {
+  # An all-zero sha256 marks a documented placeholder entry, not a real pinned asset.
+  Write-Host "Native OCR lib for '$RustTarget' is a placeholder in ocr-assets-versions.json; relying on system libs."
 }
 else {
   New-Item -ItemType Directory -Force -Path $OcrNativeDir | Out-Null
@@ -251,8 +259,11 @@ try {
   }
   else {
     npm ci
+    if ($LASTEXITCODE -ne 0) { Write-Error 'npm ci failed.'; exit $LASTEXITCODE }
     npx tauri build
   }
+  # Native commands don't trip $ErrorActionPreference; fail loudly instead of printing "Done".
+  if ($LASTEXITCODE -ne 0) { Write-Error 'Tauri build failed.'; exit $LASTEXITCODE }
 }
 finally { Pop-Location }
 

@@ -5,6 +5,7 @@ import type {
   ValidationResult,
   StarterTemplate,
   FormDescriptor,
+  WireFormDescriptor,
 } from './types'
 import { fieldTypeFromWire } from './types'
 
@@ -83,7 +84,7 @@ export async function listTemplates(): Promise<StarterTemplate[]> {
  * review panel to render the bound system's form (labels/sections/field types).
  */
 export async function previewCharacterForm(gameSystemDefinitionId: string): Promise<FormDescriptor> {
-  const response = await apiClient.post<FormDescriptor>(
+  const response = await apiClient.post<WireFormDescriptor>(
     `/api/game-systems/${gameSystemDefinitionId}/preview-character-form`,
     {},
   )

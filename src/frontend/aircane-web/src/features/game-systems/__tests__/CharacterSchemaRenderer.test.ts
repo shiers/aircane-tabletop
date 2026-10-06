@@ -231,5 +231,66 @@ describe('CharacterSchemaRenderer', () => {
       expect(calcInput.exists()).toBe(true)
       expect(calcInput.attributes('disabled')).toBeDefined()
     })
+
+    // Covers the renderer branches not exercised above: boolean(2),
+    // dice_expression(4), list(5), repeating(6), resource_pool(7), grouped(9).
+    it('renders the correct control for every remaining integer-wire type', () => {
+      const descriptor = {
+        sections: [
+          {
+            id: 'misc',
+            label: 'Misc',
+            fields: [
+              { id: 'inspired', type: 2, label: 'Inspired', required: false },
+              { id: 'attack', type: 4, label: 'Attack Roll', required: false },
+              { id: 'languages', type: 5, label: 'Languages', required: false },
+              { id: 'attacks', type: 6, label: 'Attacks', required: false },
+              { id: 'hp', type: 7, label: 'Hit Points', required: false, maxField: 'hp_max' },
+              { id: 'spells', type: 9, label: 'Spells', required: false },
+            ],
+          },
+        ],
+      } as unknown as FormDescriptor
+
+      const wrapper = mountRenderer(descriptor, {
+        inspired: true,
+        attack: '1d20+5',
+        languages: ['Common', 'Elvish'],
+        attacks: [{ name: 'Longsword' }],
+        hp: 14,
+        hp_max: 20,
+        spells: { cantrips: ['Fire Bolt'] },
+      })
+
+      // boolean (2) -> checkbox, checked from the seeded value.
+      const boolInput = wrapper.find('input[type="checkbox"]')
+      expect(boolInput.exists()).toBe(true)
+      expect((boolInput.element as HTMLInputElement).checked).toBe(true)
+
+      // dice_expression (4) -> text input holding the expression.
+      const diceInput = wrapper.find('#field-attack')
+      expect(diceInput.exists()).toBe(true)
+      expect(diceInput.attributes('type')).toBe('text')
+      expect((diceInput.element as HTMLInputElement).value).toBe('1d20+5')
+
+      // list (5) -> textarea, one item per line.
+      const listInput = wrapper.find('#field-languages')
+      expect(listInput.exists()).toBe(true)
+      expect(listInput.element.tagName).toBe('TEXTAREA')
+      expect((listInput.element as HTMLTextAreaElement).value).toBe('Common\nElvish')
+
+      // resource_pool (7) -> number input showing the "/ max" display.
+      const hpInput = wrapper.find('#field-hp')
+      expect(hpInput.exists()).toBe(true)
+      expect(hpInput.attributes('type')).toBe('number')
+      expect((hpInput.element as HTMLInputElement).value).toBe('14')
+      expect(wrapper.text()).toContain('/ 20')
+
+      // repeating (6) & grouped (9) -> JSON textareas with the normalized kind label.
+      const attacksArea = wrapper.find('textarea[rows="4"]')
+      expect(attacksArea.exists()).toBe(true)
+      expect(wrapper.text()).toContain('(repeating)')
+      expect(wrapper.text()).toContain('(grouped)')
+    })
   })
 })

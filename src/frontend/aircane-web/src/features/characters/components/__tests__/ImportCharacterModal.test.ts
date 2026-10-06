@@ -64,6 +64,27 @@ describe('ImportCharacterModal', () => {
     vi.clearAllMocks()
   })
 
+  // ── BUG-2 regression: dialog is height-capped and the body scrolls so the
+  // Confirm & Save / Cancel actions stay reachable when content is tall. ────────
+  describe('scroll layout (BUG-2 regression)', () => {
+    it('caps the dialog height and makes the body scrollable', () => {
+      const wrapper = mountModal()
+      const dialog = wrapper.find('dialog')
+      expect(dialog.exists()).toBe(true)
+      const dialogClasses = dialog.attributes('class') ?? ''
+      expect(dialogClasses).toContain('max-h-[90vh]')
+      expect(dialogClasses).toContain('flex')
+      expect(dialogClasses).toContain('flex-col')
+
+      // The scrollable body is the flex child that overflows vertically.
+      const scrollableBody = dialog.findAll('div').find((d) => {
+        const c = d.attributes('class') ?? ''
+        return c.includes('overflow-y-auto') && c.includes('flex-1')
+      })
+      expect(scrollableBody).toBeDefined()
+    })
+  })
+
   describe('tab switching', () => {
     it('shows exactly two tabs and defaults to Upload File', () => {
       const wrapper = mountModal()

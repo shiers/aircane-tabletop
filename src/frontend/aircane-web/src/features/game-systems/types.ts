@@ -199,6 +199,34 @@ export interface FormField {
 }
 
 // ---------------------------------------------------------------------------
+// Wire-shaped character-form types
+// ---------------------------------------------------------------------------
+//
+// The `preview-character-form` endpoint serializes `CharacterFieldType` as its numeric enum value
+// (no `JsonStringEnumConverter`), so on the wire `type` arrives as an integer `0–9`, not a
+// `FieldType` string. These types describe that raw payload honestly so the normalization boundary
+// in `previewCharacterForm` is typed: `fieldTypeFromWire` consumes `WireFormField.type` and the
+// function returns a fully-normalized `FormDescriptor`. Declaring `type` as `FieldType | number`
+// means a future direct string-literal comparison against a raw wire field is a compile error,
+// which is exactly the footgun that produced the original empty-render bug.
+
+export interface WireFormDescriptor {
+  sections: WireFormSection[]
+}
+
+export interface WireFormSection {
+  id: string
+  label: string
+  fields: WireFormField[]
+  visibleWhen?: VisibilityCondition | null
+}
+
+export interface WireFormField extends Omit<FormField, 'type'> {
+  /** Field type as delivered by the API: an integer enum value, or a string if the server ever adds `JsonStringEnumConverter`. */
+  type: FieldType | number
+}
+
+// ---------------------------------------------------------------------------
 // Condition types
 // ---------------------------------------------------------------------------
 

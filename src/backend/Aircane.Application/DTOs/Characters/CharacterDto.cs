@@ -1,3 +1,5 @@
+using Aircane.Domain.Enums;
+
 namespace Aircane.Application.DTOs.Characters;
 
 /// <summary>
@@ -8,6 +10,7 @@ public sealed record CharacterDto(
     Guid? CampaignId,
     string? CampaignName,
     Guid? OwnerParticipantId,
+    CharacterRole Role,
     string Name,
     string GameSystem,
     string Ruleset,

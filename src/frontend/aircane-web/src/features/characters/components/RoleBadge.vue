@@ -6,8 +6,8 @@ const props = defineProps<{
 
 const artUrl = (): string =>
   props.role === 'Player'
-    ? '/assets/characters/player-badge-art.png'
-    : '/assets/characters/npc-badge-art.png'
+    ? '/assets/characters/player-badge-art2.png'
+    : '/assets/characters/npc-badge-art2.png'
 </script>
 
 <template>
@@ -16,7 +16,7 @@ const artUrl = (): string =>
     :class="role.toLowerCase()"
     v-bg-asset="{ url: artUrl(), fallback: '#0d0d2a', size: '100% 100%' }"
   >
-    <span class="dot" aria-hidden="true" />
+    <span>&nbsp;</span>
     <span class="label">{{ role }}</span>
   </span>
 </template>

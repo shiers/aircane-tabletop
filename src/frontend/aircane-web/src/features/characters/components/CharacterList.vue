@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useCharacterStore } from '../store'
-import { abilityModifier, type CharacterDto } from '../api'
+import { abilityModifier, characterRoleLabels, type CharacterDto } from '../api'
 import { type CampaignDto } from '@/features/campaigns/api'
 import AbilityScoreTile from './AbilityScoreTile.vue'
 import RoleBadge from './RoleBadge.vue'
@@ -116,9 +116,8 @@ function abilities(
   })
 }
 
-/** Players own a participant; NPCs do not. */
 function role(character: CharacterDto): 'Player' | 'NPC' {
-  return character.ownerParticipantId ? 'Player' : 'NPC'
+  return characterRoleLabels[character.role] ?? 'Player'
 }
 
 async function handleDelete(character: CharacterDto): Promise<void> {

@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import CharacterList from '../CharacterList.vue'
+import RoleBadge from '../RoleBadge.vue'
 import { useCharacterStore } from '../../store'
-import type { CharacterDto } from '../../api'
+import { CharacterRole, type CharacterDto } from '../../api'
 
 // Mock the api module so the store's `deleteCharacter` binding is the mock (no network call).
 vi.mock('../../api', async (importOriginal) => {
@@ -17,6 +18,7 @@ function makeCharacter(overrides: Partial<CharacterDto> = {}): CharacterDto {
     campaignId: null,
     campaignName: null,
     ownerParticipantId: null,
+    role: CharacterRole.Player,
     name: 'Warduke',
     gameSystem: 'D&D 5e',
     ruleset: '2014',
@@ -103,6 +105,17 @@ describe('CharacterList', () => {
     expect(pill.exists()).toBe(true)
     expect(pill.text()).toBe('Unassigned')
     expect(pill.classes()).toContain('campaign-pill--unassigned')
+  })
+
+  it('shows the stored role on the badge, independent of participant ownership', () => {
+    const wrapper = mountList({
+      characters: [
+        makeCharacter({ id: 'p', role: CharacterRole.Player, ownerParticipantId: null }),
+        makeCharacter({ id: 'n', role: CharacterRole.Npc, ownerParticipantId: 'participant-1' }),
+      ],
+    })
+    const roles = wrapper.findAllComponents(RoleBadge).map((b) => b.props('role'))
+    expect(roles).toEqual(['Player', 'NPC'])
   })
 
   describe('campaign assignment', () => {

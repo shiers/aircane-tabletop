@@ -1,6 +1,20 @@
 import apiClient from '@/shared/api/client'
 
 // ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+export enum CharacterRole {
+  Player = 0,
+  Npc = 1,
+}
+
+export const characterRoleLabels: Record<CharacterRole, 'Player' | 'NPC'> = {
+  [CharacterRole.Player]: 'Player',
+  [CharacterRole.Npc]: 'NPC',
+}
+
+// ---------------------------------------------------------------------------
 // DTOs
 // ---------------------------------------------------------------------------
 
@@ -9,6 +23,7 @@ export interface CharacterDto {
   campaignId: string | null
   campaignName: string | null
   ownerParticipantId: string | null
+  role: CharacterRole
   name: string
   gameSystem: string
   ruleset: string
@@ -27,6 +42,7 @@ export interface CreateCharacterRequest {
   canonicalJson: string
   campaignId?: string | null
   ownerParticipantId?: string | null
+  role?: CharacterRole
 }
 
 export interface UpdateCharacterRequest {
@@ -35,6 +51,7 @@ export interface UpdateCharacterRequest {
   canonicalJson?: string
   currentStateJson?: string
   ownerParticipantId?: string | null
+  role?: CharacterRole
 }
 
 export interface ImportCharacterJsonRequest {

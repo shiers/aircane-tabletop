@@ -170,4 +170,66 @@ describe('CharacterSchemaRenderer', () => {
       })
     })
   })
+
+  // ── BUG-1 regression: integer wire field types must still render controls ──────
+  // The preview-character-form endpoint serializes field types as integer enum
+  // values (0=Text, 1=Number, 3=Enum, 8=Calculated). A descriptor that reaches the
+  // renderer un-normalized must still render the correct controls with seeded values.
+  describe('integer wire field types (BUG-1 regression)', () => {
+    // Build a descriptor whose field types are the raw integers from the wire.
+    const integerWireDescriptor = {
+      sections: [
+        {
+          id: 'basics',
+          label: 'Basic Information',
+          fields: [
+            { id: 'name', type: 0, label: 'Character Name', required: true },
+            { id: 'level', type: 1, label: 'Level', required: true, min: 1, max: 20 },
+            { id: 'class', type: 3, label: 'Class', required: false, options: ['Fighter', 'Wizard', 'Rogue'] },
+          ],
+        },
+        {
+          id: 'abilities',
+          label: 'Ability Scores',
+          fields: [
+            { id: 'str', type: 1, label: 'Strength', required: false, min: 1, max: 30 },
+            { id: 'str_mod', type: 8, label: 'STR Mod', required: false, formula: 'floor((str - 10) / 2)' },
+          ],
+        },
+      ],
+    } as unknown as FormDescriptor
+
+    it('renders controls and seeded values for an integer-wire descriptor', () => {
+      const wrapper = mountRenderer(integerWireDescriptor, {
+        name: 'Ruelin Treeshield',
+        str: 8,
+        level: 2,
+        class: 'Wizard',
+        str_mod: -1,
+      })
+
+      // Text field (type 0) renders a text input showing the seeded name.
+      const nameInput = wrapper.find('#field-name')
+      expect(nameInput.exists()).toBe(true)
+      expect(nameInput.attributes('type')).toBe('text')
+      expect((nameInput.element as HTMLInputElement).value).toBe('Ruelin Treeshield')
+
+      // Number field (type 1) renders a number input showing the seeded strength.
+      const strInput = wrapper.find('#field-str')
+      expect(strInput.exists()).toBe(true)
+      expect(strInput.attributes('type')).toBe('number')
+      expect((strInput.element as HTMLInputElement).value).toBe('8')
+
+      // Enum field (type 3) renders a select whose value is the seeded class.
+      const classSelect = wrapper.find('#field-class')
+      expect(classSelect.exists()).toBe(true)
+      expect(classSelect.element.tagName).toBe('SELECT')
+      expect((classSelect.element as HTMLSelectElement).value).toBe('Wizard')
+
+      // Calculated field (type 8) renders a disabled input.
+      const calcInput = wrapper.find('#field-str_mod')
+      expect(calcInput.exists()).toBe(true)
+      expect(calcInput.attributes('disabled')).toBeDefined()
+    })
+  })
 })

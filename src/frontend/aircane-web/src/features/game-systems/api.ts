@@ -6,6 +6,7 @@ import type {
   StarterTemplate,
   FormDescriptor,
 } from './types'
+import { fieldTypeFromWire } from './types'
 
 // ---------------------------------------------------------------------------
 // API functions
@@ -86,7 +87,19 @@ export async function previewCharacterForm(gameSystemDefinitionId: string): Prom
     `/api/game-systems/${gameSystemDefinitionId}/preview-character-form`,
     {},
   )
-  return response.data
+  const data = response.data
+  // The endpoint serializes field types as integer enum values; normalize them to the
+  // string `FieldType` discriminants the renderer branches on.
+  return {
+    ...data,
+    sections: data.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) => ({
+        ...field,
+        type: fieldTypeFromWire(field.type),
+      })),
+    })),
+  }
 }
 
 /** Preview a dice roll for a game system definition. */

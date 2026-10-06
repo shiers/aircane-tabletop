@@ -279,7 +279,7 @@ function handleClose(): void {
     >
       <dialog
         open
-        class="m-0 w-full max-w-2xl rounded-xl border border-gray-700 bg-gray-900 p-0 shadow-2xl"
+        class="m-0 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-gray-700 bg-gray-900 p-0 shadow-2xl"
         aria-labelledby="import-modal-title"
         @click.stop
         @keydown.esc="handleClose"
@@ -327,7 +327,7 @@ function handleClose(): void {
         </div>
 
         <!-- Body -->
-        <div class="space-y-5 px-6 py-5">
+        <div class="flex-1 space-y-5 overflow-y-auto px-6 py-5">
           <!-- Review panel (shown after a successful import) -->
           <ImportReviewPanel
             v-if="showReview && importResponse"

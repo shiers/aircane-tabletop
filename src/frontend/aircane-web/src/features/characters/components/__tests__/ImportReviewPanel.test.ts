@@ -23,6 +23,9 @@ const descriptor: FormDescriptor = {
   ],
 }
 
+// previewCharacterForm is mocked to return INTEGER wire field types (0=text, 1=number),
+// mirroring the real preview-character-form wire shape, so this test also guards the
+// renderer's own normalization for a descriptor that reaches it un-normalized.
 vi.mock('@/features/game-systems/api', () => ({
   previewCharacterForm: vi.fn().mockResolvedValue({
     sections: [
@@ -30,14 +33,14 @@ vi.mock('@/features/game-systems/api', () => ({
         id: 'basics',
         label: 'Basics',
         fields: [
-          { id: 'name', type: 'text', label: 'Name', required: true },
-          { id: 'level', type: 'number', label: 'Level', required: true, min: 1, max: 20 },
+          { id: 'name', type: 0, label: 'Name', required: true },
+          { id: 'level', type: 1, label: 'Level', required: true, min: 1, max: 20 },
         ],
       },
       {
         id: 'abilities',
         label: 'Abilities',
-        fields: [{ id: 'str', type: 'number', label: 'Strength', required: false, min: 1, max: 30 }],
+        fields: [{ id: 'str', type: 1, label: 'Strength', required: false, min: 1, max: 30 }],
       },
     ],
   }),

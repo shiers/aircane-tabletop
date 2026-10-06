@@ -82,16 +82,16 @@ async function handleSubmit(): Promise<void> {
 <template>
   <section
     aria-labelledby="join-form-heading"
-    class="join-panel rounded-xl p-6"
+    class="join-panel rounded-xl p-6 pl-7"
     v-bg-asset="{ url: '/assets/join-session/join-session-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
   >
-    <h2 id="join-form-heading" class="mb-1 text-lg font-semibold text-white">
+    <h2 id="join-form-heading" class="mb-1 text-lg font-semibold text-white pl-10">
       Join Session
     </h2>
     <p v-if="sessionName" class="mb-5 text-sm text-gray-400">
       {{ sessionName }}
     </p>
-    <p v-else class="mb-5 text-sm text-gray-400">
+    <p v-else class="mb-5 text-sm text-gray-400 pl-10">
       Enter your display name and the invite code to join.
     </p>
 
@@ -122,7 +122,7 @@ async function handleSubmit(): Promise<void> {
       <div class="mb-4">
         <label
           for="join-display-name"
-          class="mb-1 block text-sm font-medium text-gray-300"
+          class="mb-1 block text-sm font-medium text-gray-300 pl-2"
         >
           Display Name <span class="text-red-400" aria-hidden="true">*</span>
         </label>
@@ -137,7 +137,7 @@ async function handleSubmit(): Promise<void> {
       <div class="mb-6">
         <label
           for="join-invite-code"
-          class="mb-1 block text-sm font-medium text-gray-300"
+          class="mb-1 block text-sm font-medium text-gray-300 pl-2"
         >
           Invite Code <span class="text-red-400" aria-hidden="true">*</span>
         </label>

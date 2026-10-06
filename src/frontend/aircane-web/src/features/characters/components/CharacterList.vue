@@ -22,7 +22,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'edit', character: CharacterDto): void
-  (e: 'view', character: CharacterDto): void
   (e: 'assign', character: CharacterDto, campaignId: string | null): void
 }>()
 
@@ -189,8 +188,8 @@ async function handleDelete(character: CharacterDto): Promise<void> {
             @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
           />
           <div class="card-stats">
-            <p class="card-name">{{ character.name }}</p>
-            <p class="card-meta">{{ parseRace(character) }} · {{ parseClass(character) }}</p>
+            <p class="card-name text-center">{{ character.name }}</p>
+            <p class="card-meta text-center">{{ parseRace(character) }} · {{ parseClass(character) }}</p>
             <div class="card-badges">
               <RoleBadge :role="role(character)" />
               <span class="level-pill">Lv {{ parseLevel(character) }}</span>
@@ -237,19 +236,11 @@ async function handleDelete(character: CharacterDto): Promise<void> {
         <!-- Actions -->
         <div class="card-actions">
           <button
-            :aria-label="`View ${character.name}`"
-            class="rounded px-2 py-1 text-xs font-medium text-gray-400 hover:bg-gray-800 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-            @click="emit('view', character)"
-          >
-            View
-          </button>
-
-          <button
             :aria-label="`Edit ${character.name}`"
             class="rounded px-2 py-1 text-xs font-medium text-blue-400 hover:bg-gray-800 hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
             @click="emit('edit', character)"
           >
-            Edit
+            View
           </button>
 
           <button
@@ -332,6 +323,7 @@ async function handleDelete(character: CharacterDto): Promise<void> {
   align-items: center;
   gap: 8px;
   margin-top: 2px;
+  justify-content: center;
 }
 
 .level-pill {

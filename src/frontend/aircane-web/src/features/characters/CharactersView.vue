@@ -233,7 +233,7 @@ async function handleImportCompleted(): Promise<void> {
     </section>
 
     <!-- Character list -->
-    <CharacterList @edit="openEditForm" @view="openEditForm" />
+    <CharacterList @edit="openEditForm" />
 
     <!-- Import character modal (Upload File / D&D Beyond URL tabs) -->
     <ImportCharacterModal

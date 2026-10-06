@@ -15,7 +15,7 @@ const signedModifier = (): string =>
 <template>
   <div
     class="ability-tile"
-    v-bg-asset="{ url: '/assets/characters/ability-score-tile.png', fallback: '#0d0d2a', size: '100% 100%' }"
+    v-bg-asset="{ url: '/assets/characters/character-card-frame.png', fallback: '#0d0d2a', size: '100% 100%' }"
   >
     <span class="abbr">{{ abbr }}</span>
     <span class="score">{{ score }}</span>

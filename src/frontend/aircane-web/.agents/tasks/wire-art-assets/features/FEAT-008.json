@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-008",
+  "type": "feat",
+  "description": "Adventure Forge view art + ModeToggle/ContentRatioSlider components (Phase 8) in src/features/adventure-generation/AdventureGenerateView.vue. Independent of other view FEATs; depends on FEAT-001 tokens.",
+  "status": "completed",
+  "steps": [
+    "Create src/features/adventure-generation/components/ModeToggle.vue, props { modelValue: 'solo' | 'group' }, emits update:modelValue, rendering 👤 Solo / 👥 Group with purple active styling. In the view, map between the component's 'solo'|'group' and the view's existing AdventureMode 'Solo'|'Group'.",
+    "Create src/features/adventure-generation/components/ContentRatioSlider.vue, props { combat: number; exploration: number; roleplay: number }, emits update:combat / update:exploration / update:roleplay (range sliders with icon+label+pct, purple accent). Preserve the view's auto-adjust-roleplay-to-100 and ratioValid behavior.",
+    "Add __tests__/ModeToggle.test.ts (clicking a mode emits update:modelValue) and ContentRatioSlider.test.ts (moving a slider emits the right update event).",
+    "In AdventureGenerateView.vue apply /assets/adventure-forge/adventure-forge-background.png as the page background, adventure-forge-hero-banner.png as the hero, and adventure-forge-panel-background.png on the generation form panel.",
+    "Apply the field arts with the real <select>/<input> made transparent and positioned over the image, labels overlaid (background-size:100% 100%): tone-dropdown-art.png->Tone, length-dropdown-art.png->Length, difficulty-dropdown-art.png->Difficulty, setting-field-art.png->Setting text input (all /assets/adventure-forge/).",
+    "Apply /assets/adventure-forge/generate-adventure-button-art.png as the submit button background (background-size:100% 100%) with 'Generate Adventure' as large white bold text centred over the right 60%.",
+    "Replace the mode radios with ModeToggle and the three ratio sliders with ContentRatioSlider, keeping the ratioValid submit gating and request shape intact."
+  ],
+  "acceptance_criteria": [
+    "ModeToggle and ContentRatioSlider exist with the specified props/emits and their tests pass; solo/group<->Solo/Group mapping works.",
+    "Forge page bg, hero, form panel, 4 field arts (transparent real control over image), and Generate button art are wired via absolute /assets/adventure-forge/... paths.",
+    "`npm run build` succeeds and `npm test` passes."
+  ],
+  "verification": [
+    "cd src/frontend/aircane-web && npm run build",
+    "cd src/frontend/aircane-web && npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "Created ModeToggle.vue (props { modelValue: 'solo'|'group', disabled? }, emits update:modelValue; 👤 Solo / 👥 Group buttons with purple active styling + glow) and ContentRatioSlider.vue (props { combat, exploration, roleplay, disabled? }, emits update:combat/exploration/roleplay; icon+label+pct range sliders, aircane purple accent). The view keeps combatRatio/explorationRatio refs with the existing watch([combat,exploration], adjustRoleplay) so roleplay still auto-adjusts to 100 and ratioValid still gates submit. Mode mapping done via a get/set computed (toggleMode) bridging the component's 'solo'|'group' to the view's/API 'Solo'|'Group'; party-size visibility and request shape unchanged. Co-located __tests__ added for both components (click emits mode; slider move emits the matching update event). Wired forge art with absolute /assets/adventure-forge/... paths: page background (bg-cover bg-fixed), hero banner, panel background (bg-cover bg-left-top), tone/length/difficulty select arts and setting input art as background-size:100% 100% with the real control made transparent (.field-art-control) over the image and labels overlaid, and generate-adventure-button-art.png as the submit background (background-size:100% 100%) with 'Generate Adventure' bold white text centred over the right ~60% (padding-right:20% + justify-end). No extra CSS borders added over button/field art. Verified from the frontend dir: npm run build succeeds (0 type errors) and npm test passes (37 files / 287 tests, up from 249 baseline)."
+}

@@ -108,6 +108,44 @@ export type FieldType =
   | 'calculated'
   | 'grouped'
 
+/**
+ * Integer-indexed field-type order matching the backend `Aircane.Domain.Enums.CharacterFieldType`
+ * enum. The `preview-character-form` endpoint serializes field types as their numeric enum value
+ * (no `JsonStringEnumConverter`), so field types arrive over the wire as integers `0–9`. This array
+ * is the single source of truth for mapping those integers back to the TS `FieldType` discriminants.
+ */
+export const WIRE_FIELD_TYPE_ORDER: FieldType[] = [
+  'text', // 0 = Text
+  'number', // 1 = Number
+  'boolean', // 2 = Boolean
+  'enum', // 3 = Enum
+  'dice_expression', // 4 = DiceExpression
+  'list', // 5 = List
+  'repeating', // 6 = Repeating
+  'resource_pool', // 7 = ResourcePool
+  'calculated', // 8 = Calculated
+  'grouped', // 9 = Grouped
+]
+
+const FIELD_TYPE_SET = new Set<string>(WIRE_FIELD_TYPE_ORDER)
+
+/**
+ * Normalize a wire field-type value to a `FieldType` string discriminant.
+ * - A value that is already a valid `FieldType` string passes through unchanged.
+ * - A finite integer `0–9` maps through {@link WIRE_FIELD_TYPE_ORDER}.
+ * - Anything else falls back to `'text'` so an unknown field still renders an input
+ *   instead of vanishing.
+ */
+export function fieldTypeFromWire(raw: unknown): FieldType {
+  if (typeof raw === 'string' && FIELD_TYPE_SET.has(raw)) {
+    return raw as FieldType
+  }
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 && raw < WIRE_FIELD_TYPE_ORDER.length) {
+    return WIRE_FIELD_TYPE_ORDER[raw]
+  }
+  return 'text'
+}
+
 export interface SchemaField {
   id: string
   type: FieldType
@@ -158,6 +196,34 @@ export interface FormField {
   maxField?: string | null
   visibleWhen?: VisibilityCondition | null
   itemSchema?: Record<string, string> | null
+}
+
+// ---------------------------------------------------------------------------
+// Wire-shaped character-form types
+// ---------------------------------------------------------------------------
+//
+// The `preview-character-form` endpoint serializes `CharacterFieldType` as its numeric enum value
+// (no `JsonStringEnumConverter`), so on the wire `type` arrives as an integer `0–9`, not a
+// `FieldType` string. These types describe that raw payload honestly so the normalization boundary
+// in `previewCharacterForm` is typed: `fieldTypeFromWire` consumes `WireFormField.type` and the
+// function returns a fully-normalized `FormDescriptor`. Declaring `type` as `FieldType | number`
+// means a future direct string-literal comparison against a raw wire field is a compile error,
+// which is exactly the footgun that produced the original empty-render bug.
+
+export interface WireFormDescriptor {
+  sections: WireFormSection[]
+}
+
+export interface WireFormSection {
+  id: string
+  label: string
+  fields: WireFormField[]
+  visibleWhen?: VisibilityCondition | null
+}
+
+export interface WireFormField extends Omit<FormField, 'type'> {
+  /** Field type as delivered by the API: an integer enum value, or a string if the server ever adds `JsonStringEnumConverter`. */
+  type: FieldType | number
 }
 
 // ---------------------------------------------------------------------------

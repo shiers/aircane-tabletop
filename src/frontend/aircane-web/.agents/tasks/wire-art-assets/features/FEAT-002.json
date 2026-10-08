@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Dashboard view art (Phase 2) in src/views/HomeView.vue: hero banner + welcome banner overlay, 6 feature-card thumbnails, quick-action card art, panel-header art, New Campaign button art, footer quote ornament. Independent of other view FEATs; depends on FEAT-001 tokens.",
+  "status": "completed",
+  "steps": [
+    "In src/views/HomeView.vue add a full-width hero using /assets/dashboard/dashboard-hero-background.png, overlay /assets/dashboard/dashboard-welcome-banner.png on the left 55%, and position the existing 'Welcome back, Dungeon Master' heading over the right portion in white with a subtle text-shadow.",
+    "Add a thumbnail (width:100%; height:160px; object-fit:cover; border-radius:8px 8px 0 0) to each of the 6 feature cards, mapping by features[].icon/title: document-library-thumbnail.png->Document Library, campaign-management-thumbnail.png->Campaign Management, character-sheets-thumbnail.png->Character Sheets, dice-roller-thumbnail.png->Dice Roller, ai-dm-runtime-thumbnail.png->AI DM Runtime, adventure-generation-thumbnail.png->Adventure Generation (all under /assets/dashboard/).",
+    "Apply the 4 quick-action card arts (quick-action-start-ai-dm-card/import-documents-card/create-character-card/roll-dice-card.png) as background-image (background-size:cover) on the four quick-action RouterLinks, with label text positioned over the right 70%.",
+    "Add two panel headers using quick-actions-panel-art.png and recent-campaigns-panel-art.png as background-image with heading text overlaid over the right 75% (introduce the panel sections if not present, keeping existing links/content).",
+    "Apply /assets/dashboard/new-campaign-button-art.png as background-image (background-size:100% 100%) on the New Campaign button, text overlaid.",
+    "Add a footer area with /assets/dashboard/footer-quote-ornament.png and the italic quote: Great stories aren't just imagined. They're played."
+  ],
+  "acceptance_criteria": [
+    "HomeView renders the hero with welcome banner overlay and all 6 feature thumbnails via absolute /assets/dashboard/... paths.",
+    "Quick-action cards, panel headers, New Campaign button, and footer ornament are wired with the specified background-size rules.",
+    "No CSS border added on top of button art.",
+    "`npm run build` succeeds and `npm test` passes."
+  ],
+  "verification": [
+    "cd src/frontend/aircane-web && npm run build",
+    "cd src/frontend/aircane-web && npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "Wired all Phase 2 dashboard art into src/views/HomeView.vue using absolute /assets/dashboard/... paths. Hero: dashboard-hero-background.png full-width (background-size:cover), dashboard-welcome-banner.png overlaid left 55% (absolute positioned, inset right 45%), heading 'Welcome back, Dungeon Master' over right portion in white with text-shadow. 6 feature-card thumbnails added as <img> (width:100%;height:160px;object-fit:cover;border-radius:8px 8px 0 0) mapped by feature title. 4 quick-action card arts applied as inline background-image (background-size:cover) with label text centered over right 70%. Two panel headers (quick-actions-panel-art.png, recent-campaigns-panel-art.png) as background-size:cover + background-position:left center with heading overlaid over right 75%. new-campaign-button-art.png on New Campaign button with background-size:100% 100% (no CSS border added). Footer: footer-quote-ornament.png with the italic quote 'Great stories aren't just imagined. They're played.' overlaid. All 16 dashboard assets confirmed present. Verified: npm run build succeeds (0 type errors); npm test passes 251 tests across 27 files. No existing HomeView test exists; no new test required by FEAT-002 steps (art wiring only, no new component). Backend untouched."
+}

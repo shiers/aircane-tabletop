@@ -41,23 +41,31 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl space-y-6">
-    <!-- Page header -->
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold text-white">Campaigns</h1>
+  <div class="page-sections">
+    <!-- Hero banner -->
+    <section
+      class="app-hero"
+      v-bg-asset="{ url: '/assets/campaigns/campaigns-hero-background.png', fallback: '#0d0d2a' }"
+    >
+      <div class="app-hero__overlay">
+        <h1 class="app-hero__title">Campaigns</h1>
+        <p class="app-hero__subtitle">Create, manage, and jump back into your adventures.</p>
+      </div>
+    </section>
+
+    <!-- Page header (New Campaign action; heading lives above the card list) -->
+    <div class="flex items-center justify-end">
       <button
         v-if="!showForm"
-        class="btn-primary"
+        class="new-campaign-button"
+        v-bg-asset="{ url: '/assets/dashboard/new-campaign-button-art.png', fallback: 'transparent', size: '100% 100%' }"
         @click="openCreateForm"
       >
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        New Campaign
+        <span class="new-campaign-label">+ New Campaign</span>
       </button>
     </div>
 
-    <div class="space-y-6">
+    <div class="page-sections">
       <!-- Global error banner -->
       <div
         v-if="store.error"
@@ -97,8 +105,131 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
         />
       </section>
 
+      <!-- Campaign overview + recent sessions panels -->
+      <div v-if="!showForm" class="grid gap-6 lg:grid-cols-2">
+        <section
+          class="panel panel--overview"
+          aria-labelledby="campaign-overview-heading"
+          v-bg-asset="{ url: '/assets/campaigns/campaign-overview-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+        >
+          <div class="panel-body">
+            <h2 id="campaign-overview-heading" class="panel-title">Campaign Overview</h2>
+            <p class="panel-text">Pick up where you left off in your most recent adventure.</p>
+            <button
+              type="button"
+              class="continue-button"
+              v-bg-asset="{ url: '/assets/campaigns/continue-button-art.png', fallback: 'transparent', size: '100% 100%' }"
+              @click="store.fetchCampaigns"
+            >
+              <span class="continue-label">Continue</span>
+            </button>
+          </div>
+        </section>
+
+        <section
+          class="panel panel--sessions"
+          aria-labelledby="recent-sessions-heading"
+          v-bg-asset="{ url: '/assets/campaigns/recent-sessions-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+        >
+          <div class="panel-body">
+            <h2 id="recent-sessions-heading" class="panel-title">Recent Sessions</h2>
+            <p class="panel-text">Your latest play sessions appear here as you run them.</p>
+          </div>
+        </section>
+      </div>
+
       <!-- Campaign list -->
       <CampaignList @edit="openEditForm" />
     </div>
   </div>
 </template>
+
+<style scoped>
+/* New Campaign button — same art + dimensions as the Dashboard button
+   (HomeView `.new-campaign-button`). Art-independent CSS base keeps it usable
+   if the art fails to load. */
+.new-campaign-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+  min-height: 44px;
+  padding: 0 1.25rem;
+  border-radius: var(--border-radius-md);
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
+  background-repeat: no-repeat;
+  transition: box-shadow 0.2s ease;
+}
+
+.new-campaign-button:hover {
+  box-shadow: var(--glow-purple);
+}
+
+.new-campaign-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Panel art sections (background-size: cover; background-position: left center) */
+.panel {
+  position: relative;
+  min-height: 160px;
+  border-radius: var(--border-radius-md);
+  border: var(--border-gold);
+  background-size: cover;
+  background-position: left center;
+  background-repeat: no-repeat;
+}
+
+/* Content overlaid over the right 50% */
+.panel-body {
+  margin-left: 50%;
+  padding: 1.25rem 1.25rem 1.25rem 0.75rem;
+}
+
+.panel-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.panel-text {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: #e5e7eb;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Continue button — art-independent CSS base so it is always clickable. */
+.continue-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  min-height: 40px;
+  margin-top: 0.75rem;
+  padding: 0 1.25rem;
+  border-radius: var(--border-radius-md);
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
+  background-repeat: no-repeat;
+  transition: box-shadow 0.2s ease;
+}
+
+.continue-button:hover {
+  box-shadow: var(--glow-purple);
+}
+
+.continue-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+</style>

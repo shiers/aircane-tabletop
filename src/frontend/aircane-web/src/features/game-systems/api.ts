@@ -4,7 +4,10 @@ import type {
   GameSystemDefinitionDetail,
   ValidationResult,
   StarterTemplate,
+  FormDescriptor,
+  WireFormDescriptor,
 } from './types'
+import { fieldTypeFromWire } from './types'
 
 // ---------------------------------------------------------------------------
 // API functions
@@ -74,6 +77,30 @@ export async function validateGameSystem(definitionJson: string): Promise<Valida
 export async function listTemplates(): Promise<StarterTemplate[]> {
   const response = await apiClient.get<StarterTemplate[]>('/api/game-systems/templates')
   return response.data
+}
+
+/**
+ * Preview the character-sheet form descriptor for a game system definition. Used by the import
+ * review panel to render the bound system's form (labels/sections/field types).
+ */
+export async function previewCharacterForm(gameSystemDefinitionId: string): Promise<FormDescriptor> {
+  const response = await apiClient.post<WireFormDescriptor>(
+    `/api/game-systems/${gameSystemDefinitionId}/preview-character-form`,
+    {},
+  )
+  const data = response.data
+  // The endpoint serializes field types as integer enum values; normalize them to the
+  // string `FieldType` discriminants the renderer branches on.
+  return {
+    ...data,
+    sections: data.sections.map((section) => ({
+      ...section,
+      fields: section.fields.map((field) => ({
+        ...field,
+        type: fieldTypeFromWire(field.type),
+      })),
+    })),
+  }
 }
 
 /** Preview a dice roll for a game system definition. */

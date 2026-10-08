@@ -1,0 +1,27 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Campaigns view art + StatusBadge/FilterPill components (Phase 3). Independent of other view FEATs; depends on FEAT-001 tokens.",
+  "status": "completed",
+  "steps": [
+    "Create src/features/campaigns/components/StatusBadge.vue, props { status: 'active' | 'paused' | 'ended' }: active=green dot/text, paused=amber with a ⏸ glyph, ended=neutral dot. Use tokens for colours/glows.",
+    "Create src/features/campaigns/components/FilterPill.vue, props { label: string; count?: number; active?: boolean }, emits { click: [] }: ⊞ grid icon, label, a count pill, and purple glow (var(--glow-purple)) + purple border when active.",
+    "Add src/features/campaigns/components/__tests__/StatusBadge.test.ts and FilterPill.test.ts: mount each, assert state classes/text and (FilterPill) that clicking emits 'click'.",
+    "In src/features/campaigns/CampaignsView.vue add a full-width hero using /assets/campaigns/campaigns-hero-background.png.",
+    "In CampaignsView.vue / components/CampaignList.vue apply placeholder card thumbnails rotating by campaign index % 4 across campaign-card-shadow-vale/ironport/duskkeep/whispers-hollow-thumbnail.png (under /assets/campaigns/), ONLY where no user-uploaded thumbnail exists.",
+    "Apply campaign-overview-panel-art.png and recent-sessions-panel-art.png as section backgrounds (background-size:cover; background-position:left center) with heading text over the right 50% (add these sections if absent, keeping existing list/form behavior).",
+    "Apply /assets/campaigns/continue-button-art.png (background-size:100% 100%) on any Continue button, and add an empty-state using campaign-empty-state-ornament.png centred with 'No campaigns yet' below when the list is empty.",
+    "Use StatusBadge where a campaign status is shown and FilterPill where filter controls exist (add minimally if not present, without breaking existing behavior)."
+  ],
+  "acceptance_criteria": [
+    "StatusBadge and FilterPill exist with the specified props/emits and their tests pass.",
+    "Campaigns hero, placeholder thumbnails (index % 4), panel art, continue button art, and empty state are wired via absolute /assets/campaigns/... paths.",
+    "`npm run build` succeeds and `npm test` passes."
+  ],
+  "verification": [
+    "cd src/frontend/aircane-web && npm run build",
+    "cd src/frontend/aircane-web && npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented StatusBadge.vue (active=green dot, paused=amber ⏸ glyph, ended=neutral dot) and FilterPill.vue (⊞ icon, label, optional count pill, purple glow + purple border via --glow-purple when active, emits 'click'), both using tokens from tokens.css, with co-located tests (StatusBadge 3 tests, FilterPill 4 tests). CampaignsView.vue got the campaigns-hero-background.png full-width hero, plus Campaign Overview (campaign-overview-panel-art.png) and Recent Sessions (recent-sessions-panel-art.png) panels (background-size:cover; background-position:left center) with heading/body text over the right 50%, and a Continue button using continue-button-art.png (background-size:100% 100%, no extra border). CampaignList.vue rotates the 4 campaign-card-*-thumbnail.png placeholders by index%4 as a 40x40 thumbnail per row, shows StatusBadge per campaign, adds a FilterPill status filter row (All/Active/Paused with counts), and uses campaign-empty-state-ornament.png centred with 'No campaigns yet' for the empty state. All asset refs use absolute /assets/campaigns/... paths. NOTE: CampaignDto has no explicit status or user-thumbnail field, so display status is derived (activeAdventureId present => active, else paused) and placeholder thumbnails are always used (no user-uploaded thumbnail slot exists yet); existing store/data flow, edit/delete emits, and aria attributes left intact. Verified from src/frontend/aircane-web: `npm run build` succeeds (0 type errors) and `npm test` passes 258/258 (up from 249 baseline; +9 new component tests)."
+}

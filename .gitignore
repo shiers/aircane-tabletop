@@ -109,6 +109,10 @@ desktop/src-tauri/binaries/*
 # The pinned cloudflared version + checksum manifest IS tracked (used to verify the
 # binary fetched at build time). The binaries themselves stay ignored.
 !desktop/src-tauri/binaries/cloudflared-versions.json
+# The pinned OCR asset version + checksum manifest IS tracked (used to verify the
+# tessdata model + optional native libs fetched at build time). The fetched
+# tessdata/* and ocr-native/* binaries themselves stay ignored under binaries/*.
+!desktop/src-tauri/binaries/ocr-assets-versions.json
 # Generated Tauri gen/ (schemas, Android/iOS scaffolding) — recreated by the CLI.
 desktop/src-tauri/gen/
 # Vendored at build time from the frontend's qrcode dependency (next to the
@@ -121,9 +125,24 @@ src/frontend/aircane-web/dist/desktop/qrcode.min.js
 # ============================================================
 .kiro/
 
+# Agent workflow scaffolding (task tracking, design notes, review verdicts)
+# and transient git worktrees — never commit these.
+.agents/
+.worktrees/
+
 # ============================================================
 # Misc
 # ============================================================
 *.bak
 *.tmp
 *.log
+
+# ============================================================
+# OCR local tuning artifacts (privacy — NFR-4)
+# ============================================================
+# The owner-supplied DnD Beyond character PDF is a LOCAL tuning artifact only.
+# It carries real personal data and must NEVER be committed, copied into a
+# tracked fixtures dir, or asserted on. Committed OCR fixtures are synthetic.
+sshiers_6285266.pdf
+# Local real-PDF OCR tuning findings (DPI/PSM only, no personal values) stay local.
+verification-ocr.md

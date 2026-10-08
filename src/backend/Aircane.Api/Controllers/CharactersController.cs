@@ -1,6 +1,9 @@
+using System.Text;
+using System.Text.Json;
 using Aircane.Api.Authorization;
 using Aircane.Application.Abstractions;
 using Aircane.Application.Characters;
+using Aircane.Application.Characters.Import;
 using Aircane.Application.DTOs.Characters;
 using Aircane.Application.GameSystems;
 using Microsoft.AspNetCore.Authorization;
@@ -17,10 +20,16 @@ namespace Aircane.Api.Controllers;
 [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
 public sealed class CharactersController : ControllerBase
 {
+    /// <summary>Maximum size, in bytes, accepted on the source-adapter import path.</summary>
+    private const int MaxAdapterPayloadBytes = 2 * 1024 * 1024;
+
     private readonly ICharacterService _characters;
     private readonly IPdfCharacterExtractor _pdfExtractor;
     private readonly ISystemRegistry _registry;
     private readonly ICharacterSchemaEngine _schemaEngine;
+    private readonly CharacterFormatDetector _formatDetector;
+    private readonly IReadOnlyList<ICharacterSourceMapper> _sourceMappers;
+    private readonly IDndBeyondUrlImportService _dndBeyondUrlImport;
     private readonly ILogger<CharactersController> _logger;
 
     public CharactersController(
@@ -28,12 +37,18 @@ public sealed class CharactersController : ControllerBase
         IPdfCharacterExtractor pdfExtractor,
         ISystemRegistry registry,
         ICharacterSchemaEngine schemaEngine,
+        CharacterFormatDetector formatDetector,
+        IEnumerable<ICharacterSourceMapper> sourceMappers,
+        IDndBeyondUrlImportService dndBeyondUrlImport,
         ILogger<CharactersController> logger)
     {
         _characters = characters;
         _pdfExtractor = pdfExtractor;
         _registry = registry;
         _schemaEngine = schemaEngine;
+        _formatDetector = formatDetector;
+        _sourceMappers = sourceMappers.ToList();
+        _dndBeyondUrlImport = dndBeyondUrlImport;
         _logger = logger;
     }
 
@@ -45,12 +60,16 @@ public sealed class CharactersController : ControllerBase
     /// </summary>
     [HttpPost("import")]
     [ProducesResponseType(typeof(CharacterDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(SourceImportResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(CharacterImportResult), StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ImportCharacter(
         [FromBody] ImportCharacterJsonRequest request,
+        [FromQuery] string? source,
+        [FromQuery] Guid? gameSystemDefinitionId,
         CancellationToken cancellationToken)
     {
+        // (1) canonicalJson is required on every path (the raw source text lives here for adapters).
         if (string.IsNullOrWhiteSpace(request.CanonicalJson))
             return BadRequest(new ProblemDetails
             {
@@ -59,6 +78,29 @@ public sealed class CharactersController : ControllerBase
                 Status = StatusCodes.Status400BadRequest,
             });
 
+        // (2) Routing: the LEGACY branch is used only when no source was supplied AND the caller
+        //     provided a gameSystem/ruleset (the historical canonical-JSON import contract). The
+        //     ADAPTER branch is used when a source is given, OR when BOTH gameSystem and ruleset
+        //     are absent (a raw Pathbuilder/Foundry/Roll20 upload).
+        var legacyShaped = string.IsNullOrWhiteSpace(source) &&
+                           (!string.IsNullOrWhiteSpace(request.GameSystem) ||
+                            !string.IsNullOrWhiteSpace(request.Ruleset));
+
+        if (legacyShaped)
+            return await ImportCharacterLegacyAsync(request, cancellationToken);
+
+        return await ImportCharacterViaAdapterAsync(
+            request, source, gameSystemDefinitionId ?? request.GameSystemDefinitionId, cancellationToken);
+    }
+
+    /// <summary>
+    /// The historical canonical-JSON import branch. Behaviour is byte-for-byte identical to the
+    /// pre-adapter endpoint, including every legacy 400 guard.
+    /// </summary>
+    private async Task<IActionResult> ImportCharacterLegacyAsync(
+        ImportCharacterJsonRequest request,
+        CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(request.GameSystem))
             return BadRequest(new ProblemDetails
             {
@@ -109,6 +151,399 @@ public sealed class CharactersController : ControllerBase
         }
 
         return CreatedAtAction(nameof(GetCharacter), new { id = result.Character!.Id }, result.Character);
+    }
+
+    /// <summary>
+    /// The source-adapter import branch: detect (or pin) the source format, map the raw JSON to a
+    /// draft <see cref="CanonicalCharacter"/>, persist the draft, and return the review envelope.
+    /// </summary>
+    private async Task<IActionResult> ImportCharacterViaAdapterAsync(
+        ImportCharacterJsonRequest request,
+        string? source,
+        Guid? gameSystemDefinitionId,
+        CancellationToken cancellationToken)
+    {
+        // (3) Enforce the size cap before parsing (controller-constructed; body never echoed).
+        if (Encoding.UTF8.GetByteCount(request.CanonicalJson) > MaxAdapterPayloadBytes)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Payload too large",
+                Detail = "Character JSON exceeds the 2 MB limit.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(request.CanonicalJson);
+        }
+        catch (JsonException)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Malformed JSON",
+                Detail = "The uploaded character JSON could not be parsed.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+
+        using (doc)
+        {
+            // (4) Resolve the mapper: pin by source if supplied, else detect.
+            CharacterImportSource detectedSource;
+            ICharacterSourceMapper? mapper;
+            if (!string.IsNullOrWhiteSpace(source))
+            {
+                if (!Enum.TryParse<CharacterImportSource>(source, ignoreCase: true, out var pinned) ||
+                    pinned == CharacterImportSource.Unknown)
+                {
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Validation failed",
+                        Detail = "Unknown import source.",
+                        Status = StatusCodes.Status400BadRequest,
+                    });
+                }
+
+                mapper = _sourceMappers.FirstOrDefault(m => m.Source == pinned);
+                if (mapper is null)
+                {
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Validation failed",
+                        Detail = "Unknown import source.",
+                        Status = StatusCodes.Status400BadRequest,
+                    });
+                }
+
+                detectedSource = pinned;
+            }
+            else
+            {
+                (detectedSource, mapper) = _formatDetector.Detect(doc);
+            }
+
+            // (5) Unknown / no mapper → prompt the user to pick a source. Persist nothing.
+            if (mapper is null)
+                return Ok(EmptySourceConfirmation(CharacterImportSource.Unknown));
+
+            // (6) Resolve the game system.
+            Guid resolvedDefinitionId;
+            string gameSystemName;
+            var forcedIdentifier = ForcedIdentifier(detectedSource);
+            if (forcedIdentifier is not null)
+            {
+                var summary = await ResolveBuiltInSystemAsync(forcedIdentifier, cancellationToken);
+                if (summary is null)
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Validation failed",
+                        Detail = "The required built-in game system is not installed.",
+                        Status = StatusCodes.Status400BadRequest,
+                    });
+
+                resolvedDefinitionId = summary.Id;
+                gameSystemName = summary.Name;
+            }
+            else if (gameSystemDefinitionId.HasValue)
+            {
+                GameSystemDefinitionSummary? summary;
+                try
+                {
+                    var definition = await _registry.GetByIdAsync(gameSystemDefinitionId.Value, cancellationToken);
+                    summary = new GameSystemDefinitionSummary { Id = definition.Id, Name = definition.Name };
+                }
+                catch (KeyNotFoundException)
+                {
+                    summary = null;
+                }
+
+                if (summary is null)
+                    return BadRequest(new ProblemDetails
+                    {
+                        Title = "Validation failed",
+                        Detail = "The specified game system is not installed.",
+                        Status = StatusCodes.Status400BadRequest,
+                    });
+
+                resolvedDefinitionId = summary.Id;
+                gameSystemName = summary.Name;
+            }
+            else
+            {
+                // Roll20 / Generic imply no system and none was supplied: ask the user to pick one.
+                return Ok(new SourceImportResponse(
+                    DetectedSource: detectedSource.ToString(),
+                    Confidence: "low",
+                    RequiresSourceConfirmation: true,
+                    Ruleset: null,
+                    RulesetRequiresConfirmation: false,
+                    Review: new CharacterFieldReviewDto(
+                        CharacterId: Guid.Empty,
+                        ReviewRequired: true,
+                        UnmappedFields: [],
+                        Warnings: [])
+                    {
+                        RequiresGameSystemSelection = true,
+                    }));
+            }
+
+            // (7) Map, persist, and build the review envelope.
+            SourceMapResult mapResult;
+            try
+            {
+                mapResult = mapper.Map(doc);
+            }
+            catch (Exception ex)
+            {
+                // Mappers are contractually non-throwing; guard anyway and surface as review-needed.
+                _logger.LogError(ex, "Unexpected error while mapping imported character from {Source}.", detectedSource);
+                return Ok(EmptySourceConfirmation(detectedSource));
+            }
+
+            var ruleset = mapResult.Ruleset ?? "2014";
+            var persistWarnings = new List<string>();
+
+            PersistedDraft persisted;
+            try
+            {
+                persisted = await PersistDraftFromCanonicalAsync(
+                    mapResult.Character,
+                    gameSystemName,
+                    ruleset,
+                    request.CampaignId,
+                    request.OriginalFileName,
+                    persistWarnings,
+                    cancellationToken);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogError(ex, "Adapter import could not persist a draft for {Source}.", detectedSource);
+                var problem = new ProblemDetails
+                {
+                    Title = "Import failed",
+                    Detail = "Import failed: " + ex.Message,
+                    Status = StatusCodes.Status400BadRequest,
+                };
+                problem.Extensions["errors"] = ParseValidationErrors(ex.Message);
+                return BadRequest(problem);
+            }
+
+            var draft = persisted.Draft;
+            var review = BuildSourceReview(
+                mapResult, draft.Id, resolvedDefinitionId, persistWarnings, persisted.SanitizerReviewPaths);
+
+            var confidence = mapResult.Confidence == ImportConfidence.High ? "high" : "low";
+            return Ok(new SourceImportResponse(
+                DetectedSource: detectedSource.ToString(),
+                Confidence: confidence,
+                RequiresSourceConfirmation: mapResult.Confidence == ImportConfidence.Low,
+                Ruleset: mapResult.Ruleset,
+                RulesetRequiresConfirmation: mapResult.RulesetRequiresConfirmation,
+                Review: review));
+        }
+    }
+
+    /// <summary>Builds the "please pick a source" response with an empty-but-valid review payload.</summary>
+    private static SourceImportResponse EmptySourceConfirmation(CharacterImportSource detectedSource) =>
+        new(
+            DetectedSource: detectedSource.ToString(),
+            Confidence: "low",
+            RequiresSourceConfirmation: true,
+            Ruleset: null,
+            RulesetRequiresConfirmation: false,
+            Review: new CharacterFieldReviewDto(
+                CharacterId: Guid.Empty,
+                ReviewRequired: true,
+                UnmappedFields: [],
+                Warnings: []));
+
+    /// <summary>Returns the forced built-in system identifier for a source, or null when none applies.</summary>
+    private static string? ForcedIdentifier(CharacterImportSource source) => source switch
+    {
+        CharacterImportSource.PathbuilderTwo or CharacterImportSource.FoundryPf2e => "pathfinder-2e-remaster",
+        CharacterImportSource.DndBeyondApi or CharacterImportSource.DndBeyondCompanion or
+            CharacterImportSource.FoundryDnd5e => "dnd-5e-2014",
+        _ => null,
+    };
+
+    /// <summary>Resolves a built-in game system definition summary by its identifier via the registry.</summary>
+    private async Task<GameSystemDefinitionSummary?> ResolveBuiltInSystemAsync(
+        string identifier,
+        CancellationToken cancellationToken)
+    {
+        var systems = await _registry.ListAsync(cancellationToken);
+        return systems.FirstOrDefault(s =>
+            string.Equals(s.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Imports a character from a D&amp;D Beyond character URL (or bare numeric id) via the
+    /// unofficial character-service API. Returns 200 with a <see cref="SourceImportResponse"/>
+    /// review envelope on success. Returns 422 for user-correctable upstream failures (private
+    /// sheet, not found, timeout, upstream error) and 400 for an unparseable URL. The character URL
+    /// is never stored or logged.
+    /// </summary>
+    [HttpPost("import/dndbeyond-url")]
+    [ProducesResponseType(typeof(SourceImportResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> ImportCharacterFromDndBeyondUrl(
+        [FromBody] DndBeyondUrlImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.CharacterUrl))
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation failed",
+                Detail = "Enter a valid D&D Beyond character URL or ID.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+
+        string rawJson;
+        try
+        {
+            rawJson = await _dndBeyondUrlImport.FetchAsync(request.CharacterUrl, cancellationToken);
+        }
+        catch (DndBeyondImportException ex)
+        {
+            return MapDndBeyondFailure(ex);
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(rawJson);
+        }
+        catch (JsonException)
+        {
+            // The upstream returned something unparseable; surface as an upstream failure (never
+            // echo the body).
+            return UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "D&D Beyond import failed. Use the PDF export option instead.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            });
+        }
+
+        using (doc)
+        {
+            var mapper = _sourceMappers.FirstOrDefault(m => m.Source == CharacterImportSource.DndBeyondApi);
+            if (mapper is null)
+                return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+                {
+                    Title = "Import failed",
+                    Detail = "The D&D Beyond import mapper is not available.",
+                    Status = StatusCodes.Status500InternalServerError,
+                });
+
+            // D&D Beyond always forces the built-in D&D 5e 2014 system.
+            var summary = await ResolveBuiltInSystemAsync("dnd-5e-2014", cancellationToken);
+            if (summary is null)
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Validation failed",
+                    Detail = "The required built-in game system is not installed.",
+                    Status = StatusCodes.Status400BadRequest,
+                });
+
+            SourceMapResult mapResult;
+            try
+            {
+                mapResult = mapper.Map(doc);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error while mapping a D&D Beyond URL import.");
+                return UnprocessableEntity(new ProblemDetails
+                {
+                    Title = "Import failed",
+                    Detail = "D&D Beyond import failed. Use the PDF export option instead.",
+                    Status = StatusCodes.Status422UnprocessableEntity,
+                });
+            }
+
+            var ruleset = mapResult.Ruleset ?? "2014";
+            var persistWarnings = new List<string>();
+
+            PersistedDraft persisted;
+            try
+            {
+                persisted = await PersistDraftFromCanonicalAsync(
+                    mapResult.Character,
+                    summary.Name,
+                    ruleset,
+                    request.CampaignId,
+                    originalFileName: null,
+                    persistWarnings,
+                    cancellationToken);
+            }
+            catch (ArgumentException ex)
+            {
+                // The URL is never part of the exception message (it names fields + ranges only),
+                // so logging it at Error keeps the no-URL-in-logs guarantee intact.
+                _logger.LogError(ex, "D&D Beyond URL import could not persist a draft.");
+                var problem = new ProblemDetails
+                {
+                    Title = "Import failed",
+                    Detail = "Import failed: " + ex.Message,
+                    Status = StatusCodes.Status400BadRequest,
+                };
+                problem.Extensions["errors"] = ParseValidationErrors(ex.Message);
+                return BadRequest(problem);
+            }
+
+            var draft = persisted.Draft;
+            var review = BuildSourceReview(
+                mapResult, draft.Id, summary.Id, persistWarnings, persisted.SanitizerReviewPaths);
+
+            return Ok(new SourceImportResponse(
+                DetectedSource: CharacterImportSource.DndBeyondApi.ToString(),
+                Confidence: mapResult.Confidence == ImportConfidence.High ? "high" : "low",
+                RequiresSourceConfirmation: mapResult.Confidence == ImportConfidence.Low,
+                Ruleset: mapResult.Ruleset,
+                RulesetRequiresConfirmation: mapResult.RulesetRequiresConfirmation,
+                Review: review));
+        }
+    }
+
+    /// <summary>Maps a <see cref="DndBeyondImportException"/> to the brief's exact status + message.</summary>
+    private IActionResult MapDndBeyondFailure(DndBeyondImportException ex)
+    {
+        return ex.StatusKind switch
+        {
+            DndBeyondImportStatusKind.Private403 => UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "This character is private. Make your character sheet public on D&D Beyond to import it.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            }),
+            DndBeyondImportStatusKind.NotFound404 => UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "Character not found. Check the URL and try again.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            }),
+            DndBeyondImportStatusKind.Timeout => UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "D&D Beyond is not responding. Try again later.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            }),
+            DndBeyondImportStatusKind.InvalidUrl => BadRequest(new ProblemDetails
+            {
+                Title = "Validation failed",
+                Detail = "Enter a valid D&D Beyond character URL or ID.",
+                Status = StatusCodes.Status400BadRequest,
+            }),
+            _ => UnprocessableEntity(new ProblemDetails
+            {
+                Title = "Import failed",
+                Detail = "D&D Beyond import failed. Use the PDF export option instead.",
+                Status = StatusCodes.Status422UnprocessableEntity,
+            }),
+        };
     }
 
     /// <summary>
@@ -187,33 +622,56 @@ public sealed class CharactersController : ControllerBase
 
         if (extraction.IsOcrRequired)
         {
+            // The truly-empty / unreadable PDF case: no claim about OCR being unsupported.
             return UnprocessableEntity(new ProblemDetails
             {
-                Title = "OCR required",
+                Title = "Unreadable PDF",
                 Detail = "This PDF contains no extractable text or form fields. " +
-                         "OCR support is not available in the current version. " +
                          "Please use a form-fillable or text-readable PDF.",
                 Status = StatusCodes.Status422UnprocessableEntity,
             });
         }
 
-        // When there are unmapped fields, persist a draft character and return the review DTO
+        // Persist a draft + return the review DTO whenever there are unmapped fields. The generic
+        // AcroForm/text-layer path's values live in MappedCharacter; the sanitizer's ReviewPaths
+        // flag any clamped values on top of the unmapped set.
         if (extraction.UnmappedFields.Count > 0)
         {
-            // Persist the draft character so the review UI has an ID to work with
-            var draftCharacter = await PersistDraftFromExtractionAsync(
-                extraction, gameSystem, ruleset, campaignId, file.FileName, cancellationToken);
+            var sanitizerWarnings = new List<string>();
+            var persisted = await PersistDraftFromExtractionAsync(
+                extraction, gameSystem, ruleset, campaignId, file.FileName, sanitizerWarnings, cancellationToken);
 
-            // Build the unmapped field DTOs with confidence scores
-            var unmappedDtos = extraction.UnmappedFields
+            // Build the unmapped field DTOs with confidence scores for the genuinely-unknown fields.
+            var reviewDtos = extraction.UnmappedFields
                 .Select(kvp => BuildUnmappedFieldDto(kvp.Key, kvp.Value))
                 .ToList();
 
+            // PDF-branch review plumbing (finding 1): this is NOT a reuse of BuildSourceReview,
+            // which reads SourceMapResult.MappedFields that the PDF path lacks (the PDF path's values
+            // live in MappedCharacter, a CanonicalCharacter). Emit one review-required UnmappedFieldDto
+            // per sanitizer ReviewPath so every clamped field is flagged. SourceValue is left empty:
+            // the confirmed value lives in the persisted draft's CanonicalJson; the review UI prompts
+            // against the canonical path rather than re-displaying a raw value.
+            foreach (var path in persisted.SanitizerReviewPaths
+                         .Distinct(StringComparer.Ordinal))
+            {
+                reviewDtos.Add(new UnmappedFieldDto(
+                    SourceFieldName: path,
+                    SourceValue: string.Empty,
+                    SuggestedCanonicalField: path,
+                    Confidence: 1f)
+                {
+                    RequiresReview = true,
+                });
+            }
+
+            var warnings = extraction.Warnings.Concat(sanitizerWarnings).ToList();
+
             var reviewDto = new CharacterFieldReviewDto(
-                CharacterId: draftCharacter.Id,
+                CharacterId: persisted.Draft.Id,
                 ReviewRequired: true,
-                UnmappedFields: unmappedDtos,
-                Warnings: extraction.Warnings);
+                UnmappedFields: reviewDtos,
+                Warnings: warnings);
 
             return Ok(reviewDto);
         }
@@ -268,17 +726,27 @@ public sealed class CharactersController : ControllerBase
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Persists a draft character from a PDF extraction result so the review UI has an ID.
+    /// Persists a draft character from a PDF extraction result so the review UI has an ID. Returns a
+    /// <see cref="PersistedDraft"/> (the same record <see cref="PersistDraftFromCanonicalAsync"/>
+    /// returns) so the caller can fold the sanitizer's <c>ReviewPaths</c> into the review envelope
+    /// alongside the extractor's own <c>RequiresReviewPaths</c> (finding 1).
     /// </summary>
-    private async Task<CharacterDto> PersistDraftFromExtractionAsync(
+    private async Task<PersistedDraft> PersistDraftFromExtractionAsync(
         PdfCharacterExtractionResult extraction,
         string gameSystem,
         string ruleset,
         Guid? campaignId,
         string fileName,
+        List<string> warnings,
         CancellationToken cancellationToken)
     {
         var mapped = extraction.MappedCharacter ?? new Application.Characters.CanonicalCharacter();
+
+        // Clamp-and-flag out-of-range mapped values so a PDF import with (e.g.) a negative current
+        // HP persists cleanly as a flagged draft rather than falling back to the Unknown stub.
+        var sanitization = CharacterDraftSanitizer.Sanitize(mapped);
+        warnings.AddRange(sanitization.Warnings);
+
         var name = string.IsNullOrWhiteSpace(mapped.Identity.Name)
             ? System.IO.Path.GetFileNameWithoutExtension(fileName)
             : mapped.Identity.Name;
@@ -294,7 +762,8 @@ public sealed class CharactersController : ControllerBase
 
         try
         {
-            return await _characters.CreateCharacterAsync(createRequest, cancellationToken);
+            var dto = await _characters.CreateCharacterAsync(createRequest, cancellationToken);
+            return new PersistedDraft(dto, sanitization.ReviewPaths);
         }
         catch (ArgumentException ex)
         {
@@ -321,8 +790,176 @@ public sealed class CharactersController : ControllerBase
                 CampaignId: campaignId,
                 OwnerParticipantId: null);
 
-            return await _characters.CreateCharacterAsync(fallbackRequest, cancellationToken);
+            var dto = await _characters.CreateCharacterAsync(fallbackRequest, cancellationToken);
+            return new PersistedDraft(dto, sanitization.ReviewPaths);
         }
+    }
+
+    /// <summary>
+    /// Persists a draft character from a mapped <see cref="CanonicalCharacter"/> (the source-adapter
+    /// path). Unlike <see cref="PersistDraftFromExtractionAsync"/>, this NEVER constructs an
+    /// "Unknown"/level-1 stub that discards mapped data: if validation fails, it retries once with
+    /// only a defaulted name and clamped level, keeping every value the mapper produced, and records
+    /// a warning onto <paramref name="warnings"/> so the review UI surfaces it.
+    /// </summary>
+    private async Task<PersistedDraft> PersistDraftFromCanonicalAsync(
+        CanonicalCharacter mapped,
+        string gameSystem,
+        string ruleset,
+        Guid? campaignId,
+        string? originalFileName,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        // Clamp-and-flag any review-worthy value into the strict validator's ranges BEFORE the
+        // first save, so a negative current HP / out-of-range ability / over-20 level persists as a
+        // flagged draft instead of hard-failing. The strict validator is unchanged.
+        var sanitization = CharacterDraftSanitizer.Sanitize(mapped);
+        warnings.AddRange(sanitization.Warnings);
+
+        var name = DeriveDraftName(mapped, originalFileName);
+        // Recompute level from the SANITIZED classes so the request level and the stored JSON agree.
+        var level = Math.Max(1, mapped.Classes.Sum(c => c.Level));
+
+        var createRequest = new CreateCharacterRequest(
+            Name: name,
+            GameSystem: gameSystem,
+            Ruleset: ruleset,
+            Level: level,
+            CanonicalJson: Application.Characters.CharacterJsonSerializer.Serialize(mapped),
+            CampaignId: campaignId,
+            OwnerParticipantId: null);
+
+        try
+        {
+            var dto = await _characters.CreateCharacterAsync(createRequest, cancellationToken);
+            return new PersistedDraft(dto, sanitization.ReviewPaths);
+        }
+        catch (ArgumentException ex)
+        {
+            // Preserve the mapped data as-is: default only the name (never substitute an Unknown
+            // stub). We mutate the SAME CanonicalCharacter so all mapped values survive the retry.
+            // Sanitization already clamped the known numeric fields; a failure here is a value the
+            // sanitizer does not cover, so let the specific validator message propagate to the
+            // caller (which surfaces it instead of the old opaque 400).
+            _logger.LogWarning(
+                "Adapter draft validation warning ({FileName}): {Message}. Persisting partial data as-is.",
+                originalFileName ?? "n/a", ex.Message);
+            warnings.Add("Some imported values could not be validated automatically. Please review them before saving.");
+
+            if (string.IsNullOrWhiteSpace(mapped.Identity.Name))
+                mapped.Identity.Name = name;
+
+            var retryRequest = new CreateCharacterRequest(
+                Name: name,
+                GameSystem: gameSystem,
+                Ruleset: ruleset,
+                Level: level,
+                CanonicalJson: Application.Characters.CharacterJsonSerializer.Serialize(mapped),
+                CampaignId: campaignId,
+                OwnerParticipantId: null);
+
+            var dto = await _characters.CreateCharacterAsync(retryRequest, cancellationToken);
+            return new PersistedDraft(dto, sanitization.ReviewPaths);
+        }
+    }
+
+    /// <summary>
+    /// A persisted draft plus the extra review paths the <see cref="CharacterDraftSanitizer"/>
+    /// produced while clamping out-of-range values, so the caller can fold them into the review
+    /// envelope alongside the mapper's own <c>RequiresReviewPaths</c>.
+    /// </summary>
+    private sealed record PersistedDraft(CharacterDto Draft, IReadOnlyList<string> SanitizerReviewPaths);
+
+    /// <summary>
+    /// Splits the <see cref="CharacterService"/> validation message
+    /// ("Character validation failed: msgA; msgB") into the individual field messages, mirroring the
+    /// <c>Extensions["errors"]</c> shape produced by <see cref="ValidateAgainstCampaignSchemaAsync"/>.
+    /// The message names fields and ranges only; it never contains a URL or PDF content.
+    /// </summary>
+    private static IReadOnlyList<string> ParseValidationErrors(string message)
+    {
+        const string prefix = "Character validation failed:";
+        var body = message.StartsWith(prefix, StringComparison.Ordinal)
+            ? message[prefix.Length..]
+            : message;
+
+        return body
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+    }
+
+    /// <summary>Derives the draft character name from the mapped data, falling back to the file name.</summary>
+    private static string DeriveDraftName(CanonicalCharacter mapped, string? originalFileName)
+    {
+        if (!string.IsNullOrWhiteSpace(mapped.Identity.Name))
+            return mapped.Identity.Name;
+
+        if (!string.IsNullOrWhiteSpace(originalFileName))
+            return System.IO.Path.GetFileNameWithoutExtension(originalFileName);
+
+        return "Imported Character";
+    }
+
+    /// <summary>
+    /// Builds the review payload for a source-adapter import. Echoes the mapper's
+    /// <see cref="SourceMapResult.MappedFields"/> verbatim (NO flatten), turns each
+    /// <see cref="SourceMapResult.ExtraFields"/> entry into an <see cref="UnmappedFieldDto"/> marked
+    /// for review, and flags per-field review from <see cref="SourceMapResult.RequiresReviewPaths"/>.
+    /// </summary>
+    private static CharacterFieldReviewDto BuildSourceReview(
+        SourceMapResult result,
+        Guid characterId,
+        Guid gameSystemDefinitionId,
+        IReadOnlyList<string> extraWarnings,
+        IReadOnlyList<string> extraReviewPaths)
+    {
+        var unmapped = result.ExtraFields
+            .Select(kvp => new UnmappedFieldDto(
+                SourceFieldName: kvp.Key,
+                SourceValue: kvp.Value,
+                SuggestedCanonicalField: null,
+                Confidence: 0f)
+            {
+                RequiresReview = true,
+            })
+            .ToList();
+
+        // Mapped paths flagged for review (by the mapper for a derived value, or by the draft
+        // sanitizer for a value it clamped) are surfaced as review-required entries whose suggested
+        // canonical field is the mapped path itself, so the review UI can prompt confirmation while
+        // the value still lives in MappedFields. De-duplicate so a path flagged by both appears once.
+        var reviewPaths = result.RequiresReviewPaths
+            .Concat(extraReviewPaths)
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var path in reviewPaths)
+        {
+            if (result.MappedFields.TryGetValue(path, out var value))
+            {
+                unmapped.Add(new UnmappedFieldDto(
+                    SourceFieldName: path,
+                    SourceValue: value,
+                    SuggestedCanonicalField: path,
+                    Confidence: 1f)
+                {
+                    RequiresReview = true,
+                });
+            }
+        }
+
+        var warnings = extraWarnings.Concat(result.Warnings).ToList();
+
+        return new CharacterFieldReviewDto(
+            CharacterId: characterId,
+            ReviewRequired: true,
+            UnmappedFields: unmapped,
+            Warnings: warnings)
+        {
+            GameSystemDefinitionId = gameSystemDefinitionId,
+            MappedFields = result.MappedFields,
+            RequiresGameSystemSelection = false,
+        };
     }
 
     /// <summary>
@@ -515,32 +1152,65 @@ public sealed class CharactersController : ControllerBase
     }
 
     /// <summary>
-    /// Lists characters scoped to a campaign.
-    /// Pass <c>participantId</c> to scope results to a specific participant (player view).
+    /// Lists characters. When <c>campaignId</c> is supplied, returns that campaign's roster
+    /// (pass <c>participantId</c> to scope to a specific participant/player view). When
+    /// <c>campaignId</c> is omitted, returns the entire global character library, including
+    /// unassigned characters.
     /// </summary>
     [HttpGet]
     [Authorize(Policy = AuthorizationPolicies.Authenticated)]
     [ProducesResponseType(typeof(IReadOnlyList<CharacterDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ListCharacters(
         [FromQuery] Guid? campaignId,
         [FromQuery] Guid? participantId,
         CancellationToken cancellationToken)
     {
-        if (!campaignId.HasValue)
+        if (campaignId.HasValue)
+        {
+            var scoped = await _characters.ListByCampaignAsync(
+                campaignId.Value,
+                participantId,
+                cancellationToken);
+
+            return Ok(scoped);
+        }
+
+        var all = await _characters.ListAllAsync(cancellationToken);
+        return Ok(all);
+    }
+
+    /// <summary>
+    /// Assigns, reassigns, or unassigns a character's campaign by setting CampaignId.
+    /// Returns 200 with the updated character. Returns 404 when the character does not exist.
+    /// Returns 400 when a non-null target campaign does not exist. No other field is changed.
+    /// </summary>
+    [HttpPut("{id:guid}/campaign")]
+    [ProducesResponseType(typeof(CharacterDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetCharacterCampaign(
+        Guid id,
+        [FromBody] SetCharacterCampaignRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var dto = await _characters.SetCampaignAsync(id, request.CampaignId, cancellationToken);
+            return Ok(dto);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (ArgumentException ex)
+        {
             return BadRequest(new ProblemDetails
             {
                 Title = "Validation failed",
-                Detail = "campaignId query parameter is required.",
+                Detail = ex.Message,
                 Status = StatusCodes.Status400BadRequest,
             });
-
-        var characters = await _characters.ListByCampaignAsync(
-            campaignId.Value,
-            participantId,
-            cancellationToken);
-
-        return Ok(characters);
+        }
     }
 
     // ── Template endpoints ────────────────────────────────────────────────────

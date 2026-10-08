@@ -4,10 +4,12 @@
 //! Tauri *sidecar*. This module owns its lifecycle: spawn on startup, wait until
 //! `/api/health` answers, and kill it cleanly when the app exits.
 
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::Manager;
+use tauri_plugin_shell::process::Command;
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -37,7 +39,7 @@ pub fn start_sidecar(app: &tauri::AppHandle, config: &DesktopConfig) -> Result<(
     // so a Retry never leaves two servers fighting over the port.
     stop_sidecar(app);
 
-    let child = app
+    let command = app
         .shell()
         .sidecar("aircane-server")
         .map_err(|e| format!("Failed to locate sidecar binary: {e}"))?
@@ -48,7 +50,28 @@ pub fn start_sidecar(app: &tauri::AppHandle, config: &DesktopConfig) -> Result<(
         // session-scoped token. ASP.NET Core maps the double-underscore env var
         // to the Aircane:TrustLocalHost config key. NEVER set this for a shared
         // or hosted backend.
-        .env("Aircane__TrustLocalHost", "true")
+        .env("Aircane__TrustLocalHost", "true");
+
+    // Point the backend at the bundled OCR assets so OCR works with zero user
+    // setup under the desktop app. The tessdata model and optional native libs
+    // are copied into the Tauri resource dir by the `bundle.resources` map; an
+    // explicit `Ocr__TessdataPath` env var wins over the appsettings default.
+    // When NOT launched by Tauri (dev/server), no env var is set and the backend
+    // falls back to its configured TessdataPath / AutoDownloadTessdata behaviour.
+    let command = if let Ok(dir) = app.path().resource_dir() {
+        let tessdata = dir.join("tessdata");
+        let native = dir.join("ocr-native");
+        let command =
+            command.env("Ocr__TessdataPath", tessdata.to_string_lossy().to_string());
+        // Prepend the bundled native OCR lib dir to the OS loader search path so
+        // the sidecar finds libtesseract/libleptonica (a harmless no-op when the
+        // dir is empty, e.g. Windows where the native libs ship with the publish).
+        prepend_lib_path(command, &native)
+    } else {
+        command
+    };
+
+    let child = command
         .spawn()
         .map_err(|e| format!("Failed to spawn backend sidecar: {e}"))?
         .1;
@@ -60,6 +83,29 @@ pub fn start_sidecar(app: &tauri::AppHandle, config: &DesktopConfig) -> Result<(
         .replace(child);
 
     Ok(())
+}
+
+/// Prepend `dir` to the OS dynamic-loader search path so the sidecar finds the bundled
+/// native OCR libs. The `tauri_plugin_shell` `Command` builder is consumed by value in
+/// the `.env(...)` chain, so this takes and returns a `Command`. It reads the current
+/// process's value of the per-OS loader var, prepends `dir` with the platform separator,
+/// and threads the updated builder back through `.env(...)`.
+///   Windows: PATH ; Linux: LD_LIBRARY_PATH ; macOS: DYLD_LIBRARY_PATH
+fn prepend_lib_path(cmd: Command, dir: &Path) -> Command {
+    #[cfg(windows)]
+    let var = "PATH";
+    #[cfg(target_os = "linux")]
+    let var = "LD_LIBRARY_PATH";
+    #[cfg(target_os = "macos")]
+    let var = "DYLD_LIBRARY_PATH";
+
+    let sep = if cfg!(windows) { ';' } else { ':' };
+    let dir_str = dir.to_string_lossy();
+    let new_val = match std::env::var(var) {
+        Ok(existing) if !existing.is_empty() => format!("{dir_str}{sep}{existing}"),
+        _ => dir_str.to_string(),
+    };
+    cmd.env(var, new_val)
 }
 
 /// Kills the tracked sidecar child, if any. Safe to call multiple times.

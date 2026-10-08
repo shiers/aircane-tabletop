@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { ImportCharacterJsonRequest } from '../api'
+import { useCharacterStore } from '../store'
+import type { ImportCharacterJsonRequest, SourceImportResponse } from '../api'
+import {
+  listGameSystems,
+} from '@/features/game-systems/api'
+import type { GameSystemDefinitionSummary } from '@/features/game-systems/types'
+import ImportReviewPanel from './ImportReviewPanel.vue'
+import { sourceBadge, SOURCE_OPTIONS } from './sourceBadges'
 
 // ---------------------------------------------------------------------------
 // Props / emits
@@ -14,27 +21,75 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** Emitted when the user submits a valid import request. */
-  (e: 'import', request: ImportCharacterJsonRequest): void
+  /** Emitted when an import completes and is confirmed/saved. */
+  (e: 'completed'): void
   /** Emitted when the user closes or cancels the modal. */
   (e: 'close'): void
 }>()
 
+const store = useCharacterStore()
+
 // ---------------------------------------------------------------------------
-// State
+// Tabs
 // ---------------------------------------------------------------------------
 
-/** The raw JSON text entered by the user (textarea) or loaded from a file. */
-const jsonText = ref('')
-const gameSystem = ref('D&D 5e')
-const ruleset = ref('2014')
-const originalFileName = ref<string | null>(null)
+type Tab = 'file' | 'url'
+const activeTab = ref<Tab>('file')
+
+const tabs: { id: Tab; label: string }[] = [
+  { id: 'file', label: 'Upload File' },
+  { id: 'url', label: 'D&D Beyond URL' },
+]
+
+function switchTab(tab: Tab): void {
+  activeTab.value = tab
+  localErrors.value = []
+}
+
+// ---------------------------------------------------------------------------
+// Shared state
+// ---------------------------------------------------------------------------
+
 const localErrors = ref<string[]>([])
 const submitting = ref(false)
+/** The import response once the backend returns it; drives the review panel. */
+const importResponse = ref<SourceImportResponse | null>(null)
 
+// Upload File state
+const jsonText = ref('')
+const originalFileName = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+/** The source the user chose to override auto-detect ('' = Auto-detect). */
+const selectedSource = ref<string>('')
+/** The game system the user chose when the backend asks for one. */
+const selectedGameSystemId = ref<string>('')
+const gameSystems = ref<GameSystemDefinitionSummary[]>([])
 
-const hasContent = computed(() => jsonText.value.trim().length > 0)
+// D&D Beyond URL state
+const dndbeyondUrl = ref('')
+
+const hasJsonContent = computed(() => jsonText.value.trim().length > 0)
+
+/** The detected source badge shown after a file import attempt. */
+const detectedBadge = computed(() =>
+  importResponse.value ? sourceBadge(importResponse.value.detectedSource) : null,
+)
+
+const needsSourceConfirmation = computed(
+  () => importResponse.value?.requiresSourceConfirmation === true,
+)
+
+const needsGameSystemSelection = computed(
+  () => importResponse.value?.review.requiresGameSystemSelection === true,
+)
+
+/** The review panel is shown once we have a response that does not need a confirmation prompt. */
+const showReview = computed(
+  () =>
+    importResponse.value !== null &&
+    !needsSourceConfirmation.value &&
+    !needsGameSystemSelection.value,
+)
 
 // ---------------------------------------------------------------------------
 // File input
@@ -51,6 +106,7 @@ function handleFileChange(event: Event): void {
 
   originalFileName.value = file.name
   localErrors.value = []
+  importResponse.value = null
 
   file
     .text()
@@ -61,83 +117,159 @@ function handleFileChange(event: Event): void {
       localErrors.value = ['Failed to read the selected file.']
     })
 
-  // Reset so the same file can be re-selected if needed
   input.value = ''
 }
 
 // ---------------------------------------------------------------------------
-// Validation
+// Game system list (lazy)
 // ---------------------------------------------------------------------------
 
-function validate(): string[] {
-  const errors: string[] = []
-  const trimmedJson = jsonText.value.trim()
-  if (trimmedJson) {
-    try {
-      JSON.parse(trimmedJson)
-    } catch {
-      errors.push('The text is not valid JSON. Please check the content and try again.')
-    }
-  } else {
-    errors.push('JSON content is required. Paste JSON or select a .json file.')
+async function ensureGameSystems(): Promise<void> {
+  if (gameSystems.value.length > 0) return
+  try {
+    gameSystems.value = await listGameSystems()
+  } catch {
+    // Non-fatal: the picker simply shows no options.
   }
-  if (!gameSystem.value.trim()) errors.push('Game system is required.')
-  if (!ruleset.value.trim()) errors.push('Ruleset is required.')
-  return errors
 }
 
 // ---------------------------------------------------------------------------
-// Submit
+// Upload File submit (and re-POST on confirmation)
 // ---------------------------------------------------------------------------
 
-async function handleSubmit(): Promise<void> {
-  localErrors.value = []
+function buildBaseRequest(): ImportCharacterJsonRequest {
+  return {
+    canonicalJson: jsonText.value.trim(),
+    // gameSystem/ruleset left blank so the backend routes to the source adapter.
+    gameSystem: '',
+    ruleset: '',
+    campaignId: props.campaignId ?? null,
+    originalFileName: originalFileName.value,
+  }
+}
 
-  const validationErrors = validate()
-  if (validationErrors.length > 0) {
-    localErrors.value = validationErrors
+async function submitFile(): Promise<void> {
+  localErrors.value = []
+  const trimmed = jsonText.value.trim()
+  if (!trimmed) {
+    localErrors.value = ['JSON content is required. Select a .json file.']
+    return
+  }
+  try {
+    JSON.parse(trimmed)
+  } catch {
+    localErrors.value = ['The file is not valid JSON. Please check the content and try again.']
     return
   }
 
   submitting.value = true
   try {
-    const request: ImportCharacterJsonRequest = {
-      canonicalJson: jsonText.value.trim(),
-      gameSystem: gameSystem.value.trim(),
-      ruleset: ruleset.value.trim(),
-      campaignId: props.campaignId ?? null,
-      originalFileName: originalFileName.value,
+    const options: { source?: string; gameSystemDefinitionId?: string } = {}
+    if (selectedSource.value) options.source = selectedSource.value
+    if (selectedGameSystemId.value) options.gameSystemDefinitionId = selectedGameSystemId.value
+
+    const response = await store.importCharacterFromSource(buildBaseRequest(), options)
+    importResponse.value = response
+
+    if (response.requiresSourceConfirmation) {
+      // Pre-select the detected source so the dropdown reflects the guess.
+      selectedSource.value = response.detectedSource === 'Unknown' ? '' : response.detectedSource
     }
-    emit('import', request)
+    if (response.review.requiresGameSystemSelection) {
+      await ensureGameSystems()
+    }
+  } catch (err: unknown) {
+    importResponse.value = null
+    localErrors.value = [extractErr(err)]
   } finally {
     submitting.value = false
   }
 }
 
-// ---------------------------------------------------------------------------
-// Reset when closed
-// ---------------------------------------------------------------------------
-
-function handleClose(): void {
-  jsonText.value = ''
-  gameSystem.value = 'D&D 5e'
-  ruleset.value = '2014'
-  originalFileName.value = null
-  localErrors.value = []
-  emit('close')
+/** Re-POST after the user picks a source and (optionally) a game system. */
+async function reImportWithSelection(): Promise<void> {
+  await submitFile()
 }
 
-// Expose for parent to push server-side errors into the modal
-function setErrors(errors: string[]): void {
-  localErrors.value = errors
+// ---------------------------------------------------------------------------
+// D&D Beyond URL submit
+// ---------------------------------------------------------------------------
+
+async function submitDndBeyondUrl(): Promise<void> {
+  localErrors.value = []
+  const url = dndbeyondUrl.value.trim()
+  if (!url) {
+    localErrors.value = ['Enter a D&D Beyond character URL or ID.']
+    return
+  }
+
+  submitting.value = true
+  try {
+    const response = await store.importCharacterFromDndBeyondUrl({
+      characterUrl: url,
+      campaignId: props.campaignId ?? null,
+    })
+    importResponse.value = response
+  } catch (err: unknown) {
+    importResponse.value = null
+    localErrors.value = [extractErr(err)]
+  } finally {
+    submitting.value = false
+  }
+}
+
+function extractErr(err: unknown): string {
+  if (
+    err &&
+    typeof err === 'object' &&
+    'response' in err &&
+    err.response &&
+    typeof err.response === 'object' &&
+    'data' in err.response
+  ) {
+    const data = (err.response as { data?: { detail?: string; title?: string } }).data
+    if (data?.detail) return data.detail
+    if (data?.title) return data.title
+  }
+  return err instanceof Error ? err.message : 'Import failed.'
+}
+
+// ---------------------------------------------------------------------------
+// Review panel results
+// ---------------------------------------------------------------------------
+
+function handleConfirmed(): void {
+  emit('completed')
+  reset()
+}
+
+function handleReviewCancel(): void {
+  importResponse.value = null
+}
+
+// ---------------------------------------------------------------------------
+// Reset / close
+// ---------------------------------------------------------------------------
+
+function reset(): void {
+  jsonText.value = ''
+  originalFileName.value = null
+  dndbeyondUrl.value = ''
+  selectedSource.value = ''
+  selectedGameSystemId.value = ''
+  importResponse.value = null
+  localErrors.value = []
+  activeTab.value = 'file'
   submitting.value = false
 }
 
-defineExpose({ setErrors })
+function handleClose(): void {
+  reset()
+  emit('close')
+}
 </script>
 
 <template>
-  <!-- Backdrop -->
   <Teleport to="body">
     <div
       v-if="open"
@@ -145,19 +277,16 @@ defineExpose({ setErrors })
       aria-hidden="true"
       @click="handleClose"
     >
-      <!-- Native dialog for accessibility -->
       <dialog
         open
-        class="m-0 w-full max-w-2xl rounded-xl border border-gray-700 bg-gray-900 p-0 shadow-2xl"
+        class="m-0 flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-gray-700 bg-gray-900 p-0 shadow-2xl"
         aria-labelledby="import-modal-title"
         @click.stop
         @keydown.esc="handleClose"
       >
         <!-- Header -->
         <div class="flex items-center justify-between border-b border-gray-800 px-6 py-4">
-          <h2 id="import-modal-title" class="text-lg font-semibold text-white">
-            Import Character JSON
-          </h2>
+          <h2 id="import-modal-title" class="text-lg font-semibold text-white">Import Character</h2>
           <button
             type="button"
             class="rounded p-1 text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-aircane-400"
@@ -172,137 +301,215 @@ defineExpose({ setErrors })
           </button>
         </div>
 
-        <!-- Body -->
-        <form novalidate class="space-y-5 px-6 py-5" @submit.prevent="handleSubmit">
-
-          <!-- File picker -->
-          <div>
-            <p class="mb-2 text-sm font-medium text-gray-300">
-              Select a <code class="rounded bg-gray-800 px-1 py-0.5 text-xs text-aircane-300">.json</code> file or paste JSON below.
-            </p>
-            <input
-              ref="fileInput"
-              type="file"
-              accept=".json,application/json"
-              class="sr-only"
-              aria-label="Select JSON file"
-              @change="handleFileChange"
-            />
-            <button
-              type="button"
-              class="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-              @click="triggerFileInput"
-            >
-              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path
-                  d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z"
-                />
-                <path
-                  d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"
-                />
-              </svg>
-              Choose File
-            </button>
-            <span v-if="originalFileName" class="ml-3 text-sm text-gray-400">
-              {{ originalFileName }}
-            </span>
-          </div>
-
-          <!-- JSON textarea -->
-          <div>
-            <label for="import-json-text" class="mb-1 block text-sm font-medium text-gray-300">
-              Character JSON
-              <span aria-hidden="true" class="text-red-400">*</span>
-            </label>
-            <textarea
-              id="import-json-text"
-              v-model="jsonText"
-              rows="10"
-              required
-              aria-required="true"
-              placeholder='{ "identity": { "name": "Aldric Stonehammer" }, "classes": [...], ... }'
-              class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 font-mono text-xs text-gray-100 placeholder-gray-600 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
-              spellcheck="false"
-            />
-          </div>
-
-          <!-- Game system + Ruleset -->
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label for="import-game-system" class="mb-1 block text-sm font-medium text-gray-300">
-                Game System <span aria-hidden="true" class="text-red-400">*</span>
-              </label>
-              <input
-                id="import-game-system"
-                v-model="gameSystem"
-                type="text"
-                required
-                aria-required="true"
-                placeholder="e.g. D&D 5e"
-                class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
-              />
-            </div>
-            <div>
-              <label for="import-ruleset" class="mb-1 block text-sm font-medium text-gray-300">
-                Ruleset <span aria-hidden="true" class="text-red-400">*</span>
-              </label>
-              <input
-                id="import-ruleset"
-                v-model="ruleset"
-                type="text"
-                required
-                aria-required="true"
-                placeholder="e.g. 2014"
-                class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
-              />
-            </div>
-          </div>
-
-          <!-- Validation errors -->
-          <div
-            v-if="localErrors.length > 0"
-            role="alert"
-            aria-live="polite"
-            class="rounded-lg border border-red-800 bg-red-950 px-4 py-3"
+        <!-- Tabs -->
+        <div
+          v-if="!showReview"
+          class="flex gap-1 border-b border-gray-800 px-6 pt-3"
+          role="tablist"
+          aria-label="Import source"
+        >
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === tab.id"
+            :class="[
+              'rounded-t-lg px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-aircane-400',
+              activeTab === tab.id
+                ? 'border-b-2 border-aircane-500 text-white'
+                : 'text-gray-400 hover:text-gray-200',
+            ]"
+            @click="switchTab(tab.id)"
           >
-            <p class="mb-1 text-sm font-semibold text-red-300">Import failed:</p>
-            <ul class="list-inside list-disc space-y-0.5 text-sm text-red-300">
-              <li v-for="(err, i) in localErrors" :key="i">{{ err }}</li>
-            </ul>
-          </div>
+            {{ tab.label }}
+          </button>
+        </div>
 
-          <!-- Actions -->
-          <div class="flex items-center justify-end gap-3 border-t border-gray-800 pt-4">
-            <button
-              type="button"
-              class="rounded-lg px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-              @click="handleClose"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              :disabled="submitting || !hasContent"
-              class="inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <svg
-                v-if="submitting"
-                class="h-4 w-4 animate-spin"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
+        <!-- Body -->
+        <div class="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          <!-- Review panel (shown after a successful import) -->
+          <ImportReviewPanel
+            v-if="showReview && importResponse"
+            :response="importResponse"
+            @confirmed="handleConfirmed"
+            @cancel="handleReviewCancel"
+          />
+
+          <template v-else>
+            <!-- ── Upload File tab ───────────────────────────────────────── -->
+            <div v-if="activeTab === 'file'" class="space-y-4">
+              <p class="text-sm text-gray-300">
+                Select a character
+                <code class="rounded bg-gray-800 px-1 py-0.5 text-xs text-aircane-300">.json</code>
+                export from a supported virtual tabletop or character builder.
+              </p>
+              <input
+                ref="fileInput"
+                type="file"
+                accept=".json,application/json"
+                class="sr-only"
+                aria-label="Select JSON file"
+                @change="handleFileChange"
+              />
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-2 rounded-lg border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:border-gray-500 hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+                  @click="triggerFileInput"
+                >
+                  Choose File
+                </button>
+                <span v-if="originalFileName" class="text-sm text-gray-400">{{ originalFileName }}</span>
+              </div>
+
+              <!-- Detected-source badge -->
+              <div v-if="detectedBadge" class="flex items-center gap-2 text-sm text-gray-300">
+                <span>Detected:</span>
+                <span
+                  data-testid="detected-source-badge"
+                  :class="[
+                    'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                    detectedBadge.classes,
+                  ]"
+                >
+                  {{ detectedBadge.label }}
+                </span>
+              </div>
+
+              <!-- Source confirmation dropdown -->
+              <div v-if="needsSourceConfirmation">
+                <label for="source-select" class="mb-1 block text-xs font-medium text-gray-300">
+                  We couldn't confidently detect the format. Pick the source:
+                </label>
+                <select
+                  id="source-select"
+                  v-model="selectedSource"
+                  class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+                >
+                  <option v-for="opt in SOURCE_OPTIONS" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- Game-system picker (Roll20 / Generic) -->
+              <div v-if="needsGameSystemSelection">
+                <label for="game-system-select" class="mb-1 block text-xs font-medium text-gray-300">
+                  This sheet doesn't name a game system. Choose one:
+                </label>
+                <select
+                  id="game-system-select"
+                  v-model="selectedGameSystemId"
+                  class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+                >
+                  <option value="">Select a game system…</option>
+                  <option v-for="sys in gameSystems" :key="sys.id" :value="sys.id">
+                    {{ sys.name }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- Validation errors -->
+              <div
+                v-if="localErrors.length > 0"
+                role="alert"
+                class="rounded-lg border border-red-800 bg-red-950 px-4 py-3"
               >
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                <path
-                  class="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8v8H4z"
+                <ul class="list-inside list-disc space-y-0.5 text-sm text-red-300">
+                  <li v-for="(err, i) in localErrors" :key="i">{{ err }}</li>
+                </ul>
+              </div>
+
+              <div class="flex items-center justify-end gap-3 border-t border-gray-800 pt-4">
+                <button
+                  type="button"
+                  class="rounded-lg px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                  @click="handleClose"
+                >
+                  Cancel
+                </button>
+                <button
+                  v-if="needsSourceConfirmation || needsGameSystemSelection"
+                  type="button"
+                  :disabled="submitting"
+                  class="inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  @click="reImportWithSelection"
+                >
+                  {{ submitting ? 'Importing…' : 'Continue' }}
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  :disabled="submitting || !hasJsonContent"
+                  class="inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  @click="submitFile"
+                >
+                  {{ submitting ? 'Importing…' : 'Import Character' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- ── D&D Beyond URL tab ────────────────────────────────────── -->
+            <div v-else-if="activeTab === 'url'" class="space-y-4">
+              <div>
+                <label for="ddb-url" class="mb-1 block text-sm font-medium text-gray-300">
+                  D&D Beyond character URL
+                </label>
+                <input
+                  id="ddb-url"
+                  v-model="dndbeyondUrl"
+                  type="url"
+                  placeholder="https://www.dndbeyond.com/characters/..."
+                  class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
                 />
-              </svg>
-              {{ submitting ? 'Importing…' : 'Import Character' }}
-            </button>
-          </div>
-        </form>
+                <p class="mt-1 text-xs text-gray-400">
+                  Make sure your character is public under
+                  <!-- <a
+                    href="https://dndbeyond-support.wizards.com/hc/en-us/articles/7747238449556-Export-Sheet"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-aircane-300 underline hover:text-aircane-200"
+                  > -->
+                    sharing settings
+                  <!-- </a>. -->
+                </p>
+              </div>
+
+              <p class="rounded-lg border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
+                Uses an unofficial API — may not always work.
+              </p>
+
+              <div
+                v-if="localErrors.length > 0"
+                role="alert"
+                class="rounded-lg border border-red-800 bg-red-950 px-4 py-3"
+              >
+                <ul class="list-inside list-disc space-y-0.5 text-sm text-red-300">
+                  <li v-for="(err, i) in localErrors" :key="i">{{ err }}</li>
+                </ul>
+              </div>
+
+              <div class="flex items-center justify-end gap-3 border-t border-gray-800 pt-4">
+                <button
+                  type="button"
+                  class="rounded-lg px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                  @click="handleClose"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  :disabled="submitting || dndbeyondUrl.trim().length === 0"
+                  class="inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  @click="submitDndBeyondUrl"
+                >
+                  {{ submitting ? 'Importing…' : 'Import' }}
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
       </dialog>
     </div>
   </Teleport>

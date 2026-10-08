@@ -1,5 +1,6 @@
 using Aircane.Application.Abstractions;
 using Aircane.Application.Characters;
+using Aircane.Application.Characters.Import;
 using Microsoft.Extensions.Logging;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.AcroForms.Fields;
@@ -29,12 +30,12 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
         ArgumentNullException.ThrowIfNull(pdfStream);
 
         // PdfPig is synchronous; wrap in Task.Run to avoid blocking the thread pool.
-        return Task.Run(() => Extract(pdfStream), ct);
+        return Task.Run(() => Extract(pdfStream, ct), ct);
     }
 
     // ── Core extraction ───────────────────────────────────────────────────────
 
-    private PdfCharacterExtractionResult Extract(Stream pdfStream)
+    private PdfCharacterExtractionResult Extract(Stream pdfStream, CancellationToken ct)
     {
         var warnings = new List<string>();
         Dictionary<string, string> extractedFields;
@@ -66,7 +67,7 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
             };
         }
 
-        // 3. If still empty, OCR is required
+        // 3. A truly empty text layer (no form fields and no text): OCR would be required to read it.
         if (extractedFields.Count == 0)
         {
             _logger.LogInformation("PDF yielded no extractable text or form fields; OCR required.");
@@ -506,44 +507,12 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
     }
 
     /// <summary>
-    /// Maps a combined "Class Level" field such as "Fighter 5" or "Wizard 3 / Rogue 2".
-    /// Populates <see cref="CanonicalCharacter.Classes"/>.
+    /// Maps a combined "Class Level" field such as "Fighter 5" or "Wizard 3 / Rogue 2" via the ONE
+    /// shared split helper (<see cref="DndBeyondClassLevelSplit"/>). Populates
+    /// <see cref="CanonicalCharacter.Classes"/>.
     /// </summary>
     private static void MapClassLevel(string value, CanonicalCharacter character, List<string> warnings)
-    {
-        // Handle multiclass notation: "Fighter 5 / Rogue 3"
-        var entries = value.Split('/', StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var entry in entries)
-        {
-            var parts = entry.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length >= 2 && int.TryParse(parts[^1], out var level))
-            {
-                var className = string.Join(" ", parts[..^1]);
-                character.Classes.Add(new CharacterClass
-                {
-                    ClassName = className,
-                    Level = level,
-                    HitDie = DefaultHitDieForClass(className)
-                });
-            }
-            else if (parts.Length == 1)
-            {
-                // Class name only, no level - add with level 1 as a placeholder
-                character.Classes.Add(new CharacterClass
-                {
-                    ClassName = parts[0],
-                    Level = 1,
-                    HitDie = DefaultHitDieForClass(parts[0])
-                });
-                warnings.Add($"'ClassLevel' value '{value}' did not include a level - defaulting to 1.");
-            }
-            else
-            {
-                warnings.Add($"'ClassLevel' value '{value}' could not be parsed.");
-            }
-        }
-    }
+        => DndBeyondClassLevelSplit.Apply(value, character, warnings);
 
     /// <summary>
     /// Maps a standalone "Level" field to the first class entry, or creates a placeholder class.
@@ -573,16 +542,9 @@ public sealed class PdfCharacterExtractor : IPdfCharacterExtractor
     }
 
     /// <summary>
-    /// Returns a sensible default hit die for well-known D&amp;D 5e class names.
-    /// Falls back to d8 for unknown classes.
+    /// Returns a sensible default hit die for well-known D&amp;D 5e class names (d8 fallback).
+    /// Delegates to the ONE shared implementation in <see cref="DndBeyondClassLevelSplit"/>.
     /// </summary>
-    private static int DefaultHitDieForClass(string className) =>
-        className.Trim().ToLowerInvariant() switch
-        {
-            "barbarian" => 12,
-            "fighter" or "paladin" or "ranger" => 10,
-            "bard" or "cleric" or "druid" or "monk" or "rogue" or "warlock" => 8,
-            "sorcerer" or "wizard" => 6,
-            _ => 8
-        };
+    private static int DefaultHitDieForClass(string className)
+        => DndBeyondClassLevelSplit.DefaultHitDieForClass(className);
 }

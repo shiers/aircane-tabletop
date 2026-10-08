@@ -1,0 +1,27 @@
+{
+  "id": "FEAT-007",
+  "type": "feat",
+  "description": "AI Provider Settings view art + ApiKeyField/ModelSelectField shared components (Phase 7) in src/features/ai/AiSettingsView.vue. SECURITY: API keys must never be logged or returned unmasked. Independent of other view FEATs; depends on FEAT-001 tokens.",
+  "status": "completed",
+  "steps": [
+    "Create src/shared/components/ApiKeyField.vue, props { modelValue: string; placeholder?: string; id?: string }, emits update:modelValue. Password input with an eye toggle to show/hide, default placeholder 'sk-...'. MUST NOT console.log the value. Keep compatible with the view's isKeyMasked() (do not re-emit a masked value as a real key).",
+    "Create src/shared/components/ModelSelectField.vue, props { modelValue: string; options: string[]; id?: string }, emits update:modelValue: a native <select> with a gold chevron. May compose with or complement the existing ModelSelect.vue.",
+    "Add src/shared/components/__tests__/ApiKeyField.test.ts (toggle switches input type password<->text; typing emits update:modelValue) and ModelSelectField.test.ts (options render; change emits update:modelValue).",
+    "In AiSettingsView.vue apply /assets/ai-settings/ai-provider-background.png as the page background and /assets/ai-settings/ai-provider-settings-hero.png as the section header with the 'AI Provider Settings' heading overlaid.",
+    "Add a provider-card row using provider-card-openai/azure-openai/bedrock/ollama.png (name over the right 70%; the active card adds box-shadow:var(--glow-purple); border-color:var(--color-purple)) that sets activeProvider. Keep the existing enum-based save/test logic working (either keep the dropdown too or drive activeProvider from the cards).",
+    "Apply /assets/ai-settings/save-configuration-button-art.png and test-connection-button-art.png as background-image (background-size:100% 100%) on the Save Configuration and Test Connection buttons.",
+    "Apply /assets/ai-settings/ai-runtime-panel-art.png as the AI Runtime section-header background with the 'AI Runtime' heading over the left 60% (add the section if not present).",
+    "Replace the raw API-key <input type=password> fields and the ModelSelect usages with ApiKeyField / ModelSelectField where appropriate, preserving buildRequest()/isKeyMasked() behavior and the 'stored server-side only' messaging."
+  ],
+  "acceptance_criteria": [
+    "ApiKeyField (never logs its value) and ModelSelectField exist with the specified props/emits and their tests pass.",
+    "AI-settings page bg, hero, provider cards (active glow), the two button arts, and the AI Runtime panel are wired via absolute /assets/ai-settings/... paths.",
+    "Existing save/test/model-fetch behavior is preserved; `npm run build` succeeds and `npm test` passes (existing ai/__tests__/api.test.ts included)."
+  ],
+  "verification": [
+    "cd src/frontend/aircane-web && npm run build",
+    "cd src/frontend/aircane-web && npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "Created src/shared/components/ApiKeyField.vue (password input + eye show/hide toggle, default placeholder 'sk-...', emits update:modelValue only on real keystrokes; never console.logs its value and does not transform/re-emit the bound value, so a server-masked key stays compatible with isKeyMasked()) and ModelSelectField.vue (native <select> with a gold chevron, props modelValue/options/id, emits update:modelValue). Added __tests__/ApiKeyField.test.ts and ModelSelectField.test.ts. In AiSettingsView.vue: wrapped the view in an .ai-settings-page using ai-provider-background.png; made the header a .settings-hero using ai-provider-settings-hero.png with the 'AI Provider Settings' heading overlaid; added a provider-card row (provider-card-openai/azure-openai/bedrock/ollama.png, name over right 70%, active card adds box-shadow:var(--glow-purple) and border-color:var(--color-purple)) that calls selectProvider() to set activeProvider; kept the existing enum dropdown in sync as an accessible fallback; applied save-configuration-button-art.png and test-connection-button-art.png as background-image (background-size:100% 100%) on the Save/Test buttons; added an 'AI Runtime' section using ai-runtime-panel-art.png with the heading over the left 60%; swapped all raw <input type=password> API-key fields (OpenAI, Azure, AWS access key + secret, Grok) for ApiKeyField, preserving buildRequest()/isKeyMasked() and 'stored server-side only' messaging. Kept ModelSelect for model fields because its free-text fallback (Azure deployment names / no-models case) is required and ModelSelectField has no fallback. All asset refs use absolute /assets/ai-settings/... paths. Verified: `npm run build` succeeds with 0 type errors; `npm test` passes (35 files / 281 tests, including ai/__tests__/api.test.ts and the two new component tests). Backend untouched."
+}

@@ -10,8 +10,9 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 
 ## Networking
 
-- **Internet tunnel in progress.** Internet play via Cloudflare Tunnel is implemented and tracked in the P1 backlog. Once shipped, players can connect from anywhere without being on the host's local network. Remove this limitation entry when the tunnel task is verified complete.
-- **No HTTPS on LAN.** Traffic between players and the host is unencrypted. This is acceptable for trusted home networks but not suitable for public networks.
+- **Internet tunnel URLs are temporary.** Internet play via Cloudflare Tunnel is delivered (bundled in the desktop wrapper as a checksum-verified `cloudflared` sidecar). On the free quick-tunnel tier the public `*.trycloudflare.com` URL is ephemeral — it changes every time the tunnel restarts, so hosts must reshare the link/QR after a restart. Stable named tunnels require a Cloudflare account and are not yet wired up.
+- **Internet mode is desktop-only.** The tunnel toggle lives in the Tauri desktop wrapper; a browser-only backend cannot start internet play. On the LAN the hardening (rate limiting, CSRF/origin checks) is a no-op by design and only engages once internet mode is active.
+- **No HTTPS on LAN.** Traffic between players and the host is unencrypted. This is acceptable for trusted home networks but not suitable for public networks. (Internet-mode traffic is HTTPS, terminated by Cloudflare at the tunnel edge.)
 - **No persistent user accounts.** Players are identified by short-lived session tokens, not login credentials.
 - **No mobile-optimized UI.** The Vue frontend works in mobile browsers but is not designed for small screens. Players connecting via phone or tablet get a functional but cramped experience. A responsive redesign is planned (P3).
 - **No native mobile app.** There is no iOS or Android companion app. Players use a browser to connect. A native Flutter player companion app (iOS + Android, push notifications via FCM, offline character sheet, haptic dice roller, QR join) is planned for after the desktop wrapper and internet tunnel stabilise. Technology decided: Flutter with Riverpod, `signalr_netcore`, and `dio`; no backend changes required.
@@ -39,8 +40,11 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 
 ## Characters
 
-- **PDF character import is best-effort.** Only form-fillable PDFs and simple text-layer PDFs produce reliable results. Complex character sheet layouts may require manual correction.
-- **No D&D Beyond or VTT integration.** Characters must be imported via PDF or JSON, or created manually.
+- **PDF character import is best-effort.** Only form-fillable PDFs and simple text-layer PDFs produce reliable results. Complex character sheet layouts may require manual correction. (D&D Beyond's standard PDF sheet now has known form-field hints that improve extraction.)
+- **D&D Beyond / VTT / Pathbuilder import is delivered, with caveats.** Characters can be imported from D&D Beyond (by public character URL via an unofficial API, or from a saved API JSON file), Foundry VTT (dnd5e and PF2e actor exports), Roll20 (community exporter JSON), Pathbuilder 2e ("Export to JSON"), and a generic VTT fallback — in addition to the existing JSON/PDF paths and manual creation. The format is auto-detected and funnels into the same review/save flow. Caveats:
+  - **The D&D Beyond URL path uses an *unofficial* API** (`character-service.dndbeyond.com`) that is not an official public API and may stop working without notice. The character must be set to **public** on D&D Beyond. If it fails, use the PDF export as a fallback. Responses are never cached and the character URL is never stored or logged.
+  - **Roll20 and Generic VTT are low-confidence by design** — Roll20 attribute names vary by sheet template, so unmatched fields are left null and flagged for review; the generic fallback flags all fields for review. Both require the user to pick a game system before mapping completes.
+  - **D&D 5e ruleset (2014 vs 2024) is auto-detected but always confirmable** — detection uses D&D Beyond source IDs or the Foundry system version and may be incomplete, so the review step always surfaces an editable 2014/2024 dropdown.
 
 ## Library
 
@@ -59,8 +63,8 @@ This document lists current limitations of the Aircane Tabletop MVP. These are p
 
 ## Security
 
-- **No rate limiting.** The API does not throttle requests. This is acceptable for LAN use but would need addressing for internet hosting.
-- **Token revocation is in-memory.** If the server restarts, revoked tokens may become valid again until they expire naturally (24-hour default).
+- **Rate limiting only engages in internet mode.** Per-IP rate limiting (fixed-window on join/approve/reconnect, sliding-window globally) ships and returns `429` + `Retry-After` when tripped, but it is intentionally a no-op on the LAN and only activates once the Cloudflare tunnel (internet mode) is on. A purely-LAN deployment is not throttled.
+- **Token revocation is persistent, but tunnel URLs are not pre-revoked.** Revocations now survive a server restart — a `RevokedTokens` table (backed by a `jti` claim) sits behind an in-memory fast path, and a daily job purges expired rows. Tokens still expire naturally (24-hour default); there is no proactive revocation of previously-issued tokens when a tunnel URL rotates.
 
 ---
 

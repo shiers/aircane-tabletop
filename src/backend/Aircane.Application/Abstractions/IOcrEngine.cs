@@ -28,13 +28,57 @@ public interface IOcrEngine
     /// Recognizes text from a single raster image (PNG, JPEG, TIFF, or BMP bytes).
     /// </summary>
     /// <param name="imageBytes">Encoded image bytes for one page or region.</param>
+    /// <param name="minConfidenceOverride">
+    /// Optional per-call confidence floor (0..1). When <c>null</c> the engine uses its configured
+    /// <c>OcrOptions.MinConfidence</c> page-level gate (unchanged document behaviour). The
+    /// region-anchored consumer passes <c>OcrOptions.RegionMinConfidence</c> (default 0) so a
+    /// low-confidence region value is kept-and-flagged by the consumer rather than silently dropped.
+    /// </param>
+    /// <param name="segmentationMode">
+    /// Optional page-segmentation hint. When <see cref="OcrSegmentationMode.Default"/> (the default)
+    /// the engine uses full-page auto segmentation, preserving the document OCR path exactly. The
+    /// region-anchored consumer requests <see cref="OcrSegmentationMode.SingleWord"/> for single-token
+    /// numeric value crops and <see cref="OcrSegmentationMode.SingleLine"/> for potentially multi-word
+    /// value crops, which recovers text from the tight single-value regions that full-page auto reads
+    /// as empty.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
     /// The recognized text, or an empty <see cref="OcrResult"/> when the engine is
     /// unavailable or nothing could be recognized. Implementations should not throw
     /// for recognition failures; they should return an empty result instead.
     /// </returns>
-    Task<OcrResult> RecognizeAsync(byte[] imageBytes, CancellationToken ct = default);
+    Task<OcrResult> RecognizeAsync(
+        byte[] imageBytes,
+        float? minConfidenceOverride = null,
+        OcrSegmentationMode segmentationMode = OcrSegmentationMode.Default,
+        CancellationToken ct = default);
+}
+
+/// <summary>
+/// A provider-neutral page-segmentation hint for <see cref="IOcrEngine.RecognizeAsync"/>. Kept in the
+/// Application layer so the OCR contract does not depend on any concrete OCR wrapper; the Infrastructure
+/// engine translates these to its native segmentation modes.
+/// </summary>
+public enum OcrSegmentationMode
+{
+    /// <summary>
+    /// Full-page automatic segmentation (Tesseract PSM 3 / Auto). This is the document OCR path's
+    /// behaviour and must stay unchanged — it is the default so existing call sites are untouched.
+    /// </summary>
+    Default = 0,
+
+    /// <summary>
+    /// Treat the image as a single text line (Tesseract PSM 7). Used for potentially multi-word
+    /// value crops (name, class &amp; level, species/race, background).
+    /// </summary>
+    SingleLine = 1,
+
+    /// <summary>
+    /// Treat the image as a single word (Tesseract PSM 8). Used for single-token numeric value crops
+    /// (ability scores, AC, HP, speed, proficiency bonus).
+    /// </summary>
+    SingleWord = 2,
 }
 
 /// <summary>

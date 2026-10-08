@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import AircaneImg from '@/shared/components/AircaneImg.vue'
+import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
+
 const features = [
   {
     icon: 'library',
@@ -7,6 +10,7 @@ const features = [
     to: '/library',
     gradient: 'from-blue-600/20 to-indigo-600/20',
     iconColor: 'text-blue-400',
+    thumbnail: '/assets/dashboard/document-library-thumbnail.png',
   },
   {
     icon: 'campaigns',
@@ -15,6 +19,7 @@ const features = [
     to: '/campaigns',
     gradient: 'from-purple-600/20 to-pink-600/20',
     iconColor: 'text-purple-400',
+    thumbnail: '/assets/dashboard/campaign-management-thumbnail.png',
   },
   {
     icon: 'characters',
@@ -23,6 +28,7 @@ const features = [
     to: '/characters',
     gradient: 'from-emerald-600/20 to-teal-600/20',
     iconColor: 'text-emerald-400',
+    thumbnail: '/assets/dashboard/character-sheets-thumbnail.png',
   },
   {
     icon: 'dice',
@@ -31,6 +37,7 @@ const features = [
     to: '/sessions',
     gradient: 'from-amber-600/20 to-orange-600/20',
     iconColor: 'text-amber-400',
+    thumbnail: '/assets/dashboard/dice-roller-thumbnail.png',
   },
   {
     icon: 'ai',
@@ -39,6 +46,7 @@ const features = [
     to: '/settings/ai',
     gradient: 'from-cyan-600/20 to-blue-600/20',
     iconColor: 'text-cyan-400',
+    thumbnail: '/assets/dashboard/ai-dm-runtime-thumbnail.png',
   },
   {
     icon: 'adventure',
@@ -47,25 +55,54 @@ const features = [
     to: '/adventures/generate',
     gradient: 'from-rose-600/20 to-red-600/20',
     iconColor: 'text-rose-400',
+    thumbnail: '/assets/dashboard/adventure-generation-thumbnail.png',
+  },
+]
+
+const quickActions = [
+  {
+    label: 'Start AI DM',
+    to: '/campaigns',
+    art: '/assets/dashboard/quick-action-start-ai-dm-card.png',
+  },
+  {
+    label: 'Import Documents',
+    to: '/library',
+    art: '/assets/dashboard/quick-action-import-documents-card.png',
+  },
+  {
+    label: 'Create Character',
+    to: '/characters',
+    art: '/assets/dashboard/quick-action-create-character-card.png',
+  },
+  {
+    label: 'Roll Dice',
+    to: '/sessions',
+    art: '/assets/dashboard/quick-action-roll-dice-card.png',
   },
 ]
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-8">
-    <!-- Welcome header -->
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold text-white">Welcome back, Dungeon Master</h1>
-        <p class="mt-1 text-sm text-gray-400">Your AI-assisted adventure begins here.</p>
+  <div class="space-y-8">
+    <!-- Hero banner (Dashboard hero may stay taller than the standard 240px) -->
+    <section
+      class="hero"
+      v-bg-asset="{ url: '/assets/dashboard/dashboard-hero-background.png', fallback: '#0d0d2a' }"
+    >
+      <!-- Welcome banner overlaid on the left 55% -->
+      <div
+        class="hero-welcome"
+        aria-hidden="true"
+        v-bg-asset="{ url: '/assets/dashboard/dashboard-welcome-banner.png', fallback: '#0d0d2a', position: 'left center' }"
+      />
+      <!-- Title + subtitle overlaid bottom-left with 24px padding, consistent
+           with the shared .app-hero overlay used on every other view. -->
+      <div class="app-hero__overlay">
+        <h1 class="app-hero__title">Welcome back, Dungeon Master</h1>
+        <p class="app-hero__subtitle">Your AI-assisted adventure begins here.</p>
       </div>
-      <RouterLink to="/campaigns" class="btn-primary">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        New Campaign
-      </RouterLink>
-    </div>
+    </section>
 
     <!-- Feature cards grid -->
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -73,16 +110,29 @@ const features = [
         v-for="feature in features"
         :key="feature.title"
         :to="feature.to"
-        class="group relative overflow-hidden rounded-xl border border-surface-700/50 bg-surface-850 p-5 transition-all duration-200 hover:border-aircane-700/50 hover:shadow-lg hover:shadow-aircane-900/20"
+        class="group relative overflow-hidden rounded-xl border border-surface-700/50 bg-surface-850 transition-all duration-200 hover:border-aircane-700/50 hover:shadow-lg hover:shadow-aircane-900/20"
       >
+        <!-- Thumbnail -->
+        <AircaneImg
+          :src="feature.thumbnail"
+          alt=""
+          type="thumbnail"
+          aria-hidden="true"
+          class="feature-thumbnail"
+        >
+          <template #fallback>
+            <ThumbnailPlaceholder :label="feature.title" />
+          </template>
+        </AircaneImg>
+
         <!-- Gradient overlay -->
         <div
-          class="absolute inset-0 bg-gradient-to-br opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+          class="pointer-events-none absolute inset-0 bg-gradient-to-br opacity-0 transition-opacity duration-300 group-hover:opacity-100"
           :class="feature.gradient"
         />
 
         <!-- Content -->
-        <div class="relative">
+        <div class="relative p-5">
           <!-- Icon -->
           <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-800 ring-1 ring-surface-700/50">
             <svg v-if="feature.icon === 'library'" class="h-5 w-5" :class="feature.iconColor" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,56 +161,200 @@ const features = [
       </RouterLink>
     </div>
 
-    <!-- Quick actions row -->
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <RouterLink
-        to="/campaigns"
-        class="flex items-center gap-3 rounded-lg border border-surface-700/50 bg-surface-850 px-4 py-3 text-sm font-medium text-gray-300 transition-all hover:border-aircane-700/50 hover:text-white"
+    <!-- Quick Actions panel -->
+    <section class="space-y-4">
+      <div
+        class="panel-header panel-header--quick-actions"
+        v-bg-asset="{ url: '/assets/dashboard/quick-actions-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
       >
-        <span class="flex h-8 w-8 items-center justify-center rounded-md bg-aircane-600/20 text-aircane-400">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </span>
-        Start AI DM
-      </RouterLink>
+        <h2 class="panel-header-title">Quick Actions</h2>
+      </div>
 
-      <RouterLink
-        to="/library"
-        class="flex items-center gap-3 rounded-lg border border-surface-700/50 bg-surface-850 px-4 py-3 text-sm font-medium text-gray-300 transition-all hover:border-aircane-700/50 hover:text-white"
-      >
-        <span class="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600/20 text-blue-400">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
-        </span>
-        Import Documents
-      </RouterLink>
+      <!-- Quick action cards -->
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <RouterLink
+          v-for="action in quickActions"
+          :key="action.label"
+          :to="action.to"
+          class="quick-action-card"
+          v-bg-asset="{ url: action.art, fallback: '#0d0d24' }"
+        >
+          <span class="quick-action-label">{{ action.label }}</span>
+        </RouterLink>
+      </div>
+    </section>
 
-      <RouterLink
-        to="/characters"
-        class="flex items-center gap-3 rounded-lg border border-surface-700/50 bg-surface-850 px-4 py-3 text-sm font-medium text-gray-300 transition-all hover:border-aircane-700/50 hover:text-white"
+    <!-- Recent Campaigns panel -->
+    <section class="space-y-4">
+      <div
+        class="panel-header panel-header--recent-campaigns"
+        v-bg-asset="{ url: '/assets/dashboard/recent-campaigns-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
       >
-        <span class="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-600/20 text-emerald-400">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-          </svg>
-        </span>
-        Create Character
-      </RouterLink>
+        <h2 class="panel-header-title">Recent Campaigns</h2>
+      </div>
 
-      <RouterLink
-        to="/sessions"
-        class="flex items-center gap-3 rounded-lg border border-surface-700/50 bg-surface-850 px-4 py-3 text-sm font-medium text-gray-300 transition-all hover:border-aircane-700/50 hover:text-white"
-      >
-        <span class="flex h-8 w-8 items-center justify-center rounded-md bg-amber-600/20 text-amber-400">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-          </svg>
-        </span>
-        Roll Dice
-      </RouterLink>
-    </div>
+      <div class="flex items-center justify-between rounded-xl border border-surface-700/50 bg-surface-850 p-5">
+        <p class="text-sm text-gray-400">Jump back into an existing adventure or start a fresh one.</p>
+        <RouterLink
+          to="/campaigns"
+          class="new-campaign-button"
+          v-bg-asset="{ url: '/assets/dashboard/new-campaign-button-art.png', fallback: 'transparent', size: '100% 100%' }"
+        >
+          <span class="new-campaign-label">+ New Campaign</span>
+        </RouterLink>
+      </div>
+    </section>
+
+    <!-- Footer quote ornament -->
+    <footer class="footer-quote">
+      <img
+        src="/assets/dashboard/footer-quote-ornament.png"
+        alt=""
+        aria-hidden="true"
+        class="footer-quote-ornament"
+        @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
+      />
+      <p class="footer-quote-text">Great stories aren't just imagined. They're played.</p>
+    </footer>
   </div>
 </template>
+
+<style scoped>
+/* Hero banner */
+.hero {
+  position: relative;
+  width: 100%;
+  min-height: 200px;
+  overflow: hidden;
+  border-radius: var(--border-radius-md);
+  background-size: cover;
+  background-position: center;
+}
+
+/* Welcome banner overlaid on the left 55% */
+.hero-welcome {
+  position: absolute;
+  inset: 0 45% 0 0;
+  background-size: cover;
+  background-position: left center;
+}
+
+/* Feature card thumbnails */
+.feature-thumbnail {
+  display: block;
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 8px 8px 0 0;
+}
+
+/* Panel headers */
+.panel-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  padding: 0 1.25rem;
+  border-radius: var(--border-radius-md);
+  background-size: cover;
+  background-position: left center;
+  background-repeat: no-repeat;
+  /* Panel border so Type C panels stay legible with no art. */
+  border: var(--border-gold);
+}
+
+/* Heading text overlaid over the right 75% */
+.panel-header-title {
+  margin-left: 25%;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Quick action cards (background-size: cover, text over right 70%) */
+.quick-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 72px;
+  padding: 0 1rem;
+  border-radius: var(--border-radius-md);
+  /* Card base so it stays identifiable/clickable with no art. */
+  border: var(--border-gold-dim);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.quick-action-card:hover {
+  box-shadow: var(--glow-purple);
+  transform: translateY(-1px);
+}
+
+.quick-action-label {
+  width: 70%;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+
+/* New Campaign button — art-independent CSS base so it is always clickable. */
+.new-campaign-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+  min-height: 44px;
+  padding: 0 1.25rem;
+  border-radius: var(--border-radius-md);
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
+  background-repeat: no-repeat;
+  transition: box-shadow 0.2s ease;
+}
+
+.new-campaign-button:hover {
+  box-shadow: var(--glow-purple);
+}
+
+.new-campaign-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Footer quote ornament — ornament on top, quote text stacked below it. */
+.footer-quote {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem 0;
+}
+
+.footer-quote-ornament {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  /* The source PNG is a short divider centred in a tall transparent canvas.
+     Cap the rendered height and crop the empty top/bottom bands so the box
+     hugs the artwork, letting the quote sit directly beneath it. */
+  height: 60px;
+  object-fit: cover;
+}
+
+.footer-quote-text {
+  font-style: italic;
+  color: var(--color-gold);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  text-align: center;
+  padding: 0 1rem;
+}
+</style>

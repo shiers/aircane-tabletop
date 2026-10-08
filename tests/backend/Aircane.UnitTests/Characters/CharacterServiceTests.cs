@@ -1,6 +1,7 @@
 using Aircane.Application.Abstractions;
 using Aircane.Application.Characters;
 using Aircane.Application.DTOs.Characters;
+using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Characters;
 using Aircane.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -117,6 +118,26 @@ public class CharacterServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateCharacterAsync_RoleNotSpecified_DefaultsToPlayer()
+    {
+        var result = await _sut.CreateCharacterAsync(BuildCreateRequest());
+
+        Assert.Equal(CharacterRole.Player, result.Role);
+        var saved = await _db.Characters.FindAsync(result.Id);
+        Assert.Equal(CharacterRole.Player, saved!.Role);
+    }
+
+    [Fact]
+    public async Task CreateCharacterAsync_NpcRole_PersistsNpc()
+    {
+        var request = BuildCreateRequest() with { Role = CharacterRole.Npc };
+
+        var result = await _sut.CreateCharacterAsync(request);
+
+        Assert.Equal(CharacterRole.Npc, result.Role);
+    }
+
+    [Fact]
     public async Task CreateCharacterAsync_InvalidCanonicalJson_ThrowsArgumentException()
     {
         var request = new CreateCharacterRequest(
@@ -206,6 +227,30 @@ public class CharacterServiceTests : IDisposable
 
         Assert.Equal("Renamed Hero", updated.Name);
         Assert.Equal(created.Level, updated.Level);
+    }
+
+    [Fact]
+    public async Task UpdateCharacterAsync_RoleOnly_UpdatesRole()
+    {
+        var created = await _sut.CreateCharacterAsync(BuildCreateRequest());
+
+        var updated = await _sut.UpdateCharacterAsync(
+            created.Id,
+            new UpdateCharacterRequest(Role: CharacterRole.Npc));
+
+        Assert.Equal(CharacterRole.Npc, updated.Role);
+    }
+
+    [Fact]
+    public async Task UpdateCharacterAsync_RoleOmitted_KeepsExistingRole()
+    {
+        var created = await _sut.CreateCharacterAsync(BuildCreateRequest() with { Role = CharacterRole.Npc });
+
+        var updated = await _sut.UpdateCharacterAsync(
+            created.Id,
+            new UpdateCharacterRequest(Name: "Renamed"));
+
+        Assert.Equal(CharacterRole.Npc, updated.Role);
     }
 
     [Fact]
@@ -413,6 +458,215 @@ public class CharacterServiceTests : IDisposable
         Assert.Equal("Aldric", result[0].Name);
         Assert.Equal("Mira", result[1].Name);
         Assert.Equal("Zara", result[2].Name);
+    }
+
+    // ── ListAllAsync (Global Character Library) ───────────────────────────────
+
+    private async Task<Aircane.Domain.Entities.Campaign> SeedCampaignAsync(string name)
+    {
+        var campaign = new Aircane.Domain.Entities.Campaign(name, "D&D 5e", "2014");
+        _db.Campaigns.Add(campaign);
+        await _db.SaveChangesAsync();
+        return campaign;
+    }
+
+    [Fact]
+    public async Task ListAllAsync_NoCharacters_ReturnsEmptyList()
+    {
+        var result = await _sut.ListAllAsync();
+
+        Assert.NotNull(result);
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ListAllAsync_ReturnsUnassignedAndMultiCampaignCharacters_OrderedByName()
+    {
+        var campaignA = await SeedCampaignAsync("Campaign A");
+        var campaignB = await SeedCampaignAsync("Campaign B");
+
+        await _sut.CreateCharacterAsync(BuildCreateRequest("Zara", campaignId: campaignA.Id));
+        await _sut.CreateCharacterAsync(BuildCreateRequest("Aldric", campaignId: campaignB.Id));
+        await _sut.CreateCharacterAsync(BuildCreateRequest("Mira")); // unassigned
+
+        var result = await _sut.ListAllAsync();
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal("Aldric", result[0].Name);
+        Assert.Equal("Mira", result[1].Name);
+        Assert.Equal("Zara", result[2].Name);
+    }
+
+    [Fact]
+    public async Task ListAllAsync_PopulatesCampaignName_WhenAssigned()
+    {
+        var campaign = await SeedCampaignAsync("Lost Mines");
+        await _sut.CreateCharacterAsync(BuildCreateRequest("Hero", campaignId: campaign.Id));
+
+        var result = await _sut.ListAllAsync();
+
+        var dto = Assert.Single(result);
+        Assert.Equal(campaign.Id, dto.CampaignId);
+        Assert.Equal("Lost Mines", dto.CampaignName);
+    }
+
+    [Fact]
+    public async Task ListAllAsync_NullCampaignName_WhenUnassigned()
+    {
+        await _sut.CreateCharacterAsync(BuildCreateRequest("Wanderer"));
+
+        var result = await _sut.ListAllAsync();
+
+        var dto = Assert.Single(result);
+        Assert.Null(dto.CampaignId);
+        Assert.Null(dto.CampaignName);
+    }
+
+    [Fact]
+    public async Task ListAllAsync_NullCampaignName_WhenCampaignOrphaned()
+    {
+        // CampaignId references a campaign that does not exist (no FK constraint).
+        await _sut.CreateCharacterAsync(BuildCreateRequest("Orphan", campaignId: Guid.NewGuid()));
+
+        var result = await _sut.ListAllAsync();
+
+        var dto = Assert.Single(result);
+        Assert.NotNull(dto.CampaignId);
+        Assert.Null(dto.CampaignName); // orphan => Unassigned
+    }
+
+    // ── ListByCampaignAsync CampaignName ──────────────────────────────────────
+
+    [Fact]
+    public async Task ListByCampaignAsync_PopulatesCampaignName()
+    {
+        var campaign = await SeedCampaignAsync("Curse of Strahd");
+        await _sut.CreateCharacterAsync(BuildCreateRequest("Ireena", campaignId: campaign.Id));
+
+        var result = await _sut.ListByCampaignAsync(campaign.Id);
+
+        var dto = Assert.Single(result);
+        Assert.Equal("Curse of Strahd", dto.CampaignName);
+    }
+
+    [Fact]
+    public async Task ListByCampaignAsync_NullCampaignName_WhenCampaignDeleted()
+    {
+        // Characters reference a campaign id that has no Campaign row.
+        var ghostCampaignId = Guid.NewGuid();
+        await _sut.CreateCharacterAsync(BuildCreateRequest("Specter", campaignId: ghostCampaignId));
+
+        var result = await _sut.ListByCampaignAsync(ghostCampaignId);
+
+        var dto = Assert.Single(result);
+        Assert.Null(dto.CampaignName);
+    }
+
+    // ── SetCampaignAsync (assign / reassign / unassign) ───────────────────────
+
+    [Fact]
+    public async Task SetCampaignAsync_Assign_SetsCampaignIdAndName()
+    {
+        var campaign = await SeedCampaignAsync("Dragon Heist");
+        var character = await _sut.CreateCharacterAsync(BuildCreateRequest("Volo")); // unassigned
+
+        var dto = await _sut.SetCampaignAsync(character.Id, campaign.Id);
+
+        Assert.Equal(campaign.Id, dto.CampaignId);
+        Assert.Equal("Dragon Heist", dto.CampaignName);
+    }
+
+    [Fact]
+    public async Task SetCampaignAsync_Reassign_ChangesCampaign()
+    {
+        var campaignA = await SeedCampaignAsync("Campaign A");
+        var campaignB = await SeedCampaignAsync("Campaign B");
+        var character = await _sut.CreateCharacterAsync(BuildCreateRequest("Rover", campaignId: campaignA.Id));
+
+        var dto = await _sut.SetCampaignAsync(character.Id, campaignB.Id);
+
+        Assert.Equal(campaignB.Id, dto.CampaignId);
+        Assert.Equal("Campaign B", dto.CampaignName);
+    }
+
+    [Fact]
+    public async Task SetCampaignAsync_Unassign_ClearsCampaign()
+    {
+        var campaign = await SeedCampaignAsync("Campaign A");
+        var character = await _sut.CreateCharacterAsync(BuildCreateRequest("Freelancer", campaignId: campaign.Id));
+
+        var dto = await _sut.SetCampaignAsync(character.Id, null);
+
+        Assert.Null(dto.CampaignId);
+        Assert.Null(dto.CampaignName);
+    }
+
+    [Fact]
+    public async Task SetCampaignAsync_PersistsOnlyCampaignId_DoesNotChangeCanonicalOrCount()
+    {
+        var campaign = await SeedCampaignAsync("Campaign A");
+        var character = await _sut.CreateCharacterAsync(BuildCreateRequest("Static"));
+        var originalCanonical = character.CanonicalJson;
+        var countBefore = _db.Characters.Count();
+
+        await _sut.SetCampaignAsync(character.Id, campaign.Id);
+
+        var stored = await _db.Characters.FindAsync(character.Id);
+        Assert.NotNull(stored);
+        Assert.Equal(campaign.Id, stored.CampaignId);
+        Assert.Equal(originalCanonical, stored.CanonicalJson);
+        Assert.Equal(countBefore, _db.Characters.Count()); // no new row
+    }
+
+    [Fact]
+    public async Task SetCampaignAsync_UnknownCharacter_ThrowsKeyNotFoundException()
+    {
+        var campaign = await SeedCampaignAsync("Campaign A");
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => _sut.SetCampaignAsync(Guid.NewGuid(), campaign.Id));
+    }
+
+    [Fact]
+    public async Task SetCampaignAsync_NonExistentCampaign_ThrowsArgumentException_AndPersistsNothing()
+    {
+        var character = await _sut.CreateCharacterAsync(BuildCreateRequest("Unmoved"));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _sut.SetCampaignAsync(character.Id, Guid.NewGuid()));
+
+        var stored = await _db.Characters.FindAsync(character.Id);
+        Assert.NotNull(stored);
+        Assert.Null(stored.CampaignId); // unchanged
+    }
+
+    [Fact]
+    public async Task SetCampaignAsync_DoesNotRevalidateStoredCanonicalJson()
+    {
+        // Persist a draft directly whose CanonicalJson would fail strict schema validation
+        // (empty name, no classes). Assigning a campaign must not re-validate it.
+        var campaign = await SeedCampaignAsync("Campaign A");
+        var draftCanonical = CharacterJsonSerializer.Serialize(new CanonicalCharacter
+        {
+            Identity = new CharacterIdentity { Name = "" },
+            Classes = [],
+            Abilities = new AbilityScores(),
+            Combat = new CombatStats { MaxHitPoints = 1, CurrentHitPoints = 1 }
+        });
+        var draft = new Aircane.Domain.Entities.Character(
+            name: "Draft",
+            gameSystem: "D&D 5e",
+            ruleset: "2014",
+            level: 1,
+            canonicalJson: draftCanonical,
+            currentStateJson: "{}");
+        _db.Characters.Add(draft);
+        await _db.SaveChangesAsync();
+
+        var dto = await _sut.SetCampaignAsync(draft.Id, campaign.Id);
+
+        Assert.Equal(campaign.Id, dto.CampaignId);
+        Assert.Equal("Campaign A", dto.CampaignName);
     }
 
     // ── ImportCharacterFromJsonAsync ──────────────────────────────────────────

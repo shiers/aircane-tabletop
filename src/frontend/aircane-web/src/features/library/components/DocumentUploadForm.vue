@@ -127,7 +127,11 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <template>
-  <section aria-labelledby="upload-heading" class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+  <section
+    aria-labelledby="upload-heading"
+    class="upload-panel p-6"
+    v-bg-asset="{ url: '/assets/library/upload-document-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+  >
     <h2 id="upload-heading" class="mb-4 text-lg font-semibold text-white">
       Upload Document
     </h2>
@@ -295,3 +299,15 @@ async function handleSubmit(): Promise<void> {
     </form>
   </section>
 </template>
+
+<style scoped>
+/* Drag-and-drop / upload panel art. The dashed drop-zone border is baked into
+   the image, so NO CSS border is applied here. */
+.upload-panel {
+  background-size: cover;
+  background-position: left center;
+  background-repeat: no-repeat;
+  border: var(--border-gold);
+  border-radius: var(--border-radius-md);
+}
+</style>

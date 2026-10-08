@@ -22,10 +22,40 @@ the priority lists below with full detail; this section records *why* they were 
 
 ---
 
-## In Progress (not yet committed)
+## Recently Delivered (not yet in a priority bucket)
+
+### Source-Specific Character Import (D&D Beyond / VTT / Pathbuilder 2e)
+> **✅ Delivered and merged to `dev`** (PR #15, merge commit `89dc148`). Reviewed, build/tests green.
+> Covers the former P2 items **"D&D Beyond / VTT Integration"** and **"Pathbuilder 2e Character Import"**.
+
+Source-specific import adapters that funnel into the **existing** character import pipeline — purely
+additive, no change to the canonical schema or the review/save flow. New
+`ICharacterSourceMapper` abstraction + `CharacterFormatDetector` (Order-based precedence) in
+`Aircane.Application/Characters/Import/`; each mapper emits a flat dictionary of raw field values that
+funnels through the existing `CharacterService.ApplyMapping` / `CanonicalCharacter` rail into
+`Character.CanonicalJson` (no new draft type, no typed-column writes). Mappers: **Pathbuilder 2e**
+(proficiency rank → bonus, spellcasters → spell blocks, auto PF2e/Remaster), **D&D Beyond API v5**
+(sums bonus layers, out-of-range → `requiresReview`, 2014/2024 ruleset via source IDs), **D&D Beyond
+Companion/DDB-Importer**, **Foundry VTT dnd5e** (ruleset via `_stats.systemVersion`), **Foundry VTT
+pf2e** (auto PF2e/Remaster), **Roll20** (flat `attribs`, always low-confidence), and **Generic VTT**
+(heuristic fallback). New `POST /api/characters/import/dndbeyond-url` →
+`DndBeyondUrlImportService` (typed HttpClient hitting the **unofficial**
+`character-service.dndbeyond.com` v5 endpoint; 403/404/timeout → clear `422` messages; **never called
+from the browser**, responses not cached, URL never stored/logged; in-service single-flight guard
+since the `api` rate-limit policy is a LAN no-op). `DndBeyondPdfHints` priority-override wired into the
+existing PdfPig extractor (splits `"Fighter 5"` → class + level). Frontend: `ImportCharacterModal.vue`
+tabs (Upload File / D&D Beyond URL / PDF), detected-source badges, source-override dropdown, and an
+`ImportReviewPanel.vue` reusing the existing **FormDescriptor-driven** character sheet renderer with an
+always-editable 2014/2024 ruleset dropdown for D&D 5e. PF2e/5e sources auto-set the game system; Roll20
+and Generic VTT use a two-call handshake so the user picks a system first. Tests: per-mapper unit tests,
+detector precedence/negative tests, DDB URL parse/status tests (DDB API mocked with **WireMock.Net
+1.6.11**), PDF-hint tests, endpoint integration tests (happy paths, `requiresSourceConfirmation`,
+preserved legacy `400 "ruleset is required."`, DDB `422`), and anonymised fixtures per source. Verified:
+backend 2125 unit + 96 integration green, frontend `vue-tsc` + 317 vitest green. **Caveat:** the D&D
+Beyond URL path depends on an unofficial API that may change — PDF export is the documented fallback.
 
 ### In-App "Report a bug" Feedback Feature
-> **🚧 Being implemented via a Kiro plan→implement→review workflow; commit to `dev` is held until the reviewer approves and build/tests are green.** Not shippable yet.
+> **✅ Delivered and merged to `dev`** (`9f7c8d8`, with doc follow-up `a95ecfd`). Reviewed, build/tests green.
 
 A "Report a bug" button available throughout the app that auto-captures diagnostic context at
 submission time and posts a structured issue to **GitHub Issues** via the GitHub REST API, proxied
@@ -100,15 +130,63 @@ Replace short-lived session tokens with full user accounts (local credentials or
 ### SQLite Option for Lightweight Installs
 Allow single-user or desktop installations to run without Docker/PostgreSQL by using SQLite with a compatible vector extension.
 
-### D&D Beyond / VTT Integration
-Import characters directly from D&D Beyond, Foundry VTT, or Roll20 via API or export formats.
+> **Delivered and moved out of P2:** *D&D Beyond / VTT Integration* and *Pathbuilder 2e Character
+> Import* shipped together as the source-specific character import adapters — see "Recently
+> Delivered" above (PR #15). The one standing caveat is that the D&D Beyond URL path relies on an
+> unofficial API that may change.
 
-### Pathbuilder 2e Character Import
-Import Pathfinder 2e characters built in [Pathbuilder 2e](https://pathbuilder2e.com/app.html?v=110a). Pathbuilder exports a character as JSON (its "Export to JSON" feature), so this maps to the existing JSON character import path: add a Pathbuilder-2e-to-canonical field mapping/adapter and expose it as a source in the import flow. Respect the licensing/Product Identity rules in `docs/licensing/open-content-compliance.md` — import only the user's own character data, not bundled rules content.
+### D&D Beyond Printable-Sheet Value Localization (OCR geometry — blocks real DDB PDF extraction)
+The OCR infrastructure for DDB PDF character import shipped (first-class default-on OCR, desktop-bundled
+Tesseract, caption-signature detection, region OCR with per-region PSM) and the pipeline runs end-to-end:
+a real DDB 2024 printable sheet is detected, 15 regions are OCR'd, ruleset auto-detects as 2024, a review
+draft is persisted, and nothing crashes. **But it does not yet extract the actual values.** Verified live
+against a real DDB export: the caption-anchored value regions in `DndBeyondSheetLayout` land on the
+caption words or empty space, not the value glyphs — e.g. the "ARMOR" region OCRs the caption word
+"ARMOR" at *rising* confidence as DPI increases, and the ability boxes return noise (`ee`/`ae`). An
+exhaustive per-region offset sweep (Dy 0.6–3.0 × multiple widths) and DPI escalation (300/450/600)
+recovered no real values, so this is a value-localization/geometry problem, not PSM/DPI tuning (the PSM
+wiring is correct and already shipped — crops now return text instead of nothing). Needs an investigation
+to choose a strategy, not incremental tuning. Candidate approaches:
+- **Re-derive the DDB sheet value geometry** from the real layout (where each value glyph sits relative
+  to its caption), likely per sheet version (2014 vs 2024 differ).
+- **Whole-page OCR + spatial parsing** instead of fixed caption-anchored crops (OCR the page, then
+  associate recognized value tokens to captions by position).
+- **Lean on the verified-working alternatives and treat DDB-printable OCR as best-effort:** the
+  **AcroForm path already works** for form-fillable sheets (verified: official WotC fillable sheet
+  enumerates 334 fields and `DndBeyondPdfHints.FieldMap` keys match the real field names verbatim — no
+  OCR needed), and the **character-service JSON API** path exists (now that the import-draft persistence
+  400 is fixed). Likely product direction: guide DDB users toward a fillable export / JSON, with
+  rasterized-printable OCR as a best-effort fallback.
+This is why the DDB *printable-PDF* import specifically does not yet populate fields; the broader
+character-import feature (JSON sources, form-fillable PDFs) is unaffected.
 
 ---
 
 ## Priority 3 - Quality of Life
+
+### Unify PDF Character Import onto the Source-Adapter Review Rail
+The PDF character import now lives as a tab inside the single **Import Character** modal (alongside
+Upload File and D&D Beyond URL), but it still runs on a **separate flow underneath**: it posts to
+`/api/characters/import/pdf` and, when fields need attention, redirects to the full-page
+`character-field-review` route — an *unmapped-fields* review distinct from the inline, FormDescriptor-
+driven `ImportReviewPanel` every other source uses. Two follow-ups to converge it:
+- **Fold the PDF path behind the same source rail** so extracted PDF fields produce a flat field
+  dictionary that funnels through `ApplyMapping`/`CanonicalCharacter` and the inline `ImportReviewPanel`,
+  retiring the second review UI (one review experience for all sources, less duplicated test surface).
+- **Drop the hardcoded `gameSystem=D&D 5e` / `ruleset=2014`** that the PDF upload currently sends in its
+  multipart form. A non-5e PDF is mislabeled today; the system/ruleset should be detected or chosen the
+  same way the JSON/source paths handle it (PF2e auto-set, 2014/2024 confirmable for 5e, user-selected
+  for unknown). *Deferred deliberately* from the button-consolidation change (Option A) because merging
+  the two review models touches the backend PDF endpoint, the review components, and their tests, and the
+  existing PDF flow works and is tested.
+
+### In-App Help / How-To Menu
+Add a Help menu item that surfaces user-facing how-tos and guidance in-app (rather than only in
+`docs/`). First content to include: **character import instructions per source** (Pathbuilder 2e,
+D&D Beyond URL + saved file, Foundry VTT 5e/PF2e, Roll20, Generic VTT, and PDF via the unified
+**Import Character** modal) — the detailed step-by-step was drafted but intentionally not written to
+`docs/` because it belongs in this feature. Likely also covers library import, hosting a session,
+and AI provider setup. Surface it in the app shell (and the Tauri tray where it fits).
 
 ### Streaming Narration (All Providers)
 Ensure token-by-token streaming works consistently across all AI providers and UI modes.
@@ -169,4 +247,4 @@ Localize the UI and support non-English source documents.
 
 ---
 
-*Last updated: 2026-10-01 — added the in-app "Report a bug" feedback feature as an In Progress item (being built via a Kiro workflow; commit held until reviewed + verified). Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter.*
+*Last updated: 2026-10-04 — source-specific character import adapters (D&D Beyond URL+file, Foundry VTT 5e/PF2e, Roll20, Pathbuilder 2e, Generic VTT) delivered and merged to `dev` via PR #15; the P2 items "D&D Beyond / VTT Integration" and "Pathbuilder 2e Character Import" moved to Recently Delivered. Earlier (2026-10-04): in-app "Report a bug" feedback feature delivered and merged to `dev` (moved from In Progress to Recently Delivered). Earlier (2026-10-01): added the feedback feature as an In Progress item. Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter.*

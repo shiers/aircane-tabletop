@@ -5,6 +5,14 @@
 @layer base {
   body {
     @apply bg-surface-950 text-gray-100 antialiased;
+    /* Solid fallback colour first so it shows immediately and remains if the
+       background PNG fails to load (no flash, no broken-image). */
+    background-color: #0a0a1a;
+    background-image: url('/assets/ui/app-background.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
   }
 
   /* Custom scrollbar for the dark theme */
@@ -39,11 +47,113 @@
 
   /* Primary button */
   .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-lg bg-aircane-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-aircane-600/20 transition-all hover:bg-aircane-500 hover:shadow-aircane-500/30 focus:outline-none focus:ring-2 focus:ring-aircane-400;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-aircane-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-aircane-600/20 transition-all hover:bg-aircane-500 hover:shadow-aircane-500/30 focus:outline-none focus:ring-2 focus:ring-aircane-400;
+    /* Button art is baked with its own border/glow; scale it to fit any size. */
+    background-image: url('/assets/ui/primary-button-glow.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
   }
 
   /* Secondary/ghost button */
   .btn-secondary {
-    @apply inline-flex items-center gap-2 rounded-lg border border-surface-700 px-4 py-2.5 text-sm font-semibold text-gray-300 transition-all hover:border-surface-600 hover:bg-surface-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-surface-600;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-300 transition-all hover:bg-surface-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-surface-600;
+    /* Art already includes a border, so no CSS border is applied here. */
+    background-image: url('/assets/ui/secondary-button-glow.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+  }
+
+  /* Reusable decorative section divider ornament for later phases:
+     <img src="/assets/ui/section-divider-ornament.png" alt="" class="section-divider"> */
+  .section-divider {
+    @apply mx-auto block;
+    width: 100%;
+    max-width: 600px;
+  }
+
+  /* -----------------------------------------------------------------------
+     Shared page-layout primitives (single source of truth for all views).
+
+     Views compose their content inside the AppLayout <main>, which supplies
+     the centred, width-capped container. Each view uses .page-sections to get
+     a consistent 32px vertical gap between major sections, and the .app-hero*
+     classes for a standardized 240px hero banner with a bottom-left title.
+     ----------------------------------------------------------------------- */
+
+  /* Centred content column applied by AppLayout <main>; views must NOT
+     re-impose their own max-width / mx-auto. */
+  .page-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 32px 48px 32px;
+  }
+
+  /* Consistent 32px vertical rhythm between the major sections of a view. */
+  .page-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  /* Opaque dark fill for views that drop their full-page art. Applied by
+     AppLayout to the shell <main> for the plain-background routes so the solid
+     colour covers the ENTIRE content viewport (container gutters + top gap),
+     not just the routed view root, and the body's app-background.png cannot
+     bleed through. */
+  .page-plain {
+    background-color: #0a0a1a;
+  }
+
+  /* Standardized hero banner (non-dashboard views): exactly 240px tall with
+     the title/subtitle overlaid bottom-left. */
+  .app-hero {
+    position: relative;
+    width: 100%;
+    min-height: 240px;
+    overflow: hidden;
+    border-radius: var(--border-radius-md);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  /* Left-anchored dark-to-transparent scrim so the overlaid title/subtitle stay
+     readable over busy hero art that has no baked-in text legibility treatment.
+     Spans the full hero and sits behind the bottom-left text. */
+  .app-hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.7),
+      rgba(0, 0, 0, 0.4) 50%,
+      transparent
+    );
+  }
+
+  .app-hero__overlay {
+    position: absolute;
+    z-index: 1;
+    inset: auto 0 0 0;
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+  }
+
+  .app-hero__title {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #fff;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+  }
+
+  .app-hero__subtitle {
+    margin-top: 4px;
+    font-size: 14px;
+    color: #e5e7eb;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
   }
 }

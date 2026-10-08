@@ -3,6 +3,7 @@ using Aircane.Application.Abstractions.BackgroundJobs;
 using Aircane.Application.AiRuntime;
 using Aircane.Application.AiRuntime.Validators;
 using Aircane.Application.Characters;
+using Aircane.Application.Characters.Import;
 using Aircane.Application.GameSystems;
 using Aircane.Application.Library;
 using Aircane.Infrastructure.Adventures;
@@ -57,6 +58,26 @@ public static class DependencyInjection
         services.AddScoped<ICampaignService, CampaignService>();
         services.AddScoped<ICampaignStateService, CampaignStateService>();
         services.AddScoped<ICharacterService, CharacterService>();
+
+        // Character source-import adapters: each mapper recognises one external sheet format.
+        // CharacterFormatDetector orders them by Order (not DI order) and picks the first match.
+        services.AddScoped<ICharacterSourceMapper, PathbuilderTwoMapper>();
+        services.AddScoped<ICharacterSourceMapper, DndBeyondApiMapper>();
+        services.AddScoped<ICharacterSourceMapper, DndBeyondCompanionMapper>();
+        services.AddScoped<ICharacterSourceMapper, FoundryDnd5eMapper>();
+        services.AddScoped<ICharacterSourceMapper, FoundryPf2eMapper>();
+        services.AddScoped<ICharacterSourceMapper, Roll20Mapper>();
+        services.AddScoped<ICharacterSourceMapper, GenericVttMapper>();
+        services.AddScoped<CharacterFormatDetector>();
+
+        // Typed HttpClient for the D&D Beyond URL import service (unofficial character-service API).
+        // The service never stores/logs the character URL and self-throttles outbound calls.
+        services.AddHttpClient<IDndBeyondUrlImportService, DndBeyondUrlImportService>(c =>
+        {
+            c.BaseAddress = new Uri("https://character-service.dndbeyond.com/");
+            c.Timeout = TimeSpan.FromSeconds(10);
+            c.DefaultRequestHeaders.UserAgent.ParseAdd("Aircane-Tabletop/1.0");
+        });
         services.AddScoped<ISessionHostingService, SessionHostingService>();
         // Token revocation is a singleton so the in-memory fast-path set survives across
         // requests. Persistent (per-jti) revocation is backed by the RevokedTokens table,
@@ -75,7 +96,10 @@ public static class DependencyInjection
         RegisterOcrEngine(services, configuration);
 
         services.AddScoped<IPdfTextExtractor, PdfPigTextExtractor>();
-        services.AddScoped<IPdfCharacterExtractor, PdfCharacterExtractor>();
+        // Generic AcroForm + text-layer character extraction. The DDB printable-sheet OCR branch
+        // was removed; the extractor no longer depends on ICaptionRegionOcr.
+        services.AddScoped<IPdfCharacterExtractor>(sp => new PdfCharacterExtractor(
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PdfCharacterExtractor>>()));
         services.AddSingleton<ITextChunker, SlidingWindowTextChunker>();
         services.AddScoped<IDocumentImportJob, DocumentImportJob>();
         services.AddScoped<IFolderScanJob, FolderScanJob>();
@@ -230,6 +254,11 @@ public static class DependencyInjection
                 services.AddSingleton<Aircane.Application.Abstractions.IPdfRasterizer, DocnetPdfRasterizer>();
             else
                 services.AddSingleton<Aircane.Application.Abstractions.IPdfRasterizer, NullPdfRasterizer>();
+
+            // Caption/region-anchored OCR helper (FR-3): a reusable seam over the rasterizer + engine.
+            // No null-equivalent — consumers gate on ICaptionRegionOcr.IsAvailable, which is false when
+            // either dependency is unavailable.
+            services.AddSingleton<Aircane.Application.Abstractions.ICaptionRegionOcr, CaptionRegionOcr>();
         }
         else
         {

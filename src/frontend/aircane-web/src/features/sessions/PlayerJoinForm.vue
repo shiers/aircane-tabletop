@@ -6,6 +6,8 @@
 import { ref, computed } from 'vue'
 import { useSessionStore } from './store'
 import type { JoinSessionResult } from './api'
+import DisplayNameField from './components/DisplayNameField.vue'
+import InviteCodeField from './components/InviteCodeField.vue'
 
 // ---------------------------------------------------------------------------
 // Props & emits
@@ -15,6 +17,12 @@ const props = defineProps<{
   sessionId: string
   /** Optional session name to display in the heading. */
   sessionName?: string
+  /**
+   * When true, the form hides its own API error banner. Used when a session
+   * lookup failed: the parent view shows a standalone "Session not found" panel
+   * for that case, so the form must not repeat the same store.error.
+   */
+  hideError?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -74,21 +82,22 @@ async function handleSubmit(): Promise<void> {
 <template>
   <section
     aria-labelledby="join-form-heading"
-    class="rounded-xl border border-gray-800 bg-gray-900 p-6"
+    class="join-panel rounded-xl p-6 pl-7"
+    v-bg-asset="{ url: '/assets/join-session/join-session-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
   >
-    <h2 id="join-form-heading" class="mb-1 text-lg font-semibold text-white">
+    <h2 id="join-form-heading" class="mb-1 text-lg font-semibold text-white pl-10">
       Join Session
     </h2>
     <p v-if="sessionName" class="mb-5 text-sm text-gray-400">
       {{ sessionName }}
     </p>
-    <p v-else class="mb-5 text-sm text-gray-400">
+    <p v-else class="mb-5 text-sm text-gray-400 pl-10">
       Enter your display name and the invite code to join.
     </p>
 
-    <!-- API error banner -->
+    <!-- API error banner (suppressed when the parent owns the lookup error) -->
     <div
-      v-if="store.error"
+      v-if="store.error && !hideError"
       role="alert"
       class="mb-4 flex items-start gap-3 rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300"
     >
@@ -113,73 +122,58 @@ async function handleSubmit(): Promise<void> {
       <div class="mb-4">
         <label
           for="join-display-name"
-          class="mb-1 block text-sm font-medium text-gray-300"
+          class="mb-1 block text-sm font-medium text-gray-300 pl-2"
         >
           Display Name <span class="text-red-400" aria-hidden="true">*</span>
         </label>
-        <input
+        <DisplayNameField
           id="join-display-name"
           v-model="displayName"
-          type="text"
-          autocomplete="nickname"
-          maxlength="50"
-          placeholder="e.g. Thorin Oakenshield"
-          class="w-full rounded-md border bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-          :class="fieldErrors.displayName ? 'border-red-600' : 'border-gray-700'"
-          :aria-describedby="fieldErrors.displayName ? 'join-display-name-error' : undefined"
-          :aria-invalid="!!fieldErrors.displayName"
+          :error="fieldErrors.displayName"
         />
-        <p
-          v-if="fieldErrors.displayName"
-          id="join-display-name-error"
-          role="alert"
-          class="mt-1 text-xs text-red-400"
-        >
-          {{ fieldErrors.displayName }}
-        </p>
       </div>
 
       <!-- Invite code -->
       <div class="mb-6">
         <label
           for="join-invite-code"
-          class="mb-1 block text-sm font-medium text-gray-300"
+          class="mb-1 block text-sm font-medium text-gray-300 pl-2"
         >
           Invite Code <span class="text-red-400" aria-hidden="true">*</span>
         </label>
-        <input
+        <InviteCodeField
           id="join-invite-code"
           v-model="inviteCode"
-          type="text"
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="characters"
-          spellcheck="false"
-          placeholder="e.g. ABC123"
-          class="w-full rounded-md border bg-gray-800 px-3 py-2 text-center font-mono text-lg tracking-widest text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-          :class="fieldErrors.inviteCode ? 'border-red-600' : 'border-gray-700'"
-          :aria-describedby="fieldErrors.inviteCode ? 'join-invite-code-error' : undefined"
-          :aria-invalid="!!fieldErrors.inviteCode"
+          :error="fieldErrors.inviteCode"
         />
-        <p
-          v-if="fieldErrors.inviteCode"
-          id="join-invite-code-error"
-          role="alert"
-          class="mt-1 text-xs text-red-400"
-        >
-          {{ fieldErrors.inviteCode }}
-        </p>
       </div>
 
       <!-- Submit -->
       <button
         type="submit"
-        class="w-full rounded-lg bg-aircane-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+        class="join-submit w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50 transition-opacity"
+        v-bg-asset="{ url: '/assets/join-session/join-session-button-art.png', fallback: 'transparent', size: '100% 100%' }"
         :disabled="store.loading || !isValid"
       >
         <span v-if="store.loading">Joining…</span>
-        <span v-else>Join Session</span>
+        <span v-else>Join Session →</span>
       </button>
     </form>
   </section>
 </template>
+
+<style scoped>
+.join-panel {
+  border: var(--border-gold);
+  background-size: cover;
+  background-position: left center;
+}
+
+/* Join button — art-independent CSS base so it stays usable with no art. */
+.join-submit {
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
+  background-size: 100% 100%;
+}
+</style>

@@ -88,6 +88,38 @@ jobs:
         working-directory: desktop
         run: ${{ matrix.build }}
 
+      # ── Bundle-layout smoke test ──────────────────────────────────────────────
+      # The Tauri `resources` object/map form has no in-repo precedent, so assert
+      # the packaged app actually contains tessdata/eng.traineddata under its
+      # resource dir. This fails the matrix build early if the map-form resources
+      # layout does not land where sidecar.rs's resource_dir() lookup expects,
+      # rather than surfacing as a runtime "OCR unavailable" surprise.
+      - name: Assert bundled OCR model (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # Windows bundles are .msi/.exe installers with resources packed inside,
+          # so check the exe dir: on Windows resource_dir() is the exe's dir, and
+          # tauri-build stages resources there with the same layout the installers ship.
+          $hit = 'desktop/src-tauri/target/release/tessdata/eng.traineddata'
+          if (-not (Test-Path $hit -PathType Leaf)) {
+            Write-Error "Bundled resource not found at $hit. The map-form resources layout did not land where resource_dir() expects."
+            exit 1
+          }
+          Write-Host "OK: found $hit"
+
+      - name: Assert bundled OCR model (Unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          bundle='desktop/src-tauri/target/release/bundle'
+          hit="$(find "$bundle" -type f -path '*/tessdata/eng.traineddata' 2>/dev/null | head -n1 || true)"
+          if [ -z "$hit" ]; then
+            echo "ERROR: bundled resource tessdata/eng.traineddata not found under $bundle. The map-form resources layout did not land where resource_dir() expects." >&2
+            exit 1
+          fi
+          echo "OK: found $hit"
+
       # ── Upload installers (artifacts only — no auto-publish) ──────────────────
       - name: Upload Windows installers
         if: matrix.os == 'windows-latest'

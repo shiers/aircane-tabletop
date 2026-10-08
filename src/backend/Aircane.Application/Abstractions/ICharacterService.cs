@@ -63,6 +63,26 @@ public interface ICharacterService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists every character in the global library, regardless of campaign assignment,
+    /// ordered by name. Each DTO carries its campaign name, or null when the character is
+    /// unassigned or its campaign no longer exists.
+    /// </summary>
+    Task<IReadOnlyList<CharacterDto>> ListAllAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Assigns, reassigns, or (with a null <paramref name="campaignId"/>) unassigns a character's campaign.
+    /// Only the campaign FK and the update timestamp change; CanonicalJson is never touched and no
+    /// schema validation is performed. Returns the updated character.
+    /// Throws <see cref="KeyNotFoundException"/> when the character does not exist.
+    /// Throws <see cref="ArgumentException"/> when a non-null target campaign does not exist.
+    /// </summary>
+    Task<CharacterDto> SetCampaignAsync(
+        Guid characterId,
+        Guid? campaignId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Saves a character import field mapping as a reusable template.
     /// </summary>
     Task<CharacterTemplateDto> SaveTemplateAsync(

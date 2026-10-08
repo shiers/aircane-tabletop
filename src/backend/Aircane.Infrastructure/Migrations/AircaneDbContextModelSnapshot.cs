@@ -216,6 +216,9 @@ namespace Aircane.Infrastructure.Migrations
                     b.Property<Guid?>("OwnerParticipantId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Ruleset")
                         .IsRequired()
                         .HasMaxLength(100)

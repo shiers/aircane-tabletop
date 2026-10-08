@@ -1,5 +1,6 @@
 using Aircane.Domain.Common;
 using Aircane.Domain.Entities.GameSystems;
+using Aircane.Domain.Enums;
 
 namespace Aircane.Domain.Entities;
 
@@ -9,8 +10,9 @@ namespace Aircane.Domain.Entities;
 /// </summary>
 public class Character : EntityBase
 {
-    public Guid? CampaignId { get; init; }
+    public Guid? CampaignId { get; set; }
     public Guid? OwnerParticipantId { get; set; }
+    public CharacterRole Role { get; set; } = CharacterRole.Player;
     public string Name { get; set; }
     public string GameSystem { get; init; }
     public string Ruleset { get; init; }
@@ -38,7 +40,8 @@ public class Character : EntityBase
         string canonicalJson,
         string currentStateJson,
         Guid? campaignId = null,
-        Guid? ownerParticipantId = null)
+        Guid? ownerParticipantId = null,
+        CharacterRole role = CharacterRole.Player)
     {
         Name = name;
         GameSystem = gameSystem;
@@ -48,6 +51,7 @@ public class Character : EntityBase
         CurrentStateJson = currentStateJson;
         CampaignId = campaignId;
         OwnerParticipantId = ownerParticipantId;
+        Role = role;
         UpdatedAt = CreatedAt;
     }
 

@@ -428,6 +428,19 @@ public class PdfCharacterExtractorTests
         Assert.False(result.IsOcrRequired);
     }
 
+    // ── Generic class/level split ─────────────────────────────────────────────
+
+    [Fact]
+    public void MapToCanonical_ClassLevel_SplitsClassAndLevel()
+    {
+        var result = ExtractFromText("CharacterName: Thorn\nClassLevel: Wizard 7\n");
+
+        Assert.NotNull(result.MappedCharacter);
+        Assert.Single(result.MappedCharacter!.Classes);
+        Assert.Equal("Wizard", result.MappedCharacter.Classes[0].ClassName);
+        Assert.Equal(7, result.MappedCharacter.Classes[0].Level);
+    }
+
     // ── Helper: build a result from raw text ──────────────────────────────────
 
     /// <summary>

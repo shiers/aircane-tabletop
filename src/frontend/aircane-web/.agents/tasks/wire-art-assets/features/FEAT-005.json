@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-005",
+  "type": "feat",
+  "description": "Characters view art + AbilityScoreTile/RoleBadge components (Phase 5). Independent of other view FEATs; depends on FEAT-001 tokens.",
+  "status": "completed",
+  "steps": [
+    "Create src/features/characters/components/AbilityScoreTile.vue, props { abbr: string; score: number; modifier: number } rendering abbr, score, and the signed modifier (+N / -N). Optionally use /assets/characters/ability-score-tile.png as the tile background.",
+    "Create src/features/characters/components/RoleBadge.vue, props { role: 'Player' | 'NPC' }: Player=purple, NPC=green; optionally back with /assets/characters/player-badge-art.png and npc-badge-art.png.",
+    "Add __tests__/AbilityScoreTile.test.ts and RoleBadge.test.ts covering the rendered values/states.",
+    "In src/features/characters/CharactersView.vue add a full-width hero using /assets/characters/characters-hero-background.png.",
+    "In components/CharacterList.vue apply /assets/characters/character-card-frame.png as a position:absolute overlay on each card (portrait upper 65%, stats lower 35%) WITHOUT adding an extra CSS border; place the class-based portrait (object-fit:cover; width/height 100%) in the portrait area using character-portrait-fighter/rogue/cleric/wizard.png mapped by class (Fighter/Warrior->fighter, Rogue/Ranger->rogue, Cleric/Paladin->cleric, Wizard/Sorcerer/Druid->wizard) with fighter as the fallback for any unmatched class.",
+    "Apply /assets/characters/character-detail-side-panel-art.png as the detail side-panel background (stats/abilities/actions in the upper 60%) and the 4 stat-tile arts (character-stat-tile-hit-points/armor-class/speed/proficiency.png, background-size:100% 100%) with values/labels overlaid, in the character detail/edit area (CharactersView or CharacterForm as appropriate).",
+    "Apply /assets/characters/import-pdf-button-art.png and import-json-button-art.png as background-image on the Import PDF / Import JSON buttons in CharactersView.vue, and add a character empty-state using character-empty-state-ornament.png centred. Use AbilityScoreTile and RoleBadge where ability scores and the player/NPC role are displayed."
+  ],
+  "acceptance_criteria": [
+    "AbilityScoreTile and RoleBadge exist with the specified props and their tests pass.",
+    "Characters hero, card frame overlay, class->portrait mapping (fighter fallback), detail panel art, 4 stat tiles, import button arts, and empty state are wired via absolute /assets/characters/... paths.",
+    "`npm run build` succeeds and `npm test` passes (existing character tests included)."
+  ],
+  "verification": [
+    "cd src/frontend/aircane-web && npm run build",
+    "cd src/frontend/aircane-web && npm test"
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented all FEAT-005 steps. Created AbilityScoreTile.vue (props abbr/score/modifier, signed modifier incl. +0; backed by ability-score-tile.png) and RoleBadge.vue (Player=purple/player-badge-art.png, NPC=green/npc-badge-art.png), each with co-located Vitest tests (6 new tests). CharactersView.vue: added full-width hero (characters-hero-background.png) keeping the existing <h1>Characters</h1>; applied import-pdf-button-art.png / import-json-button-art.png as background-size:100% 100% button art (no extra border, preserved disabled/spinner/aria + button labels for e2e); added a detail side-panel (character-detail-side-panel-art.png) shown in edit mode with the 4 stat tiles (hit-points/armor-class/speed/proficiency, background-size:100% 100%) overlaying values/labels in the upper 60%, read from canonicalJson.combat. CharacterList.vue: converted the table to a card grid; character-card-frame.png is a position:absolute overlay (object-fit:fill, pointer-events:none, no added CSS border) with the class-based portrait in the upper 65% (object-fit:cover) and stats in the lower 35%; class->portrait mapping Fighter/Warrior->fighter, Rogue/Ranger->rogue, Cleric/Paladin->cleric, Wizard/Sorcerer/Druid->wizard with fighter fallback for any unmatched class; empty state uses character-empty-state-ornament.png centred; RoleBadge (Player when ownerParticipantId set, else NPC) and AbilityScoreTile (6 scores from canonicalJson) are used on each card. All asset refs use absolute /assets/characters/... paths. Verified from the frontend dir: `npm run build` succeeds (0 type errors) and `npm test` passes 268/268 (32 files), up from the 249 baseline. No existing unit tests referenced CharacterList/CharactersView; the characters e2e spec selectors (h1 'characters', 'New Character'/'Import PDF'/'Import JSON' button names, 'New Character' heading) remain satisfied. Backend untouched."
+}

@@ -6,8 +6,17 @@ import {
   type RulesQuestionResponse,
 } from './api'
 import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
+import GameSystemDropdown from './components/GameSystemDropdown.vue'
 
 const licensesModalOpen = ref(false)
+
+// Game system options for the dropdown filter. The id doubles as the value sent to the backend,
+// preserving the existing free-text request shape (gameSystem is a plain string on the request).
+const gameSystemOptions = [
+  { id: 'D&D 5e 2014', name: 'D&D 5e 2014' },
+  { id: 'Pathfinder 2e', name: 'Pathfinder 2e' },
+  { id: 'Generic Freeform', name: 'Generic Freeform' },
+]
 
 /** Tailwind classes for a citation license badge by license key. */
 function licenseBadgeClasses(licenseKey: string): string {
@@ -22,7 +31,7 @@ function licenseBadgeClasses(licenseKey: string): string {
 }
 
 const question = ref('')
-const gameSystem = ref('')
+const gameSystem = ref<string | null>(null)
 const ruleset = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -38,7 +47,7 @@ async function submitQuestion() {
 
   const request: RulesQuestionRequest = {
     question: trimmed,
-    gameSystem: gameSystem.value.trim() || null,
+    gameSystem: gameSystem.value?.trim() || null,
     ruleset: ruleset.value.trim() || null,
   }
 
@@ -54,17 +63,30 @@ async function submitQuestion() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl space-y-6">
-    <!-- Page header -->
-    <div>
-      <h1 class="text-2xl font-bold text-white">Rules Lookup</h1>
-      <p class="mt-1 text-sm text-gray-400">
-        Ask a rules question and get an AI-generated answer grounded in your indexed source
-        documents.
-      </p>
+  <div class="page-sections">
+    <!-- Hero banner -->
+    <div
+      class="app-hero"
+      v-bg-asset="{ url: '/assets/rules/rules-lookup-hero-banner.png', fallback: '#0d0d2a' }"
+      role="img"
+      aria-label="Rules Lookup"
+    >
+      <div class="app-hero__overlay">
+        <h1 class="app-hero__title">Rules Lookup</h1>
+        <p class="app-hero__subtitle">
+          Ask a rules question and get an AI-generated answer grounded in your indexed sources.
+        </p>
+      </div>
     </div>
 
-    <div>
+    <!-- Question + results column -->
+    <div class="page-sections">
+      <!-- Question panel: ask-question-panel-art backs the panel, controls over the right 65% -->
+      <div
+        class="ask-question-panel rounded-lg bg-cover bg-left p-5"
+        v-bg-asset="{ url: '/assets/rules/ask-question-panel-art.png', fallback: '#0d0d2a', position: 'left center' }"
+      >
+      <div class="ml-auto w-[65%] min-w-[260px]">
 
       <!-- Question form -->
       <form @submit.prevent="submitQuestion" class="space-y-4">
@@ -88,12 +110,10 @@ async function submitQuestion() {
             <label for="game-system" class="block text-sm font-medium text-gray-300 mb-1">
               Game System <span class="text-gray-500">(optional)</span>
             </label>
-            <input
+            <GameSystemDropdown
               id="game-system"
               v-model="gameSystem"
-              type="text"
-              placeholder="e.g. D&D 5e 2014"
-              class="w-full rounded-lg border border-surface-700 bg-surface-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-600 focus:ring-2 focus:ring-aircane-600/20 focus:outline-none"
+              :options="gameSystemOptions"
               :disabled="loading"
             />
           </div>
@@ -115,7 +135,8 @@ async function submitQuestion() {
         <button
           type="submit"
           :disabled="loading || !question.trim()"
-          class="rounded-md bg-aircane-600 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+          class="ask-question-button rounded-md px-5 py-2.5 text-sm font-semibold text-white shadow focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:opacity-50"
+          v-bg-asset="{ url: '/assets/rules/ask-question-button-.png', fallback: 'transparent', size: '100% 100%' }"
         >
           <span v-if="loading" class="flex items-center gap-2">
             <svg
@@ -144,11 +165,13 @@ async function submitQuestion() {
           <span v-else>Ask Question</span>
         </button>
       </form>
+      </div>
+      </div>
 
       <!-- Error banner -->
       <div
         v-if="error"
-        class="mt-6 rounded-md border border-red-800 bg-red-950 px-4 py-3 text-red-300"
+        class="rounded-md border border-red-800 bg-red-950 px-4 py-3 text-red-300"
         role="alert"
       >
         <p class="font-medium">Something went wrong</p>
@@ -156,7 +179,7 @@ async function submitQuestion() {
       </div>
 
       <!-- Result -->
-      <div v-if="result" class="mt-8 space-y-6">
+      <div v-if="result" class="space-y-6">
         <!-- Uncertainty warning -->
         <output
           v-if="!result.hasSourceSupport"
@@ -196,33 +219,47 @@ async function submitQuestion() {
         </div>
 
         <!-- Citations -->
-        <div v-if="result.citations.length > 0" class="rounded-lg border border-surface-700/50 bg-surface-850 p-5">
+        <div v-if="result.citations.length > 0">
           <h2 class="mb-3 text-lg font-semibold text-white">Sources</h2>
-          <ul class="space-y-2">
+          <ul class="space-y-3">
+            <!-- Each source renders over citation-card-art, with the scroll icon far-left -->
             <li
               v-for="(citation, idx) in result.citations"
               :key="citation.chunkId"
-              class="flex items-start gap-2 text-sm text-gray-400"
+              class="citation-card flex items-center gap-3 rounded-lg bg-cover bg-left p-4"
+              v-bg-asset="{ url: '/assets/rules/citation-card-art.png', fallback: '#0d0d2a', position: 'left center' }"
             >
-              <span class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-xs font-medium text-gray-300">
-                {{ idx + 1 }}
-              </span>
-              <span class="flex flex-wrap items-center gap-1.5">
-                <span class="font-medium text-gray-200">{{ citation.sourceTitle }}</span>
-                <span v-if="citation.pageNumber"> - p. {{ citation.pageNumber }}</span>
-                <span v-if="citation.sectionTitle"> · {{ citation.sectionTitle }}</span>
-                <!-- License badge (built-in sources only); opens the attribution modal -->
-                <button
-                  v-if="citation.licenseKey"
-                  type="button"
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-aircane-500"
-                  :class="licenseBadgeClasses(citation.licenseKey)"
-                  :title="`${citation.licenseDisplayName ?? citation.licenseKey} — view attribution`"
-                  @click="licensesModalOpen = true"
-                >
-                  {{ citation.licenseDisplayName ?? citation.licenseKey }}
-                </button>
-              </span>
+              <!-- Scroll icon (decorative) far-left -->
+              <img
+                src="/assets/rules/rules-scroll-thumbnail.png"
+                alt=""
+                aria-hidden="true"
+                class="h-10 w-10 flex-shrink-0"
+                style="object-fit: contain"
+                @error="(e) => ((e.target as HTMLElement).style.display = 'none')"
+              />
+              <!-- Citation text over the right 65% -->
+              <div class="ml-auto w-[65%] min-w-[200px] text-sm text-gray-300">
+                <span class="flex flex-wrap items-center gap-1.5">
+                  <span class="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-xs font-medium text-gray-300">
+                    {{ idx + 1 }}
+                  </span>
+                  <span class="font-medium text-gray-100">{{ citation.sourceTitle }}</span>
+                  <span v-if="citation.pageNumber"> - p. {{ citation.pageNumber }}</span>
+                  <span v-if="citation.sectionTitle"> · {{ citation.sectionTitle }}</span>
+                  <!-- License badge (built-in sources only); opens the attribution modal -->
+                  <button
+                    v-if="citation.licenseKey"
+                    type="button"
+                    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+                    :class="licenseBadgeClasses(citation.licenseKey)"
+                    :title="`${citation.licenseDisplayName ?? citation.licenseKey} — view attribution`"
+                    @click="licensesModalOpen = true"
+                  >
+                    {{ citation.licenseDisplayName ?? citation.licenseKey }}
+                  </button>
+                </span>
+              </div>
             </li>
           </ul>
         </div>
@@ -241,3 +278,19 @@ async function submitQuestion() {
     <LicenseAttributionModal :open="licensesModalOpen" @close="licensesModalOpen = false" />
   </div>
 </template>
+
+<style scoped>
+/* Type C panel/card — gold border so they stay bordered/legible with no art. */
+.ask-question-panel,
+.citation-card {
+  border: var(--border-gold);
+}
+
+/* Type D button — art-independent CSS base so it is always clickable. */
+.ask-question-button {
+  border: var(--border-gold);
+  background-color: var(--color-purple);
+  box-shadow: var(--glow-purple);
+  background-repeat: no-repeat;
+}
+</style>

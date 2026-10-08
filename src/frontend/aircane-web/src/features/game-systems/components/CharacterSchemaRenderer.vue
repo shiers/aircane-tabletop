@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { FormDescriptor, FormSection, FormField, VisibilityCondition } from '../types'
+import type { FormDescriptor, FormSection, FormField, VisibilityCondition, FieldType } from '../types'
+import { fieldTypeFromWire } from '../types'
 
 const props = defineProps<{
   /** The form descriptor from the API. */
@@ -21,6 +22,14 @@ function updateField(fieldId: string, value: unknown): void {
 
 function getFieldValue(fieldId: string): unknown {
   return props.modelValue[fieldId] ?? null
+}
+
+/**
+ * Normalize a field's wire type to its `FieldType` discriminant. Guards against a descriptor that
+ * reaches the renderer un-normalized (e.g. integer wire types from the API), so controls still render.
+ */
+function kindOf(field: FormField): FieldType {
+  return fieldTypeFromWire(field.type)
 }
 
 function isSectionVisible(section: FormSection): boolean {
@@ -65,7 +74,7 @@ const visibleSections = computed(() =>
       <template v-for="field in section.fields" :key="field.id">
         <div v-if="isFieldVisible(field)" class="space-y-1">
           <!-- Text field -->
-          <template v-if="field.type === 'text' || field.type === 'dice_expression'">
+          <template v-if="kindOf(field) === 'text' || kindOf(field) === 'dice_expression'">
             <label :for="`field-${field.id}`" class="block text-xs font-medium text-gray-300">
               {{ field.label }}
               <span v-if="field.required" class="text-red-400">*</span>
@@ -82,11 +91,11 @@ const visibleSections = computed(() =>
           </template>
 
           <!-- Number field -->
-          <template v-else-if="field.type === 'number' || field.type === 'resource_pool'">
+          <template v-else-if="kindOf(field) === 'number' || kindOf(field) === 'resource_pool'">
             <label :for="`field-${field.id}`" class="block text-xs font-medium text-gray-300">
               {{ field.label }}
               <span v-if="field.required" class="text-red-400">*</span>
-              <span v-if="field.type === 'resource_pool' && field.maxField" class="text-gray-500">
+              <span v-if="kindOf(field) === 'resource_pool' && field.maxField" class="text-gray-500">
                 / {{ getFieldValue(field.maxField) ?? '?' }}
               </span>
             </label>
@@ -104,7 +113,7 @@ const visibleSections = computed(() =>
           </template>
 
           <!-- Boolean field -->
-          <template v-else-if="field.type === 'boolean'">
+          <template v-else-if="kindOf(field) === 'boolean'">
             <label class="flex items-center gap-2 text-xs font-medium text-gray-300">
               <input
                 type="checkbox"
@@ -118,7 +127,7 @@ const visibleSections = computed(() =>
           </template>
 
           <!-- Enum field -->
-          <template v-else-if="field.type === 'enum'">
+          <template v-else-if="kindOf(field) === 'enum'">
             <label :for="`field-${field.id}`" class="block text-xs font-medium text-gray-300">
               {{ field.label }}
               <span v-if="field.required" class="text-red-400">*</span>
@@ -136,7 +145,7 @@ const visibleSections = computed(() =>
           </template>
 
           <!-- Calculated field (read-only) -->
-          <template v-else-if="field.type === 'calculated'">
+          <template v-else-if="kindOf(field) === 'calculated'">
             <label :for="`field-${field.id}`" class="block text-xs font-medium text-gray-300">
               {{ field.label }}
               <span class="ml-1 text-xs text-gray-500">(calculated)</span>
@@ -151,7 +160,7 @@ const visibleSections = computed(() =>
           </template>
 
           <!-- List field -->
-          <template v-else-if="field.type === 'list'">
+          <template v-else-if="kindOf(field) === 'list'">
             <label :for="`field-${field.id}`" class="block text-xs font-medium text-gray-300">
               {{ field.label }}
             </label>
@@ -167,10 +176,10 @@ const visibleSections = computed(() =>
           </template>
 
           <!-- Repeating / Grouped fields (simplified display) -->
-          <template v-else-if="field.type === 'repeating' || field.type === 'grouped'">
+          <template v-else-if="kindOf(field) === 'repeating' || kindOf(field) === 'grouped'">
             <label class="block text-xs font-medium text-gray-300">
               {{ field.label }}
-              <span class="ml-1 text-xs text-gray-500">({{ field.type }})</span>
+              <span class="ml-1 text-xs text-gray-500">({{ kindOf(field) }})</span>
             </label>
             <textarea
               :value="JSON.stringify(getFieldValue(field.id) ?? [], null, 2)"

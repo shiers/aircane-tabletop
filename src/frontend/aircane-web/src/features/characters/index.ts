@@ -1,2 +1,2 @@
-// Characters feature - character creation, import, and management
-export { default } from './CharactersView.vue'
+// Characters feature - global character library (creation, import, and management)
+export { default } from './CharacterLibraryView.vue'

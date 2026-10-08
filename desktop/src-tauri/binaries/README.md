@@ -8,8 +8,21 @@ This directory holds the two **sidecar** binaries Tauri runs:
    build time** from the official Cloudflare release and verified against the
    pinned SHA256 in `cloudflared-versions.json`.
 
-Both are intentionally **gitignored**. Only this README and the pinned
-`cloudflared-versions.json` manifest are tracked.
+It also holds the **OCR assets** fetched at build time (not executables, so they
+are bundled as Tauri `resources`, not `externalBin`):
+
+3. `tessdata/eng.traineddata` — the English Tesseract model, **fetched at build
+   time** from the pinned `tessdata_fast` tag and verified against the SHA256 in
+   `ocr-assets-versions.json`. Required on every target.
+4. `ocr-native/*` — the optional native Tesseract/Leptonica libraries for
+   zero-setup OCR on Linux/macOS, **fetched + checksum-verified** the same way
+   when a `nativeLib` entry is pinned for the target. Windows takes its native
+   libtesseract from the `TesseractOCR` NuGet self-contained publish next to the
+   sidecar, so it needs no `nativeLib` entry.
+
+All of the above are intentionally **gitignored**. Only this README and the
+pinned `cloudflared-versions.json` + `ocr-assets-versions.json` manifests are
+tracked.
 
 ## Naming convention
 
@@ -29,5 +42,13 @@ The `cloudflared` sidecar follows the same convention (`cloudflared-<target-trip
 and is registered alongside the backend in `tauri.conf.json`
 (`externalBin: ["binaries/aircane-server", "binaries/cloudflared"]`).
 
-See `docs/setup/desktop.md` for the full build instructions, the pinned
-cloudflared version, and how to update it.
+The OCR assets are **not** sidecars; they are declared under `bundle.resources`
+in `tauri.conf.json` (`binaries/tessdata/*` → `tessdata/`, `binaries/ocr-native/*`
+→ `ocr-native/`) and located at runtime via `resource_dir()`. The build scripts
+fetch each asset by the **same three-segment rule** as cloudflared —
+`<group>.baseUrl/<group>.version/<asset>` — and **fail the build on a SHA256
+mismatch** so an unverified asset is never bundled.
+
+See `docs/setup/desktop.md` for the full build instructions and the pinned
+cloudflared version, and `docs/setup/ocr.md` for the OCR assets and how to update
+`ocr-assets-versions.json`.

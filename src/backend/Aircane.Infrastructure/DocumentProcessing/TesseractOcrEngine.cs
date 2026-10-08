@@ -72,7 +72,11 @@ public sealed class TesseractOcrEngine : IOcrEngine, IDisposable
     }
 
     /// <inheritdoc />
-    public Task<OcrResult> RecognizeAsync(byte[] imageBytes, CancellationToken ct = default)
+    public Task<OcrResult> RecognizeAsync(
+        byte[] imageBytes,
+        float? minConfidenceOverride = null,
+        OcrSegmentationMode segmentationMode = OcrSegmentationMode.Default,
+        CancellationToken ct = default)
     {
         if (imageBytes is null || imageBytes.Length == 0)
             return Task.FromResult(OcrResult.Empty);
@@ -83,20 +87,24 @@ public sealed class TesseractOcrEngine : IOcrEngine, IDisposable
 
         ct.ThrowIfCancellationRequested();
 
+        var threshold = minConfidenceOverride ?? _minConfidence;
+        var psm = MapSegmentationMode(segmentationMode);
+
         try
         {
             // The wrapper is synchronous and CPU-bound; run inline.
             using var img = TesseractOCR.Pix.Image.LoadFromMemory(imageBytes);
-            using var page = _engine.Process(img);
+            // psm == null reproduces the engine default (PSM 3 / Auto) used by the document path.
+            using var page = _engine.Process(img, psm);
 
             var text = page.Text ?? string.Empty;
             var confidence = page.MeanConfidence; // 0..1
 
-            if (confidence < _minConfidence)
+            if (confidence < threshold)
             {
                 _logger.LogDebug(
                     "OCR result discarded: mean confidence {Confidence:P0} below threshold {Threshold:P0}.",
-                    confidence, _minConfidence);
+                    confidence, threshold);
                 return Task.FromResult(OcrResult.Empty);
             }
 
@@ -152,6 +160,19 @@ public sealed class TesseractOcrEngine : IOcrEngine, IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Translates the Application-layer <see cref="OcrSegmentationMode"/> to the Tesseract wrapper's
+    /// <see cref="PageSegMode"/>. <see cref="OcrSegmentationMode.Default"/> maps to <c>null</c>, which
+    /// the <c>Engine.Process(image, pageSegMode)</c> overload treats as the engine default (PSM 3 /
+    /// Auto) — preserving the document OCR path's behaviour exactly.
+    /// </summary>
+    private static PageSegMode? MapSegmentationMode(OcrSegmentationMode mode) => mode switch
+    {
+        OcrSegmentationMode.SingleLine => PageSegMode.SingleLine,
+        OcrSegmentationMode.SingleWord => PageSegMode.SingleWord,
+        _ => null,
+    };
 
     private Language ParseLanguage(string? language)
     {

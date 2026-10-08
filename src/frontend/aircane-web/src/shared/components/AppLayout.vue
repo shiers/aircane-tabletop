@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import HealthStatus from './HealthStatus.vue'
 import AppSidebar from './AppSidebar.vue'
@@ -8,6 +8,25 @@ import { useFeedbackModal } from '@/features/feedback/useFeedbackModal'
 
 const route = useRoute()
 const sidebarCollapsed = ref(false)
+
+/**
+ * Routes that drop their full-page art and must show a solid #0a0a1a fill.
+ * Applied at the shell <main> level so the plain background covers the entire
+ * content viewport (including the .page-container gutters and the top gap),
+ * not just the routed view root. (`sessions` renders JoinSessionView too.)
+ */
+const plainBackgroundRoutes = new Set([
+  'rules-lookup',
+  'ai-settings',
+  'adventure-generate',
+  'join-session',
+  'about',
+  'sessions',
+])
+
+const isPlainBackground = computed(
+  () => typeof route.name === 'string' && plainBackgroundRoutes.has(route.name),
+)
 
 const { isOpen: feedbackOpen, openFeedback, closeFeedback } = useFeedbackModal()
 
@@ -24,7 +43,10 @@ function toggleSidebar() {
     <!-- Main content area -->
     <div class="flex flex-1 flex-col overflow-hidden">
       <!-- Top bar -->
-      <header class="flex h-14 shrink-0 items-center justify-between border-b border-surface-800/60 bg-surface-900/50 px-6 backdrop-blur-sm">
+      <header
+        class="flex h-14 shrink-0 items-center justify-between border-b border-surface-800/60 bg-surface-900/50 px-6 backdrop-blur-sm"
+        v-bg-asset="{ url: '/assets/ui/topbar-background.png', fallback: '#0a0a1a' }"
+      >
         <div class="flex items-center gap-3">
           <!-- Mobile menu toggle -->
           <button
@@ -53,8 +75,12 @@ function toggleSidebar() {
       </header>
 
       <!-- Page content -->
-      <main class="flex-1 overflow-y-auto p-6">
-        <slot />
+      <main class="flex-1 overflow-y-auto pt-6" :class="{ 'page-plain': isPlainBackground }">
+        <!-- Shared, centred content column (max-width 1200px). Views must not
+             re-impose their own max-width / horizontal padding. -->
+        <div class="page-container">
+          <slot />
+        </div>
       </main>
     </div>
 

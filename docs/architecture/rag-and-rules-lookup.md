@@ -197,6 +197,8 @@ Tests: `RetrievalServiceTests` (alias filtering, multi-term questions, partial-m
 | Context duplicates | Not handled | Chunks overlapping an earlier one by more than 40% are dropped |
 | OCR text | Stored as extracted | Run-together words and sentences are separated |
 
+Integration tests: `RetrievalServiceIntegrationTests` run retrieval and `RagContextBuilder` against a real PostgreSQL with pgvector (Testcontainers, `pgvector/pgvector:pg16`, requires Docker). They cover keyword and cosine queries, provenance filtering, visibility, disabled documents, source type, game system and ruleset alias filters, merge scoring, `TopK`, dedup and source priority. With only a few rows the planner uses a sequential scan, so they verify query correctness and ordering, not use of the HNSW index.
+
 Tests: `RetrievalServiceTests` (scoring, source type, ruleset aliases, available rulesets), `RagContextBuilderTests` (priority, dedup), `RulesQuestionControllerRoleTests`, and `OcrTextCleanupTests`.
 
 ## 6. Known gaps and risks
@@ -207,7 +209,6 @@ Tests: `RetrievalServiceTests` (scoring, source type, ruleset aliases, available
 | 2 | Keyword ranking has no term weighting | A common term ("skill") counts as much as a rare one ("actor") | Ranking is by the number of terms matched. IDF-style weighting or `ts_rank` would fix this. |
 | 3 | `vector(768)` column is fixed | OpenAI (1536-dim) embeddings can't be stored; vector search is disabled with that provider | Needs a schema change plus re-embed. Tracked in the backlog. |
 | 4 | Built-in bundle game systems aren't canonicalized | SRD stored as `D&D 5e` | Works now through alias expansion, but stored data is inconsistent. |
-| 5 | No retrieval integration tests against Postgres | Translation of the keyword expression, the ruleset filter and pgvector queries isn't covered by tests | Unit tests use EF InMemory, where vector search is skipped. |
-| 6 | JSON documents are not chunked | Imported JSON content isn't searchable | |
-| 7 | Page numbers are PDF page indexes | Citations can differ from the printed page (PHB Actor feat: PDF p.154, printed p.165) | |
-| 8 | `docs/known-limitations.md` is partly stale | It says there's no cloud embedding provider and no alias table; both now exist | Update it alongside this doc. |
+| 5 | JSON documents are not chunked | Imported JSON content isn't searchable | |
+| 6 | Page numbers are PDF page indexes | Citations can differ from the printed page (PHB Actor feat: PDF p.154, printed p.165) | |
+| 7 | `docs/known-limitations.md` is partly stale | It says there's no cloud embedding provider and no alias table; both now exist | Update it alongside this doc. |

@@ -1,4 +1,5 @@
 using Aircane.Infrastructure.DocumentSources;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -17,7 +18,9 @@ public sealed class FolderWatchDocumentSourceTests : IDisposable
     {
         _tempDir = Path.Combine(Path.GetTempPath(), $"aircane-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
-        _sut = new FolderWatchDocumentSource(NullLogger<FolderWatchDocumentSource>.Instance);
+        _sut = new FolderWatchDocumentSource(
+            NullLogger<FolderWatchDocumentSource>.Instance,
+            new ConfigurationBuilder().Build());
     }
 
     public void Dispose()

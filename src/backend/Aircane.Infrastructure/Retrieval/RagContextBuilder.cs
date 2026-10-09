@@ -89,8 +89,11 @@ public sealed class RagContextBuilder : IRagContextBuilder
         // Apply source priority ordering
         var prioritizedChunks = ApplySourcePriority(filteredChunks);
 
+        // Drop near-duplicate chunks so overlapping text doesn't waste the character budget
+        var distinctChunks = RemoveDuplicateChunks(prioritizedChunks);
+
         // Build compact context within character budget
-        var (contextText, citations) = BuildCompactContext(prioritizedChunks, request.MaxContextChars);
+        var (contextText, citations) = BuildCompactContext(distinctChunks, request.MaxContextChars);
 
         _logger.LogDebug(
             "Built RAG context: {ChunksIncluded}/{TotalChunks} chunks, {ContextLength} chars for query: {Query}",
@@ -119,20 +122,81 @@ public sealed class RagContextBuilder : IRagContextBuilder
     }
 
     /// <summary>
-    /// Sorts chunks by source type priority, preserving relevance order within the same priority tier.
+    /// Sorts chunks by source type priority (see <see cref="SourcePriorityOrder"/>), ordering by
+    /// relevance score within the same priority tier.
     /// </summary>
     public static IReadOnlyList<ChunkResultDto> ApplySourcePriority(IReadOnlyList<ChunkResultDto> chunks)
     {
-        // We need to infer source type from the chunk. Since ChunkResultDto doesn't carry SourceType directly,
-        // we use the document title as a proxy for grouping. The retrieval service already returns
-        // chunks with their source document title. For proper priority, we'd need SourceType on the DTO.
-        // For now, we preserve the retrieval order (which already includes relevance scoring)
-        // and rely on the retrieval service's built-in priority ranking.
-        //
-        // If ChunkResultDto is extended with SourceType in the future, this method can apply
-        // explicit priority sorting.
-        return chunks;
+        return chunks
+            .OrderBy(c => GetSourceTypePriority(c.SourceType))
+            .ThenByDescending(c => c.Score ?? 0)
+            .ToList();
     }
+
+    /// <summary>Length of the substrings compared when measuring overlap between two chunks.</summary>
+    private const int OverlapWindowChars = 50;
+
+    /// <summary>A chunk is dropped when more than this fraction of its text repeats an earlier chunk.</summary>
+    private const double DuplicateOverlapThreshold = 0.40;
+
+    /// <summary>
+    /// Walks the chunks in order and skips any whose text overlaps an already-kept chunk by more than
+    /// <see cref="DuplicateOverlapThreshold"/> of the shorter chunk's length. Earlier chunks win, so
+    /// the higher-priority / higher-scoring copy is the one kept.
+    /// </summary>
+    public static IReadOnlyList<ChunkResultDto> RemoveDuplicateChunks(IReadOnlyList<ChunkResultDto> chunks)
+    {
+        var kept = new List<ChunkResultDto>(chunks.Count);
+        var keptTexts = new List<string>(chunks.Count);
+
+        foreach (var chunk in chunks)
+        {
+            var text = NormalizeWhitespace(chunk.Text);
+            if (keptTexts.Any(existing => OverlapFraction(text, existing) > DuplicateOverlapThreshold))
+                continue;
+
+            kept.Add(chunk);
+            keptTexts.Add(text);
+        }
+
+        return kept;
+    }
+
+    /// <summary>
+    /// Approximates <c>overlap_chars / min(len_a, len_b)</c> by counting the 50-character windows of
+    /// the shorter text that also occur in the longer one. Each matching window position stands for
+    /// one overlapping character.
+    /// </summary>
+    internal static double OverlapFraction(string a, string b)
+    {
+        var (shorter, longer) = a.Length <= b.Length ? (a, b) : (b, a);
+        if (shorter.Length == 0)
+            return 0;
+
+        // Too short for windowing: duplicate only if wholly contained in the other text.
+        if (shorter.Length < OverlapWindowChars)
+            return longer.Contains(shorter, StringComparison.Ordinal) ? 1.0 : 0.0;
+
+        var longerWindows = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i + OverlapWindowChars <= longer.Length; i++)
+            longerWindows.Add(longer.Substring(i, OverlapWindowChars));
+
+        var shorterWindowCount = shorter.Length - OverlapWindowChars + 1;
+        var matching = 0;
+        for (var i = 0; i < shorterWindowCount; i++)
+        {
+            if (longerWindows.Contains(shorter.Substring(i, OverlapWindowChars)))
+                matching++;
+        }
+
+        // A run of k matching windows covers k + 49 characters; approximate the overlapping
+        // characters as the matching windows plus that tail when anything matched.
+        var overlapChars = matching == 0 ? 0 : matching + OverlapWindowChars - 1;
+        return Math.Min(1.0, (double)overlapChars / shorter.Length);
+    }
+
+    private static string NormalizeWhitespace(string text) =>
+        string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>
     /// Filters out chunks whose relevance score is below the specified minimum threshold.

@@ -1,4 +1,4 @@
-using Aircane.Application.Abstractions;
+using System.Linq.Expressions;
 using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Retrieval;
 using Aircane.Domain.Entities;
@@ -17,21 +17,29 @@ namespace Aircane.Infrastructure.Retrieval;
 /// </summary>
 public sealed class RetrievalService : IRetrievalService
 {
+    // Score weights used when merging keyword and vector results (see SearchAsync).
+    private const double KeywordOnlyWeight = 0.7;
+    private const double VectorOnlyWeight = 0.6;
+    private const double HybridVectorWeight = 0.5;
+
     private readonly AircaneDbContext _db;
     private readonly IEmbeddingProvider _embeddingProvider;
     private readonly IEmbeddingCompatibility? _embeddingCompatibility;
+    private readonly IGameSystemCanonicalizer? _gameSystemCanonicalizer;
     private readonly ILogger<RetrievalService> _logger;
 
     public RetrievalService(
         AircaneDbContext db,
         IEmbeddingProvider embeddingProvider,
         IEmbeddingCompatibility? embeddingCompatibility = null,
-        ILogger<RetrievalService>? logger = null)
+        ILogger<RetrievalService>? logger = null,
+        IGameSystemCanonicalizer? gameSystemCanonicalizer = null)
     {
         _db = db;
         _embeddingProvider = embeddingProvider;
         _embeddingCompatibility = embeddingCompatibility;
         _logger = logger ?? NullLogger<RetrievalService>.Instance;
+        _gameSystemCanonicalizer = gameSystemCanonicalizer;
     }
 
     /// <inheritdoc />
@@ -45,19 +53,19 @@ public sealed class RetrievalService : IRetrievalService
 
         var allowedVisibilities = GetAllowedVisibilities(maxVisibility);
 
-        // Case-insensitive substring match. Using ToLower().Contains(...) instead of
-        // EF.Functions.ILike keeps the query provider-agnostic: Npgsql translates it to a
-        // server-side lower(...) LIKE '%term%', and the EF Core InMemory provider (used by tests)
-        // can evaluate it as well. Contains also treats % and _ as literals, avoiding accidental
-        // LIKE-wildcard behavior from user queries.
-        var term = request.Query.ToLower();
+        // Match chunks containing ANY of the question's terms, ranked by how many terms they
+        // contain. Matching the whole question as one substring would almost never hit for a
+        // natural-language question ("explain actor skill").
+        var terms = KeywordQueryParser.ExtractTerms(request.Query);
 
-        var query = BuildFilteredQuery(request, allowedVisibilities);
+        var gameSystems = await ResolveGameSystemsAsync(request.GameSystem, cancellationToken);
+        var query = BuildFilteredQuery(request, gameSystems, allowedVisibilities);
 
         var results = await query
-            .Where(c =>
-                c.Chunk.Text.ToLower().Contains(term) ||
-                (c.Chunk.SectionTitle != null && c.Chunk.SectionTitle.ToLower().Contains(term)))
+            .Where(BuildAnyTermMatch(terms))
+            .OrderByDescending(BuildTermHitCount(terms))
+            .ThenBy(c => c.Chunk.SourceDocumentId)
+            .ThenBy(c => c.Chunk.ChunkIndex)
             .Take(request.TopK)
             .Select(c => new ChunkResultDto(
                 c.Chunk.Id,
@@ -68,10 +76,14 @@ public sealed class RetrievalService : IRetrievalService
                 c.Chunk.PageNumber,
                 c.Chunk.SectionTitle,
                 c.Chunk.Visibility,
-                null))
+                null,
+                c.Doc.SourceType))
             .ToListAsync(cancellationToken);
 
-        return results;
+        // Score = fraction of the query's terms the chunk contains (0..1].
+        return results
+            .Select(r => r with { Score = (double)CountTermHits(r, terms) / terms.Count })
+            .ToList();
     }
 
     /// <inheritdoc />
@@ -104,7 +116,8 @@ public sealed class RetrievalService : IRetrievalService
         var vector = new Pgvector.Vector(embedding);
 
         var allowedVisibilities = GetAllowedVisibilities(maxVisibility);
-        var query = BuildFilteredQuery(request, allowedVisibilities);
+        var gameSystems = await ResolveGameSystemsAsync(request.GameSystem, cancellationToken);
+        var query = BuildFilteredQuery(request, gameSystems, allowedVisibilities);
 
         var activeProvider = _embeddingProvider.ProviderName;
         var activeModel = _embeddingProvider.ModelName;
@@ -154,7 +167,8 @@ public sealed class RetrievalService : IRetrievalService
                 c.Chunk.PageNumber,
                 c.Chunk.SectionTitle,
                 c.Chunk.Visibility,
-                (double?)c.Chunk.Embedding!.CosineDistance(vector)))
+                (double?)c.Chunk.Embedding!.CosineDistance(vector),
+                c.Doc.SourceType))
             .ToListAsync(cancellationToken);
 
         // Convert cosine distance to similarity score (1 - distance)
@@ -177,33 +191,62 @@ public sealed class RetrievalService : IRetrievalService
         var keywordResults = await SearchByKeywordAsync(request, maxVisibility, cancellationToken);
         var vectorResults = await SearchByVectorAsync(request, maxVisibility, cancellationToken);
 
-        // Merge and deduplicate by ChunkId, preferring the higher score
+        // Merge and deduplicate by ChunkId. Exact terminology is more reliable than semantic
+        // similarity for rules lookups ("grapple" and "grab" are close in embedding space but
+        // mechanically distinct), so keyword matches are weighted above vector-only matches.
         var merged = new Dictionary<Guid, ChunkResultDto>();
+        var keywordScores = new Dictionary<Guid, double>();
 
         foreach (var result in keywordResults)
         {
-            // Keyword results get a base score of 0.5 (present = relevant)
-            var scored = result with { Score = 0.5 };
-            merged[result.ChunkId] = scored;
+            // result.Score is the fraction of query terms matched, so partial matches rank below
+            // full ones.
+            var fraction = result.Score ?? 1.0;
+            keywordScores[result.ChunkId] = fraction;
+            merged[result.ChunkId] = result with { Score = KeywordOnlyWeight * fraction };
         }
 
         foreach (var result in vectorResults)
         {
-            if (merged.TryGetValue(result.ChunkId, out var existing))
+            var similarity = result.Score ?? 0.0;
+
+            if (keywordScores.TryGetValue(result.ChunkId, out var fraction))
             {
-                // Boost score when found by both methods
-                var combinedScore = Math.Min(1.0, (existing.Score ?? 0.5) + (result.Score ?? 0.0) * 0.5);
-                merged[result.ChunkId] = existing with { Score = combinedScore };
+                // Found by both methods: combine the weighted contributions.
+                var combinedScore = Math.Min(1.0, KeywordOnlyWeight * fraction + HybridVectorWeight * similarity);
+                merged[result.ChunkId] = merged[result.ChunkId] with { Score = combinedScore };
             }
             else
             {
-                merged[result.ChunkId] = result;
+                merged[result.ChunkId] = result with { Score = VectorOnlyWeight * similarity };
             }
         }
 
         return merged.Values
             .OrderByDescending(r => r.Score ?? 0.0)
             .Take(request.TopK)
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetAvailableRulesetsAsync(
+        string? gameSystem,
+        CancellationToken cancellationToken = default)
+    {
+        var gameSystems = await ResolveGameSystemsAsync(gameSystem, cancellationToken);
+
+        var query = _db.SourceDocuments.Where(d => !d.IsDisabled && d.Ruleset != "");
+        if (gameSystems.Count > 0)
+            query = query.Where(d => gameSystems.Contains(d.GameSystem));
+
+        var rulesets = await query
+            .Select(d => d.Ruleset.Trim())
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return rulesets
+            .Where(r => r.Length > 0)
+            .OrderBy(r => r, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -226,8 +269,13 @@ public sealed class RetrievalService : IRetrievalService
     /// </summary>
     private IQueryable<ChunkWithDoc> BuildFilteredQuery(
         SearchRequest request,
+        IReadOnlyList<string> gameSystems,
         IReadOnlyList<ContentVisibility> allowedVisibilities)
     {
+        var rulesets = string.IsNullOrWhiteSpace(request.Ruleset)
+            ? []
+            : RulesetNormalizer.GetEquivalents(request.Ruleset);
+
         var query = _db.DocumentChunks
             .Join(
                 _db.SourceDocuments,
@@ -241,13 +289,92 @@ public sealed class RetrievalService : IRetrievalService
         if (request.SourceType.HasValue)
             query = query.Where(c => c.Doc.SourceType == request.SourceType.Value);
 
-        if (!string.IsNullOrWhiteSpace(request.GameSystem))
-            query = query.Where(c => c.Doc.GameSystem == request.GameSystem);
+        if (gameSystems.Count > 0)
+            query = query.Where(c => gameSystems.Contains(c.Doc.GameSystem));
 
-        if (!string.IsNullOrWhiteSpace(request.Ruleset))
-            query = query.Where(c => c.Doc.Ruleset == request.Ruleset);
+        // Case- and whitespace-insensitive, and expanded to known aliases ("2014" == "D&D 5e 2014").
+        if (rulesets.Count > 0)
+            query = query.Where(c => rulesets.Contains(c.Doc.Ruleset.Trim().ToLower()));
 
         return query;
+    }
+
+    /// <summary>
+    /// Case-insensitive substring match of one term against a chunk's text or section title.
+    /// Using ToLower().Contains(...) instead of EF.Functions.ILike keeps the query
+    /// provider-agnostic: Npgsql translates it to a server-side lower(...) LIKE '%term%', and the
+    /// EF Core InMemory provider (used by tests) can evaluate it as well. Contains also treats
+    /// % and _ as literals, avoiding accidental LIKE-wildcard behavior from user queries.
+    /// </summary>
+    private static Expression<Func<ChunkWithDoc, bool>> TermMatch(string term) =>
+        c => c.Chunk.Text.ToLower().Contains(term) ||
+             (c.Chunk.SectionTitle != null && c.Chunk.SectionTitle.ToLower().Contains(term));
+
+    /// <summary>Builds <c>c =&gt; match(term1) || match(term2) || ...</c>.</summary>
+    private static Expression<Func<ChunkWithDoc, bool>> BuildAnyTermMatch(IReadOnlyList<string> terms)
+    {
+        var parameter = Expression.Parameter(typeof(ChunkWithDoc), "c");
+        var body = terms
+            .Select(t => ParameterRebinder.Rebind(TermMatch(t), parameter))
+            .Aggregate(Expression.OrElse);
+        return Expression.Lambda<Func<ChunkWithDoc, bool>>(body, parameter);
+    }
+
+    /// <summary>Builds <c>c =&gt; (match(term1) ? 1 : 0) + (match(term2) ? 1 : 0) + ...</c>.</summary>
+    private static Expression<Func<ChunkWithDoc, int>> BuildTermHitCount(IReadOnlyList<string> terms)
+    {
+        var parameter = Expression.Parameter(typeof(ChunkWithDoc), "c");
+        var body = terms
+            .Select(t => (Expression)Expression.Condition(
+                ParameterRebinder.Rebind(TermMatch(t), parameter),
+                Expression.Constant(1),
+                Expression.Constant(0)))
+            .Aggregate(Expression.Add);
+        return Expression.Lambda<Func<ChunkWithDoc, int>>(body, parameter);
+    }
+
+    /// <summary>In-memory equivalent of <see cref="BuildTermHitCount"/> for scoring results.</summary>
+    private static int CountTermHits(ChunkResultDto result, IReadOnlyList<string> terms) =>
+        terms.Count(t =>
+            result.Text.Contains(t, StringComparison.OrdinalIgnoreCase) ||
+            (result.SectionTitle?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    /// <summary>Substitutes a lambda's parameter so several lambdas can share one parameter.</summary>
+    private sealed class ParameterRebinder : ExpressionVisitor
+    {
+        private readonly ParameterExpression _from;
+        private readonly ParameterExpression _to;
+
+        private ParameterRebinder(ParameterExpression from, ParameterExpression to)
+        {
+            _from = from;
+            _to = to;
+        }
+
+        public static Expression Rebind<T>(Expression<T> lambda, ParameterExpression to) =>
+            new ParameterRebinder(lambda.Parameters[0], to).Visit(lambda.Body);
+
+        protected override Expression VisitParameter(ParameterExpression node) =>
+            node == _from ? _to : base.VisitParameter(node);
+    }
+
+    /// <summary>
+    /// Expands a requested game system into every spelling a document might be stored under
+    /// (definition name, identifier, aliases), so a filter of "D&amp;D 5e" matches documents
+    /// canonicalized to the definition name and vice versa. Without a canonicalizer, the filter is
+    /// an exact match on the requested value.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ResolveGameSystemsAsync(
+        string? gameSystem,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(gameSystem))
+            return [];
+
+        if (_gameSystemCanonicalizer is null)
+            return [gameSystem];
+
+        return await _gameSystemCanonicalizer.GetEquivalentNamesAsync(gameSystem, cancellationToken);
     }
 
     /// <summary>

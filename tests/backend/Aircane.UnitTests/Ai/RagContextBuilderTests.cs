@@ -93,7 +93,7 @@ public class RagContextBuilderTests
                 SourceDocumentId: Guid.NewGuid(),
                 SourceDocumentTitle: $"Source {i}",
                 ChunkIndex: i,
-                Text: new string('x', 200), // 200 chars each
+                Text: $"Chunk {i} " + new string((char)('a' + i), 200), // distinct 200+ char texts
                 PageNumber: i + 1,
                 SectionTitle: null,
                 Visibility: ContentVisibility.Public,
@@ -549,6 +549,94 @@ public class RagContextBuilderTests
         Assert.Contains("(Homebrew Doc)", result.ContextText);
     }
 
+    // ── Source priority ───────────────────────────────────────────────────────
+
+    private static ChunkResultDto Chunk(string title, string text, double score, SourceType type) =>
+        new(Guid.NewGuid(), Guid.NewGuid(), title, 0, text, 1, null, ContentVisibility.Public, score, type);
+
+    [Fact]
+    public void ApplySourcePriority_OrdersBySourceTypeThenScore()
+    {
+        var chunks = new[]
+        {
+            Chunk("Unknown", "u", 0.99, SourceType.Unknown),
+            Chunk("Generated", "g", 0.95, SourceType.Generated),
+            Chunk("Solo", "s", 0.90, SourceType.Solo),
+            Chunk("Adventure", "a", 0.85, SourceType.Adventure),
+            Chunk("RulesLow", "r2", 0.60, SourceType.Rules),
+            Chunk("RulesHigh", "r1", 0.80, SourceType.Rules),
+            Chunk("Homebrew", "h", 0.50, SourceType.Homebrew),
+        };
+
+        var ordered = RagContextBuilder.ApplySourcePriority(chunks).Select(c => c.SourceDocumentTitle);
+
+        Assert.Equal(
+            ["Homebrew", "RulesHigh", "RulesLow", "Adventure", "Solo", "Generated", "Unknown"],
+            ordered);
+    }
+
+    [Fact]
+    public async Task BuildContextAsync_HomebrewOutranksRules()
+    {
+        _fakeRetrieval.SetResults([
+            Chunk("Core Rules", "Grappling uses a contested check against the target.", 0.9, SourceType.Rules),
+            Chunk("House Rules", "In our game, grappling needs a bonus action instead.", 0.5, SourceType.Homebrew),
+        ]);
+
+        var result = await _builder.BuildContextAsync(new RagContextRequest(Query: "grapple"));
+
+        Assert.Equal("House Rules", result.Citations[0].SourceDocumentTitle);
+        Assert.Equal("Core Rules", result.Citations[1].SourceDocumentTitle);
+    }
+
+    // ── Deduplication ─────────────────────────────────────────────────────────
+
+    private const string LongText =
+        "A creature that is grappled has the Grappled condition and its speed becomes zero. " +
+        "The condition ends if the grappler is incapacitated or if the grappled creature is moved out of reach.";
+
+    [Fact]
+    public async Task BuildContextAsync_SkipsChunkThatMostlyRepeatsAnEarlierOne()
+    {
+        _fakeRetrieval.SetResults([
+            Chunk("PHB", LongText, 0.9, SourceType.Rules),
+            Chunk("PHB", LongText.Substring(10) + " Extra trailing words here.", 0.8, SourceType.Rules),
+            Chunk("DMG", "Completely different text about travel pace and exhaustion over long journeys.", 0.7, SourceType.Rules),
+        ]);
+
+        var result = await _builder.BuildContextAsync(new RagContextRequest(Query: "grapple"));
+
+        Assert.Equal(2, result.ChunksIncluded);
+        Assert.Equal(["PHB", "DMG"], result.Citations.Select(c => c.SourceDocumentTitle));
+    }
+
+    [Fact]
+    public void RemoveDuplicateChunks_KeepsChunksSharingLittleText()
+    {
+        // Adjacent sliding-window chunks share only ~10% of their text, below the 40% threshold.
+        var shared = new string('s', 200);
+        var a = new string('a', 1800) + shared;
+        var b = shared + new string('b', 1800);
+
+        var kept = RagContextBuilder.RemoveDuplicateChunks([
+            Chunk("A", a, 0.9, SourceType.Rules),
+            Chunk("B", b, 0.8, SourceType.Rules)]);
+
+        Assert.Equal(2, kept.Count);
+    }
+
+    [Fact]
+    public void OverlapFraction_IdenticalTexts_IsOne()
+    {
+        Assert.Equal(1.0, RagContextBuilder.OverlapFraction(LongText, LongText), 6);
+    }
+
+    [Fact]
+    public void OverlapFraction_UnrelatedTexts_IsZero()
+    {
+        Assert.Equal(0.0, RagContextBuilder.OverlapFraction(LongText, new string('z', 300)), 6);
+    }
+
     /// <summary>
     /// Fake retrieval service for testing the RAG context builder in isolation.
     /// </summary>
@@ -584,5 +672,9 @@ public class RagContextBuilderTests
             LastMaxVisibility = maxVisibility;
             return Task.FromResult(_results);
         }
+
+        public Task<IReadOnlyList<string>> GetAvailableRulesetsAsync(
+            string? gameSystem, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
     }
 }

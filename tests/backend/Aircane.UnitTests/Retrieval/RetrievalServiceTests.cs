@@ -1,7 +1,9 @@
 using Aircane.Application.DTOs.Retrieval;
 using Aircane.Domain.Entities;
+using Aircane.Domain.Entities.GameSystems;
 using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Embeddings;
+using Aircane.Infrastructure.GameSystems;
 using Aircane.Infrastructure.Persistence;
 using Aircane.Infrastructure.Retrieval;
 using Microsoft.EntityFrameworkCore;
@@ -144,6 +146,103 @@ public class RetrievalServiceTests : IDisposable
         Assert.Single(results);
     }
 
+    [Fact]
+    public async Task SearchByKeywordAsync_NaturalLanguageQuestion_MatchesIndividualTerms()
+    {
+        var doc = await AddDocumentAsync();
+        await AddChunkAsync(doc.Id, "Actor. Skilled at mimicry and dramatics, you gain the following benefits.", chunkIndex: 0);
+        await AddChunkAsync(doc.Id, "Each skill represents a specific aspect of an ability score.", chunkIndex: 1);
+        await AddChunkAsync(doc.Id, "The wizard casts magic missile.", chunkIndex: 2);
+
+        var request = new SearchRequest("explain Actor skill");
+        var results = await _service.SearchByKeywordAsync(request, ContentVisibility.Public);
+
+        // Both term-matching chunks are found; the one containing every term ranks first.
+        Assert.Equal(2, results.Count);
+        Assert.Equal(0, results[0].ChunkIndex);
+        Assert.Equal(1.0, results[0].Score);
+        Assert.Equal(1, results[1].ChunkIndex);
+        Assert.Equal(0.5, results[1].Score);
+    }
+
+    [Fact]
+    public async Task SearchAsync_PartialKeywordMatch_ScoresBelowFullMatch()
+    {
+        var doc = await AddDocumentAsync();
+        await AddChunkAsync(doc.Id, "Actor feat: skilled at mimicry.", chunkIndex: 0);
+        await AddChunkAsync(doc.Id, "Skill proficiency bonus.", chunkIndex: 1);
+
+        var results = await _service.SearchAsync(new SearchRequest("actor skill"), ContentVisibility.Public);
+
+        // Keyword-only score is 0.7 x the fraction of terms matched.
+        Assert.Equal(0.7, results.Single(r => r.ChunkIndex == 0).Score!.Value, 6);
+        Assert.Equal(0.35, results.Single(r => r.ChunkIndex == 1).Score!.Value, 6);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ResultsCarrySourceType()
+    {
+        var doc = await AddDocumentAsync(sourceType: SourceType.Homebrew);
+        await AddChunkAsync(doc.Id, "House rule: grapple uses Athletics.");
+
+        var results = await _service.SearchAsync(new SearchRequest("grapple"), ContentVisibility.Public);
+
+        Assert.Equal(SourceType.Homebrew, Assert.Single(results).SourceType);
+    }
+
+    // ── Ruleset filter normalization ──────────────────────────────────────────
+
+    [Theory]
+    [InlineData("2014", "2014", true)]
+    [InlineData("  2014  ", "2014", true)]
+    [InlineData("D&D 5e 2014", "2014", true)]
+    [InlineData("dnd 5e 2014", "2014", true)]
+    [InlineData("2014", "D&D 5e 2014", true)]
+    [InlineData("One DnD", "2024", true)]
+    [InlineData("PHB", "phb", true)]
+    [InlineData("Remaster", "Pathfinder 2e Remaster", true)]
+    [InlineData("2014", "2024", false)]
+    [InlineData("PHB", "DMG", false)]
+    public async Task SearchByKeywordAsync_RulesetFilter_IsNormalizedAndAliasAware(
+        string requested, string stored, bool expectMatch)
+    {
+        var doc = await AddDocumentAsync(ruleset: stored);
+        await AddChunkAsync(doc.Id, "Grapple rules text.");
+
+        var results = await _service.SearchByKeywordAsync(
+            new SearchRequest("grapple", Ruleset: requested), ContentVisibility.Public);
+
+        Assert.Equal(expectMatch, results.Count == 1);
+    }
+
+    [Fact]
+    public async Task SearchByKeywordAsync_RulesetFilter_DifferentRulesetExcluded()
+    {
+        var doc = await AddDocumentAsync(ruleset: "2024");
+        await AddChunkAsync(doc.Id, "Grapple rules text.");
+
+        var results = await _service.SearchByKeywordAsync(
+            new SearchRequest("grapple", Ruleset: "2014"), ContentVisibility.Public);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task GetAvailableRulesetsAsync_ReturnsDistinctRulesets_ForGameSystem()
+    {
+        await AddDocumentAsync(gameSystem: "D&D 5e", ruleset: "2014");
+        await AddDocumentAsync(gameSystem: "D&D 5e", ruleset: "2014");
+        await AddDocumentAsync(gameSystem: "D&D 5e", ruleset: "2024");
+        await AddDocumentAsync(gameSystem: "Pathfinder 2e", ruleset: "Remaster");
+        await AddDocumentAsync(gameSystem: "D&D 5e", ruleset: "");
+
+        var dnd = await _service.GetAvailableRulesetsAsync("D&D 5e");
+        var all = await _service.GetAvailableRulesetsAsync(null);
+
+        Assert.Equal(["2014", "2024"], dnd);
+        Assert.Equal(["2014", "2024", "Remaster"], all);
+    }
+
     // ── Keyword search: SourceType filter ─────────────────────────────────────
 
     [Fact]
@@ -190,6 +289,38 @@ public class RetrievalServiceTests : IDisposable
 
         Assert.Single(results);
         Assert.Equal(dndDoc.Id, results[0].SourceDocumentId);
+    }
+
+    [Theory]
+    [InlineData("Dungeons & Dragons 5th Edition (2014)")]
+    [InlineData("dnd-5e-2014")]
+    [InlineData("D&D 5e")]
+    public async Task SearchByKeywordAsync_FilterByGameSystem_MatchesAnySpellingOfDefinition(string filter)
+    {
+        // Documents imported through the library are stored under the canonical definition name,
+        // while older/built-in documents may carry an alias. Either spelling must match a filter
+        // naming the same definition.
+        var definition = new GameSystemDefinition("dnd-5e-2014", "Dungeons & Dragons 5th Edition (2014)", "1.0.0", 1, "builtin");
+        _db.GameSystemDefinitions.Add(definition);
+        _db.GameSystemAliases.Add(new GameSystemAlias(definition.Id, "D&D 5e"));
+        await _db.SaveChangesAsync();
+
+        var service = new RetrievalService(
+            _db, _embeddingProvider, gameSystemCanonicalizer: new GameSystemCanonicalizer(_db));
+
+        var phb = await AddDocumentAsync("PHB", gameSystem: "Dungeons & Dragons 5th Edition (2014)");
+        var srd = await AddDocumentAsync("SRD", gameSystem: "D&D 5e");
+        var pf = await AddDocumentAsync("PF Doc", gameSystem: "Pathfinder 2e");
+        await AddChunkAsync(phb.Id, "Actor feat text.");
+        await AddChunkAsync(srd.Id, "Actor SRD text.");
+        await AddChunkAsync(pf.Id, "Actor Pathfinder text.");
+
+        var request = new SearchRequest("actor", GameSystem: filter);
+        var results = await service.SearchByKeywordAsync(request, ContentVisibility.Public);
+
+        Assert.Equal(
+            new[] { phb.Id, srd.Id }.OrderBy(id => id),
+            results.Select(r => r.SourceDocumentId).OrderBy(id => id));
     }
 
     [Fact]

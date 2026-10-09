@@ -1,4 +1,5 @@
 using Aircane.Application.DTOs.Ai;
+using Aircane.Domain.Enums;
 
 namespace Aircane.Application.Abstractions;
 
@@ -13,8 +14,13 @@ public interface IRulesQuestionService
     /// </summary>
     /// <param name="request">The rules question request with optional context.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="requesterRole">
+    /// The caller's role, which bounds the content visibility of retrieved sources. Defaults to the
+    /// least-privileged role so callers must opt in to DM-only content.
+    /// </param>
     /// <returns>The answer with citations and source support indicator.</returns>
     Task<RulesQuestionResponse> AskAsync(
         RulesQuestionRequest request,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        ParticipantRole requesterRole = ParticipantRole.Player);
 }

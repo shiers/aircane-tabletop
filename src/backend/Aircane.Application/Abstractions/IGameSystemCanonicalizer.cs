@@ -20,4 +20,12 @@ public interface IGameSystemCanonicalizer
     /// Otherwise the trimmed input is returned unchanged. Null/empty input is returned as-is.
     /// </summary>
     Task<string> CanonicalizeAsync(string input, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns every known spelling of the game system <paramref name="input"/> refers to: the
+    /// matched definition's <c>Name</c>, <c>Identifier</c>, and all of its aliases. Used to filter
+    /// documents whose stored game system predates canonicalization (e.g. built-in content tagged
+    /// "D&amp;D 5e"). If no definition matches, returns just the trimmed input.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetEquivalentNamesAsync(string input, CancellationToken cancellationToken = default);
 }

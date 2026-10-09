@@ -1,6 +1,8 @@
+using System.Security.Claims;
 using Aircane.Api.Authorization;
 using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Ai;
+using Aircane.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,10 +17,27 @@ namespace Aircane.Api.Controllers;
 public class RulesQuestionController : ControllerBase
 {
     private readonly IRulesQuestionService _rulesQuestionService;
+    private readonly IRetrievalService _retrievalService;
 
-    public RulesQuestionController(IRulesQuestionService rulesQuestionService)
+    public RulesQuestionController(
+        IRulesQuestionService rulesQuestionService,
+        IRetrievalService retrievalService)
     {
         _rulesQuestionService = rulesQuestionService;
+        _retrievalService = retrievalService;
+    }
+
+    /// <summary>
+    /// Lists the ruleset values present on imported documents, optionally for one game system,
+    /// to populate the Rules Lookup ruleset dropdown.
+    /// </summary>
+    [HttpGet("rules-question/rulesets")]
+    public async Task<ActionResult<IReadOnlyList<string>>> GetRulesets(
+        [FromQuery] string? gameSystem,
+        CancellationToken cancellationToken)
+    {
+        var rulesets = await _retrievalService.GetAvailableRulesetsAsync(gameSystem, cancellationToken);
+        return Ok(rulesets);
     }
 
     /// <summary>
@@ -40,7 +59,7 @@ public class RulesQuestionController : ControllerBase
 
         try
         {
-            var response = await _rulesQuestionService.AskAsync(request, cancellationToken);
+            var response = await _rulesQuestionService.AskAsync(request, cancellationToken, ResolveRequesterRole());
             return Ok(response);
         }
         catch (InvalidOperationException ex)
@@ -56,5 +75,24 @@ public class RulesQuestionController : ControllerBase
         {
             return StatusCode(500, new { error = $"An unexpected error occurred: {ex.Message}" });
         }
+    }
+
+    /// <summary>
+    /// Resolves the caller's participant role from the role claim issued by ParticipantTokenService.
+    /// An unauthenticated caller can only reach this endpoint when the authorization policies are
+    /// opened up (Development or Aircane:TrustLocalHost, i.e. the local desktop user), who is the
+    /// host. An authenticated caller with a missing or unrecognised role gets the least-privileged
+    /// role.
+    /// </summary>
+    private ParticipantRole ResolveRequesterRole()
+    {
+        if (User.Identity?.IsAuthenticated != true)
+            return ParticipantRole.Host;
+
+        var claim = User.FindFirst(ClaimTypes.Role)?.Value;
+        return Enum.TryParse<ParticipantRole>(claim, ignoreCase: true, out var role)
+            && Enum.IsDefined(role)
+            ? role
+            : ParticipantRole.Player;
     }
 }

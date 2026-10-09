@@ -1,5 +1,6 @@
 using Aircane.Application.Abstractions;
 using Aircane.Application.DocumentProcessing;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
@@ -11,7 +12,7 @@ namespace Aircane.Infrastructure.DocumentProcessing;
 /// Detects low/no-text PDFs and, when an OCR engine is available, attempts to recover
 /// text from the page's embedded raster images before marking the document OCR-required.
 /// </summary>
-public sealed class PdfPigTextExtractor : IPdfTextExtractor
+public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
 {
     /// <summary>
     /// Average characters per page below this threshold triggers OCR-required detection.
@@ -188,8 +189,28 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
             }
         }
 
-        return string.Join("\n", recognizedParts);
+        // Only OCR output is cleaned up; the native PdfPig text layer already has correct spacing.
+        return CleanOcrText(string.Join("\n", recognizedParts));
     }
+
+    /// <summary>
+    /// Fixes the common OCR run-together where a heading is glued to the following text, by
+    /// inserting a space where a lowercase letter is directly followed by an uppercase one
+    /// ("ActorSkilled" becomes "Actor Skilled", "10 feet.ActorSkilled" becomes
+    /// "10 feet. Actor Skilled").
+    /// </summary>
+    internal static string CleanOcrText(string text)
+    {
+        text = OcrCamelCaseJoin().Replace(text, "$1 $2");
+        // Also separate sentence punctuation glued to a following capital ("feet.Actor").
+        return OcrSentenceJoin().Replace(text, "$1 $2");
+    }
+
+    [GeneratedRegex("([a-z])([A-Z])")]
+    private static partial Regex OcrCamelCaseJoin();
+
+    [GeneratedRegex("([.!?])([A-Z])")]
+    private static partial Regex OcrSentenceJoin();
 
     /// <summary>True when full-page rasterization OCR is enabled and a rasterizer is wired in.</summary>
     private bool FullPageRasterizationEnabled =>

@@ -84,9 +84,9 @@ public sealed class PlayerActionService : IPlayerActionService
             GameSystem: campaign.GameSystem,
             Ruleset: campaign.Ruleset,
             RequesterRole: ParticipantRole.Host, // AI DM has full visibility
-            TopK: 20,
+            TopK: 10,
             MaxContextChars: 8000,
-            MinRelevanceScore: 0.3);
+            MinRelevanceScore: 0.4);
 
         var ragResult = await _ragContextBuilder.BuildContextAsync(ragRequest, cancellationToken);
 

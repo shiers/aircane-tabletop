@@ -128,6 +128,17 @@ export interface RulesQuestionResponse {
   hasSourceSupport: boolean
 }
 
+/**
+ * Lists the ruleset values present on imported documents, optionally limited to one game system.
+ * Used to populate the Rules Lookup ruleset dropdown.
+ */
+export async function getRulesLookupRulesets(gameSystem?: string | null): Promise<string[]> {
+  const response = await apiClient.get<string[]>('/api/ai/rules-question/rulesets', {
+    params: gameSystem ? { gameSystem } : undefined,
+  })
+  return response.data
+}
+
 export async function askRulesQuestion(request: RulesQuestionRequest): Promise<RulesQuestionResponse> {
   const response = await apiClient.post<RulesQuestionResponse>('/api/ai/rules-question', request, {
     timeout: 120_000, // RAG retrieval + AI generation can take a while with large libraries

@@ -35,4 +35,12 @@ public interface IRetrievalService
         SearchRequest request,
         ContentVisibility maxVisibility,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists the distinct, non-empty ruleset values of enabled documents, optionally limited to one
+    /// game system (alias-aware). Used to populate ruleset filters.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetAvailableRulesetsAsync(
+        string? gameSystem,
+        CancellationToken cancellationToken = default);
 }

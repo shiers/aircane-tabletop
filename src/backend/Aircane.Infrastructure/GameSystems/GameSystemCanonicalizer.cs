@@ -64,6 +64,37 @@ public sealed class GameSystemCanonicalizer : IGameSystemCanonicalizer
         return input.Trim();
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetEquivalentNamesAsync(
+        string input,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return [];
+
+        var canonical = await CanonicalizeAsync(input, cancellationToken);
+
+        var definition = await _db.GameSystemDefinitions
+            .AsNoTracking()
+            .Where(d => d.IsActive && d.Name == canonical)
+            .Select(d => new { d.Id, d.Name, d.Identifier })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (definition is null)
+            return [canonical];
+
+        var aliases = await _db.GameSystemAliases
+            .AsNoTracking()
+            .Where(a => a.GameSystemDefinitionId == definition.Id)
+            .Select(a => a.Alias)
+            .ToListAsync(cancellationToken);
+
+        return new[] { definition.Name, definition.Identifier }
+            .Concat(aliases)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
     /// <summary>
     /// Collapses a value to a comparison key: trimmed, lower-cased, with all runs of whitespace
     /// reduced to a single space. This makes "Pathfinder 2e", "pathfinder  2E", and

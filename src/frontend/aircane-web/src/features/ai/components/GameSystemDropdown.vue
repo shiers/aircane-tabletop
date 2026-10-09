@@ -1,10 +1,15 @@
 <script setup lang="ts">
-defineProps<{
-  id?: string
-  modelValue: string | null
-  options: { id: string; name: string }[]
-  disabled?: boolean
-}>()
+withDefaults(
+  defineProps<{
+    id?: string
+    modelValue: string | null
+    options: { id: string; name: string }[]
+    disabled?: boolean
+    /** Label of the empty "no filter" option. */
+    placeholder?: string
+  }>(),
+  { placeholder: 'Any game system' },
+)
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string | null): void
@@ -36,10 +41,10 @@ function onChange(event: Event) {
       :id="id"
       :value="modelValue ?? ''"
       :disabled="disabled"
-      class="w-full appearance-none bg-transparent px-3 py-2 text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-600/20 disabled:cursor-not-allowed disabled:opacity-50"
+      class="w-full appearance-none bg-surface-900 px-3 py-2 text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-600/20 disabled:cursor-not-allowed disabled:opacity-50"
       @change="onChange"
     >
-      <option value="">Any game system</option>
+      <option value="">{{ placeholder }}</option>
       <option v-for="opt in options" :key="opt.id" :value="opt.id">{{ opt.name }}</option>
     </select>
 

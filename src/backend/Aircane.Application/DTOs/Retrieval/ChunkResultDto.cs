@@ -14,4 +14,5 @@ public sealed record ChunkResultDto(
     int? PageNumber,
     string? SectionTitle,
     ContentVisibility Visibility,
-    double? Score);
+    double? Score,
+    SourceType SourceType = SourceType.Unknown);

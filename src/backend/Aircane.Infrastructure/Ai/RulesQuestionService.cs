@@ -36,7 +36,8 @@ public sealed class RulesQuestionService : IRulesQuestionService
     /// <inheritdoc />
     public async Task<RulesQuestionResponse> AskAsync(
         RulesQuestionRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ParticipantRole requesterRole = ParticipantRole.Player)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Question);
@@ -50,10 +51,10 @@ public sealed class RulesQuestionService : IRulesQuestionService
             Query: request.Question,
             GameSystem: request.GameSystem,
             Ruleset: request.Ruleset,
-            RequesterRole: ParticipantRole.Host, // Rules questions use full visibility
-            TopK: 20,
+            RequesterRole: requesterRole, // Visibility follows the caller: players never see DM-only chunks
+            TopK: 10,
             MaxContextChars: 8000,
-            MinRelevanceScore: 0.3); // Discard low-confidence chunks to reduce hallucination
+            MinRelevanceScore: 0.4); // Discard low-confidence chunks to reduce hallucination
 
         var ragResult = await _ragContextBuilder.BuildContextAsync(ragRequest, cancellationToken);
 

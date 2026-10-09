@@ -1,5 +1,6 @@
 using Aircane.Application.Abstractions;
 using Aircane.Application.Validation;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Aircane.Infrastructure.DocumentSources;
@@ -20,11 +21,20 @@ public sealed class FolderWatchDocumentSource : IDocumentSource
         new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".json" };
 
     private readonly ILogger<FolderWatchDocumentSource> _logger;
+    private readonly string _documentsPath;
 
-    public FolderWatchDocumentSource(ILogger<FolderWatchDocumentSource> logger)
+    public FolderWatchDocumentSource(ILogger<FolderWatchDocumentSource> logger, IConfiguration configuration)
     {
         _logger = logger;
+
+        var configuredPath = configuration["Storage:DocumentsPath"];
+        _documentsPath = Path.GetFullPath(
+            string.IsNullOrWhiteSpace(configuredPath) ? "./data/documents" : configuredPath);
     }
+
+    // Uploaded files are stored as bare filenames relative to the documents storage folder.
+    private string Resolve(string sourcePath)
+        => Path.IsPathRooted(sourcePath) ? sourcePath : Path.Combine(_documentsPath, Path.GetFileName(sourcePath));
 
     /// <inheritdoc />
     /// <remarks>
@@ -85,6 +95,8 @@ public sealed class FolderWatchDocumentSource : IDocumentSource
     /// </remarks>
     public Task<Stream> OpenStreamAsync(string sourcePath, CancellationToken ct = default)
     {
+        sourcePath = Resolve(sourcePath);
+
         if (!File.Exists(sourcePath))
         {
             throw new FileNotFoundException(
@@ -105,7 +117,7 @@ public sealed class FolderWatchDocumentSource : IDocumentSource
     /// <inheritdoc />
     public Task<bool> FileExistsAsync(string sourcePath, CancellationToken ct = default)
     {
-        var exists = File.Exists(sourcePath);
+        var exists = File.Exists(Resolve(sourcePath));
         return Task.FromResult(exists);
     }
 }

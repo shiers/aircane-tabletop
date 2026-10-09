@@ -1,22 +1,27 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   askRulesQuestion,
+  getRulesLookupRulesets,
   type RulesQuestionRequest,
   type RulesQuestionResponse,
 } from './api'
 import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
 import GameSystemDropdown from './components/GameSystemDropdown.vue'
+import { useGameSystemStore } from '@/features/game-systems/stores/useGameSystemStore'
 
 const licensesModalOpen = ref(false)
 
-// Game system options for the dropdown filter. The id doubles as the value sent to the backend,
-// preserving the existing free-text request shape (gameSystem is a plain string on the request).
-const gameSystemOptions = [
-  { id: 'D&D 5e 2014', name: 'D&D 5e 2014' },
-  { id: 'Pathfinder 2e', name: 'Pathfinder 2e' },
-  { id: 'Generic Freeform', name: 'Generic Freeform' },
-]
+// Game system options for the dropdown filter, sourced from the active definitions. The definition
+// name is sent as the (free-text) gameSystem value; it is the same canonical name the library
+// stores on imported documents, and the backend also accepts any alias of it.
+const gameSystemStore = useGameSystemStore()
+const gameSystemOptions = computed(() =>
+  gameSystemStore.definitions.map((d) => ({ id: d.name, name: d.name })),
+)
+onMounted(() => {
+  if (gameSystemStore.definitions.length === 0) gameSystemStore.fetchAll()
+})
 
 /** Tailwind classes for a citation license badge by license key. */
 function licenseBadgeClasses(licenseKey: string): string {
@@ -32,7 +37,27 @@ function licenseBadgeClasses(licenseKey: string): string {
 
 const question = ref('')
 const gameSystem = ref<string | null>(null)
-const ruleset = ref('')
+const ruleset = ref<string | null>(null)
+
+// Ruleset options come from the imported documents for the selected game system, so the user
+// can only pick values that exist (a free-text typo used to silently return no sources).
+const rulesetOptions = ref<{ id: string; name: string }[]>([])
+watch(
+  gameSystem,
+  async (selected) => {
+    try {
+      const rulesets = await getRulesLookupRulesets(selected)
+      rulesetOptions.value = rulesets.map((r) => ({ id: r, name: r }))
+    } catch {
+      rulesetOptions.value = []
+    }
+    // Drop a previously chosen ruleset that the new game system doesn't have.
+    if (ruleset.value && !rulesetOptions.value.some((o) => o.id === ruleset.value)) {
+      ruleset.value = null
+    }
+  },
+  { immediate: true },
+)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const result = ref<RulesQuestionResponse | null>(null)
@@ -48,7 +73,7 @@ async function submitQuestion() {
   const request: RulesQuestionRequest = {
     question: trimmed,
     gameSystem: gameSystem.value?.trim() || null,
-    ruleset: ruleset.value.trim() || null,
+    ruleset: ruleset.value?.trim() || null,
   }
 
   try {
@@ -121,12 +146,11 @@ async function submitQuestion() {
             <label for="ruleset-filter" class="block text-sm font-medium text-gray-300 mb-1">
               Ruleset <span class="text-gray-500">(optional)</span>
             </label>
-            <input
+            <GameSystemDropdown
               id="ruleset-filter"
               v-model="ruleset"
-              type="text"
-              placeholder="e.g. PHB, DMG"
-              class="w-full rounded-lg border border-surface-700 bg-surface-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-600 focus:ring-2 focus:ring-aircane-600/20 focus:outline-none"
+              :options="rulesetOptions"
+              placeholder="Any ruleset"
               :disabled="loading"
             />
           </div>

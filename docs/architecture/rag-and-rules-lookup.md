@@ -1,6 +1,6 @@
 # RAG System and Rules Lookup: Current State
 
-_Last updated: 2026-10-09_
+_Last updated: 2026-10-10_
 
 This document describes how Aircane turns imported rulebooks into searchable context, and how Rules Lookup and the AI DM use that context to answer questions. It covers the current implementation, recent fixes, and known gaps.
 
@@ -13,7 +13,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
  DocumentImportJob ── text extraction (PdfPig) ── OCR if needed (Tesseract)
             │
             ▼
- SlidingWindowTextChunker (2000 chars, 200 overlap, per page)
+ SlidingWindowTextChunker (1100 chars, 300 overlap, heading-aware, per page)
             │
             ▼
  IEmbeddingProvider ──► DocumentChunks (text + vector(768) + provenance)
@@ -22,7 +22,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
             │                        │
             ▼                        ▼
  RagContextBuilder ──► RetrievalService (keyword + vector, filtered)
-            │
+            │   source priority → dedup → character budget
             ▼
  Prompt with numbered context [N] ──► IAiProvider ──► answer + citations
 ```
@@ -34,6 +34,8 @@ This document describes how Aircane turns imported rulebooks into searchable con
 | Embedding providers | `src/backend/Aircane.Infrastructure/Embeddings/` |
 | Retrieval | `src/backend/Aircane.Infrastructure/Retrieval/RetrievalService.cs` |
 | Keyword term extraction | `src/backend/Aircane.Infrastructure/Retrieval/KeywordQueryParser.cs` |
+| Ruleset normalization | `src/backend/Aircane.Infrastructure/Retrieval/RulesetNormalizer.cs` |
+| OCR text cleanup | `src/backend/Aircane.Infrastructure/DocumentProcessing/PdfPigTextExtractor.cs` |
 | Context assembly | `src/backend/Aircane.Infrastructure/Retrieval/RagContextBuilder.cs` |
 | Rules Lookup service | `src/backend/Aircane.Infrastructure/Ai/RulesQuestionService.cs` |
 | AI DM consumer | `src/backend/Aircane.Infrastructure/Ai/PlayerActionService.cs` |
@@ -51,12 +53,25 @@ This document describes how Aircane turns imported rulebooks into searchable con
 2. **PDF:** extracts text per page with PdfPig.
    - If there is too little text, the document is marked `OcrRequired`.
    - Re-OCR runs Tesseract via `POST /api/library/documents/{id}/reocr` or `reocr-all`.
+   - **OCR cleanup:** text produced by OCR (not the PdfPig text layer) is cleaned in `PdfPigTextExtractor.RecognizePageAsync` via `CleanOcrText`, which applies two regexes:
+     - `([a-z])([A-Z])` inserts a space where a lowercase letter runs into an uppercase one (`ActorSkilled` becomes `Actor Skilled`).
+     - `([.!?])([A-Z])` inserts a space where sentence punctuation runs into a capital (`feet.Actor` becomes `feet. Actor`).
+   - Documents already imported keep their old OCR text until they are re-OCRed.
 3. **JSON:** marked `Completed` with no text extraction, so JSON documents are not searchable.
 4. **Other extensions:** marked `Failed`.
 5. Each page is chunked by `SlidingWindowTextChunker`:
-   - Chunks are at most 2000 characters, with 200 characters of overlap.
-   - It prefers to split at a newline or period within the last 200 characters of a chunk.
+   - Chunks are at most 1100 characters, with 300 characters (about 27%) of overlap. Both are constructor parameters (`DefaultMaxChunkSize`, `DefaultOverlapSize`).
+   - Smaller chunks are more topically focused, which improves keyword precision and makes each embedding represent a narrower topic.
+   - The split point is searched backwards from the end of the window, in this order:
+     1. **Heading** within the last 400 characters. A heading is a markdown heading (`^\s*#{1,4}\s+\S`) or a title-case line (3–60 characters, every word capitalised except short connectors such as "of", no trailing punctuation, followed by a blank line or a line starting with a lowercase letter).
+     2. **Paragraph break** (blank line) within the last 300 characters.
+     3. **Newline or period** within the last 200 characters.
+     4. **Hard cut** at the maximum size.
+   - A heading split puts the heading at the **start of the next chunk**, so the chunk holding a section's content also holds its heading. No overlap is carried back across that boundary (it would put the previous section's text in front of the heading). Every other split overlaps by 300 characters.
+   - **Section title:** a chunk that starts with a heading gets that heading as its `SectionTitle` (hashes stripped). Any other chunk gets the most recent heading before it. `DocumentImportJob` passes the last title seen into the next page, so a section that continues onto a new page keeps its title. The section title is also searched by keyword retrieval and shown in citations.
+   - Headings are only detected where the extracted text has line breaks. PdfPig's text layer often runs lines together, so title-case detection fires mostly on OCR output and text-like sources; built-in bundles with markdown headings benefit most.
    - Every chunk keeps its page number and inherits the document's visibility.
+   - **Re-indexing:** documents imported before this change were chunked at 2000/200 without heading awareness and keep those chunks. Re-import them (or re-OCR / re-index) to benefit. Re-ingest is a manual operator step and is never triggered automatically.
 6. Embeddings are generated in one batch.
    - If embedding fails, or the provider's dimension doesn't match the column, chunks are stored **without** vectors. They remain keyword-searchable, and the document is still marked `Completed`.
 7. Progress is pushed to the UI over SignalR (`ImportStatusUpdated`).
@@ -82,8 +97,12 @@ This document describes how Aircane turns imported rulebooks into searchable con
 ### Shared filters (`BuildFilteredQuery`)
 - **Visibility:** limited to the levels allowed for the caller's maximum visibility (`Public` < `Revealed` < `DMOnly` < `Hidden`).
 - **Disabled documents** (`IsDisabled`) are excluded.
-- **Optional filters:** `SourceType` and `Ruleset` (exact match).
+- **Optional filters:** `SourceType` (exact match) and `Ruleset` (normalized, see below).
 - **Game system:** expanded via `IGameSystemCanonicalizer.GetEquivalentNamesAsync` to the definition's name, its identifier and all its aliases. A document matches if its stored game system is any of those. This means canonicalized uploads and alias-tagged built-ins (`D&D 5e`) are both found by one filter. If no definition matches, the filter is an exact match on the given value.
+- **Ruleset:** normalized by `RulesetNormalizer` (trimmed, lower-cased, whitespace collapsed) and expanded to its alias group. The document's ruleset is compared as `lower(trim(Ruleset))`, so case and padding never matter.
+  - Alias groups: `2014` (`5e 2014`, `d&d 5e 2014`, `dnd 2014`, ...), `2024` (`5.5e`, `one dnd`, `d&d 2024`, ...) and `remaster` (`pf2e remaster`, `pathfinder 2e remaster`, `2023 remaster`, ...).
+  - A value outside every group (e.g. `PHB`) is matched case-insensitively against the stored value.
+  - A genuinely misspelled value still matches nothing, which is why the UI offers a dropdown (section 4).
 
 ### Keyword search
 - `KeywordQueryParser` turns the question into terms:
@@ -93,7 +112,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
   - If nothing survives (e.g. "how does it work"), the whole question is used as one phrase.
 - A chunk matches if its text or section title contains **any** term. Matching is case-insensitive and substring-based (`lower(...) LIKE '%term%'`).
 - Results are ranked **in the database** by how many terms they contain, then `TopK` is taken.
-- Score = terms matched ÷ total terms.
+- Score = terms matched ÷ total terms (before the merge weighting below).
 
 ### Vector search
 - Embeds the question and orders chunks by cosine distance; score = 1 − distance.
@@ -102,13 +121,17 @@ This document describes how Aircane turns imported rulebooks into searchable con
 - Returns nothing on the InMemory provider (tests) or when vector search is disabled.
 
 ### Merge
+Exact terminology is more reliable than semantic similarity for rules lookups ("grapple" and "grab" are close in embedding space but mechanically distinct), so keyword matches are weighted above vector-only matches.
+
 | Found by | Score |
 |---|---|
-| Keyword only | `0.5 × fraction of terms matched` (0.5 for a full match) |
-| Vector only | the cosine similarity |
-| Both | `min(1, keyword + 0.5 × vector)` |
+| Keyword only | `0.7 × fraction of terms matched` (max 0.70) |
+| Vector only | `0.6 × cosine similarity` |
+| Both | `min(1, 0.7 × keyword fraction + 0.5 × cosine similarity)` |
 
-Results are sorted by score, then `TopK` is taken.
+Results are sorted by score, then `TopK` is taken. Each result carries the document's `SourceType`.
+
+Because of the 0.6 weight, a vector-only chunk needs a cosine similarity of about 0.67 to reach the Rules Lookup minimum score of 0.4.
 
 ## 3. Context assembly (`RagContextBuilder`)
 
@@ -117,25 +140,36 @@ Results are sorted by score, then `TopK` is taken.
    - `Player`, `Spectator` and anything else get `Public`.
 2. Calls `SearchAsync`.
 3. Drops chunks scoring below `MinRelevanceScore`. Chunks with a null score are kept.
-4. Source-priority ordering (Homebrew > Rules > Adventure > …) is **defined but not applied**. `ApplySourcePriority` returns the input unchanged, because `ChunkResultDto` doesn't carry the source type.
-5. Formats the chunks as `[N] (Title - Section, p.X)` followed by the text, until `MaxContextChars` is reached. It then appends a `Sources:` list if it fits.
+4. **Applies source priority.** Chunks are ordered by source type, then by score within a type: Homebrew > Rules > Adventure > Solo > Generated > Character > Unknown. House rules therefore outrank core rulebook content even when they score lower, and are the last to be cut by the character budget.
+5. **Removes near-duplicates** (`RemoveDuplicateChunks`). Walking the chunks in priority order, a chunk is skipped when `overlap_chars / min(len_a, len_b) > 0.40` against any chunk already kept.
+   - Overlap counts the 50-character windows of the shorter text that also occur in the longer one (whitespace-normalized). Texts under 50 characters count as duplicates only if wholly contained in the other.
+   - Earlier chunks win, so the higher-priority copy is kept.
+   - Adjacent sliding-window chunks share at most about 27% of their text (300 of 1100 characters), below the threshold. Dedup removes near-copies, such as the same passage in two documents or an overlapping re-import, not neighbouring chunks.
+6. Formats the chunks as `[N] (Title - Section, p.X)` followed by the text, until `MaxContextChars` is reached. It then appends a `Sources:` list if it fits.
 
 ## 4. Rules Lookup
 
 ### Request flow
 - **UI:** `RulesLookupView.vue` sends `POST /api/ai/rules-question` with `{ question, gameSystem, ruleset }`.
   - The game system dropdown is populated from the active Game System Definitions (definition name as value), plus "Any game system".
-  - The ruleset is free text.
-- **Endpoint:** `RulesQuestionController` requires an authenticated user.
+  - The ruleset dropdown (default "Any ruleset") is populated from `GET /api/ai/rules-question/rulesets?gameSystem=...`. This returns the distinct ruleset values on enabled documents, limited to the selected game system (alias-aware), and is reloaded whenever the game system changes. A selected ruleset the new game system doesn't have is cleared.
+- **Endpoint:** `RulesQuestionController` requires an authenticated user and resolves the caller's role (see below).
 - **`RulesQuestionService.AskAsync`:**
-  - Calls `RagContextBuilder` with `TopK: 20`, `MaxContextChars: 8000`, `MinRelevanceScore: 0.3` and `RequesterRole: Host`.
+  - Calls `RagContextBuilder` with `TopK: 10`, `MaxContextChars: 8000`, `MinRelevanceScore: 0.4` and the caller's role as `RequesterRole`.
   - `HasSourceSupport` = at least one chunk was included.
   - **With sources:** the system prompt says to answer only from the context, cite as `[N]`, separate official rules from house rules from interpretation, and not reveal DM-only info.
   - **Without sources:** the prompt says to start with a disclaimer, mark general knowledge as unverified, and suggest importing the rulebook. The UI then shows the **"Unverified Answer"** banner.
   - Citations are enriched with license metadata for built-in documents (`CitationLicenseEnricher`).
 
+### Caller role and visibility
+The controller reads the role claim (`ClaimTypes.Role`, issued by `ParticipantTokenService`) and passes it to `AskAsync`:
+- `Host` and `HumanDm` retrieve up to `DMOnly`; `Player` and `Spectator` retrieve `Public` only.
+- An authenticated caller with a missing or unrecognized role is treated as `Player`.
+- An unauthenticated caller can only reach the endpoint when the policies are opened up (Development, or `Aircane:TrustLocalHost` for the desktop app). That is the local user, who is treated as `Host`.
+- `AskAsync` defaults to `Player`, so a caller must opt in to DM-only content.
+
 ### Other consumer
-`PlayerActionService` (AI DM) uses the same builder and parameters. It takes `GameSystem` and `Ruleset` from the campaign, and the player's action text is the query.
+`PlayerActionService` (AI DM) uses the same builder and the same `TopK: 10` / `MinRelevanceScore: 0.4`, but with `RequesterRole: Host`, since the AI DM narrates for the whole table. It takes `GameSystem` and `Ruleset` from the campaign, and the player's action text is the query.
 
 ## 5. Recent fixes (2026-10-09)
 
@@ -151,18 +185,29 @@ Results are sorted by score, then `TopK` is taken.
 
 Tests: `RetrievalServiceTests` (alias filtering, multi-term questions, partial-match scoring) and `KeywordQueryParserTests`.
 
+**Retrieval quality changes (2026-10-10, commit `20c1536`):**
+
+| Change | Before | After |
+|---|---|---|
+| Rules Lookup visibility | Always `Host`, so players could receive `DMOnly` chunks | Caller's role; players get `Public` only |
+| Source priority | Defined but not applied | Applied, using `SourceType` on `ChunkResultDto` |
+| Ruleset filter | Exact match on free text | Normalized and alias-aware; dropdown in the UI |
+| Merge scoring | Keyword-only 0.5×, vector-only 1×, both `keyword + 0.5 × vector` | Keyword-only 0.7×, vector-only 0.6×, both `min(1, 0.7k + 0.5v)` |
+| Rules Lookup / AI DM limits | `TopK` 20, min score 0.3 | `TopK` 10, min score 0.4 |
+| Context duplicates | Not handled | Chunks overlapping an earlier one by more than 40% are dropped |
+| OCR text | Stored as extracted | Run-together words and sentences are separated |
+
+Tests: `RetrievalServiceTests` (scoring, source type, ruleset aliases, available rulesets), `RagContextBuilderTests` (priority, dedup), `RulesQuestionControllerRoleTests`, and `OcrTextCleanupTests`.
+
 ## 6. Known gaps and risks
 
 | # | Issue | Impact | Notes |
 |---|---|---|---|
-| 1 | **Rules Lookup always retrieves at Host visibility**, but the endpoint is open to any authenticated user | Players can receive `DMOnly` chunks in answers | Only a prompt instruction guards this. The caller's real role should be passed through. |
-| 2 | Source priority is not applied | House rules don't outrank core rules | Add `SourceType` to `ChunkResultDto` and use `ApplySourcePriorityWithType`. |
-| 3 | Keyword match is substring-based | Noise: "actor" also matches "factors" and "contractor" | Deliberate, for OCR text with no spaces. Postgres full-text search (`tsvector`) or `pg_trgm` would rank better. |
-| 4 | Keyword ranking has no term weighting | A common term ("skill") counts as much as a rare one ("actor") | IDF-style weighting or `ts_rank` would fix this. |
-| 5 | `vector(768)` column is fixed | OpenAI (1536-dim) embeddings can't be stored; vector search is disabled with that provider | Needs a schema change plus re-embed. Tracked in the backlog. |
-| 6 | Built-in bundle game systems aren't canonicalized | SRD stored as `D&D 5e` | Works now through alias expansion, but stored data is inconsistent. |
-| 7 | Ruleset filter is exact match, free text | A typo in Ruleset returns no sources | Same failure mode as the game system bug. Consider a dropdown or normalization. |
-| 8 | No retrieval integration tests against Postgres | Translation of the keyword expression and pgvector queries isn't covered by tests | Unit tests use EF InMemory, where vector search is skipped. |
-| 9 | JSON documents are not chunked | Imported JSON content isn't searchable | |
-| 10 | Page numbers are PDF page indexes | Citations can differ from the printed page (PHB Actor feat: PDF p.154, printed p.165) | |
-| 11 | `docs/known-limitations.md` is partly stale | It says there's no cloud embedding provider and no alias table; both now exist | Update it alongside this doc. |
+| 1 | Keyword match is substring-based | Noise: "actor" also matches "factors" and "contractor" | Deliberate, for OCR text with no spaces. The OCR cleanup, the higher minimum score and dedup reduce the impact but do not remove it. Postgres full-text search (`tsvector`) or `pg_trgm` would rank better. |
+| 2 | Keyword ranking has no term weighting | A common term ("skill") counts as much as a rare one ("actor") | Ranking is by the number of terms matched. IDF-style weighting or `ts_rank` would fix this. |
+| 3 | `vector(768)` column is fixed | OpenAI (1536-dim) embeddings can't be stored; vector search is disabled with that provider | Needs a schema change plus re-embed. Tracked in the backlog. |
+| 4 | Built-in bundle game systems aren't canonicalized | SRD stored as `D&D 5e` | Works now through alias expansion, but stored data is inconsistent. |
+| 5 | No retrieval integration tests against Postgres | Translation of the keyword expression, the ruleset filter and pgvector queries isn't covered by tests | Unit tests use EF InMemory, where vector search is skipped. |
+| 6 | JSON documents are not chunked | Imported JSON content isn't searchable | |
+| 7 | Page numbers are PDF page indexes | Citations can differ from the printed page (PHB Actor feat: PDF p.154, printed p.165) | |
+| 8 | `docs/known-limitations.md` is partly stale | It says there's no cloud embedding provider and no alias table; both now exist | Update it alongside this doc. |

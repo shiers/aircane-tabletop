@@ -103,7 +103,7 @@ public class DocumentImportJobTests
     [Fact]
     public async Task ProcessDocumentAsync_PdfWithShortPages_CreatesOneChunkPerPage()
     {
-        // Short page texts (well under the default 2000-char max) produce exactly one chunk each.
+        // Short page texts (well under the default 1100-char max) produce exactly one chunk each.
         using var db = CreateDb();
         var document = AddDocument(db, "adventure.pdf");
 
@@ -128,6 +128,30 @@ public class DocumentImportJobTests
         Assert.Equal("First page text.", chunks[0].Text);
         Assert.Equal("Second page text.", chunks[1].Text);
         Assert.Equal("Third page text.", chunks[2].Text);
+    }
+
+    [Fact]
+    public async Task ProcessDocumentAsync_HeadingOnEarlierPage_CarriesSectionTitleToLaterPages()
+    {
+        using var db = CreateDb();
+        var document = AddDocument(db, "rules.pdf");
+
+        var pages = new[]
+        {
+            new PageText(1, "## Grappling\nA grappled creature has speed zero.", 45),
+            new PageText(2, "The condition ends if the grappler is incapacitated.", 52),
+        };
+        var job = CreateJob(db, new StubPdfExtractor(isOcrRequired: false, pages: pages));
+        await job.ProcessDocumentAsync(document.Id);
+
+        var chunks = await db.DocumentChunks
+            .Where(c => c.SourceDocumentId == document.Id)
+            .OrderBy(c => c.ChunkIndex)
+            .ToListAsync();
+
+        Assert.Equal(2, chunks.Count);
+        Assert.Equal("Grappling", chunks[0].SectionTitle);
+        Assert.Equal("Grappling", chunks[1].SectionTitle);
     }
 
     [Fact]

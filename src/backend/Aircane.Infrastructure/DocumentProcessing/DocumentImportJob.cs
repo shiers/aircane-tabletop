@@ -198,12 +198,17 @@ public sealed class DocumentImportJob : IDocumentImportJob
         var chunks = new List<DocumentChunk>();
         int nextChunkIndex = 0;
 
+        // The most recent heading seen so far. Passed to the chunker as the fallback title so a
+        // section that continues onto the next page keeps its section title.
+        string? currentSectionTitle = null;
+
         foreach (var page in result.Pages)
         {
             var textChunks = _textChunker.Chunk(
                 text: page.Text,
                 pageNumber: page.PageNumber,
-                startingChunkIndex: nextChunkIndex);
+                startingChunkIndex: nextChunkIndex,
+                sectionTitle: currentSectionTitle);
 
             foreach (var tc in textChunks)
             {
@@ -226,6 +231,7 @@ public sealed class DocumentImportJob : IDocumentImportJob
                     metadataJson: metadata));
 
                 nextChunkIndex = tc.ChunkIndex + 1;
+                currentSectionTitle = tc.SectionTitle ?? currentSectionTitle;
             }
         }
 

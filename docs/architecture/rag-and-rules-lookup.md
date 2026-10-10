@@ -141,12 +141,13 @@ Because of the 0.6 weight, a vector-only chunk needs a cosine similarity of abou
 1. Sets the maximum visibility from the caller's role:
    - `Host` and `HumanDm` get `DMOnly`.
    - `Player`, `Spectator` and anything else get `Public`.
-2. Calls `SearchAsync`.
+2. Calls `SearchAsync` for `TopK` candidates, or for `RerankCandidateTopK` (25 for Rules Lookup and the AI DM) when a reranking provider is active and available, so the reranker has a wider pool.
 3. Drops chunks scoring below `MinRelevanceScore`. Chunks with a null score are kept.
 4. **Applies source priority.** Chunks are ordered by source type, then by score within a type: Homebrew > Rules > Adventure > Solo > Generated > Character > Unknown. House rules therefore outrank core rulebook content even when they score lower, and are the last to be cut by the character budget.
-5. **Reranks (optional).** When the active reranking provider is not "None" and is available, and there is more than one chunk, the chunks are sent to `IRerankingProvider.RerankAsync` with the question and reordered by the returned score. Chunks the provider does not score sort last. See "Reranking" below.
-   - Reranking replaces the source-priority ordering with relevance ordering, so with reranking on, house rules no longer outrank core rules purely by source type.
-   - With the "None" provider this step is skipped and the pipeline is unchanged.
+5. **Reranks (optional).** When the active reranking provider is not "None" and is available, and there is more than one chunk, the chunks are sent to `IRerankingProvider.RerankAsync` with the question. Then, in order:
+   - **Source boost:** each chunk's rerank score gets an additive boost by source type: Homebrew +0.10, Rules +0.05, everything else +0.00. Chunks are ordered by the boosted score, so relevance still leads but a highly relevant Homebrew chunk outranks an equally relevant Rules chunk. Chunks the provider does not score start from 0.
+   - **Truncation:** only the top `PostRerankTopN` (7 for Rules Lookup and the AI DM) are kept, before dedup.
+   - With the "None" provider this whole step is skipped: no reranker call, no boost, no truncation, and the order from step 4 stands. See "Reranking" below.
 6. **Removes near-duplicates** (`RemoveDuplicateChunks`), after reranking so the better-reranked copy of a duplicated passage is the one kept. Walking the chunks in priority order, a chunk is skipped when `overlap_chars / min(len_a, len_b) > 0.40` against any chunk already kept.
    - Overlap counts the 50-character windows of the shorter text that also occur in the longer one (whitespace-normalized). Texts under 50 characters count as duplicates only if wholly contained in the other.
    - Earlier chunks win, so the higher-priority copy is kept.
@@ -168,7 +169,7 @@ Reranking is optional and off by default (provider "None"). It re-scores the ret
 - **Test Connection.** `POST /api/ai/settings/test-reranking-connection` makes a real call with the unsaved settings and returns `{ available, message }` ("None" is always available).
 - **UI.** AI Provider Settings has a "Reranking (optional)" section: provider select, per-provider fields and a Test Connection button. It is saved by Save Configuration.
 - **Ollama caveat.** As of Ollama 0.34.4, `bge-reranker-base` is not in the Ollama model library and there is no rerank endpoint. `/api/embed` returns a pooled embedding rather than a classifier score, so "first value" is only meaningful for a model converted to expose a score there. Without the model the Ollama provider reports itself unavailable and the pipeline keeps the original order. Use Cohere unless a local model has been verified to rank sensibly.
-- **Candidate count.** Reranking only reorders what retrieval returned (`TopK`, then the minimum score filter). It cannot recover a passage retrieval missed.
+- **Candidate count.** With reranking active the pool is 25 candidates (`RerankCandidateTopK`) instead of 10, and 7 are kept afterwards (`PostRerankTopN`). The minimum score filter (0.4) still runs on the retrieval scores *before* reranking, so a passage that scores below it never reaches the reranker, however large the pool.
 
 ## 4. Rules Lookup
 
@@ -178,7 +179,7 @@ Reranking is optional and off by default (provider "None"). It re-scores the ret
   - The ruleset dropdown (default "Any ruleset") is populated from `GET /api/ai/rules-question/rulesets?gameSystem=...`. This returns the distinct ruleset values on enabled documents, limited to the selected game system (alias-aware), and is reloaded whenever the game system changes. A selected ruleset the new game system doesn't have is cleared.
 - **Endpoint:** `RulesQuestionController` requires an authenticated user and resolves the caller's role (see below).
 - **`RulesQuestionService.AskAsync`:**
-  - Calls `RagContextBuilder` with `TopK: 10`, `MaxContextChars: 8000`, `MinRelevanceScore: 0.4` and the caller's role as `RequesterRole`.
+  - Calls `RagContextBuilder` with `TopK: 10` (`RerankCandidateTopK: 25` and `PostRerankTopN: 7` when reranking is active), `MaxContextChars: 8000`, `MinRelevanceScore: 0.4` and the caller's role as `RequesterRole`.
   - `HasSourceSupport` = at least one chunk was included.
   - **With sources:** the system prompt says to answer only from the context, cite as `[N]`, separate official rules from house rules from interpretation, and not reveal DM-only info.
   - **Without sources:** the prompt says to start with a disclaimer, mark general knowledge as unverified, and suggest importing the rulebook. The UI then shows the **"Unverified Answer"** banner.
@@ -192,7 +193,7 @@ The controller reads the role claim (`ClaimTypes.Role`, issued by `ParticipantTo
 - `AskAsync` defaults to `Player`, so a caller must opt in to DM-only content.
 
 ### Other consumer
-`PlayerActionService` (AI DM) uses the same builder and the same `TopK: 10` / `MinRelevanceScore: 0.4`, but with `RequesterRole: Host`, since the AI DM narrates for the whole table. It takes `GameSystem` and `Ruleset` from the campaign, and the player's action text is the query.
+`PlayerActionService` (AI DM) uses the same builder and the same `TopK: 10` / `MinRelevanceScore: 0.4` and reranking pool settings, but with `RequesterRole: Host`, since the AI DM narrates for the whole table. It takes `GameSystem` and `Ruleset` from the campaign, and the player's action text is the query.
 
 ## 5. Recent fixes (2026-10-09)
 
@@ -235,5 +236,4 @@ Tests: `RetrievalServiceTests` (scoring, source type, ruleset aliases, available
 | 5 | JSON documents are not chunked | Imported JSON content isn't searchable | |
 | 6 | Page numbers are PDF page indexes | Citations can differ from the printed page (PHB Actor feat: PDF p.154, printed p.165) | |
 | 7 | Ollama reranking has no working default model | `bge-reranker-base` is not in the Ollama library, so Ollama reranking is unavailable out of the box | Cohere works with an API key. A local option needs a model that exposes a score through `/api/embed`, or a rerank endpoint in Ollama. |
-| 8 | Reranking overrides source priority | With reranking on, Homebrew no longer outranks Rules by type | Could re-apply priority as a tie-break or boost on top of the rerank score. |
-| 9 | `docs/known-limitations.md` is partly stale | It says there's no cloud embedding provider and no alias table; both now exist | Update it alongside this doc. |
+| 8 | `docs/known-limitations.md` is partly stale | It says there's no cloud embedding provider and no alias table; both now exist | Update it alongside this doc. |

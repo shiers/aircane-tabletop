@@ -54,10 +54,14 @@ public sealed class RagContextBuilder : IRagContextBuilder
         // Determine maximum visibility based on requester role
         var maxVisibility = GetMaxVisibility(request.RequesterRole);
 
+        // With reranking active, retrieve a wider candidate pool for the reranker to choose from.
+        var rerankingActive = IsRerankingActive;
+        var topK = rerankingActive ? request.RerankCandidateTopK ?? request.TopK : request.TopK;
+
         // Retrieve relevant chunks using the combined search
         var searchRequest = new SearchRequest(
             Query: request.Query,
-            TopK: request.TopK,
+            TopK: topK,
             GameSystem: request.GameSystem,
             Ruleset: request.Ruleset);
 
@@ -96,7 +100,8 @@ public sealed class RagContextBuilder : IRagContextBuilder
 
         // Optionally rerank against the full question (cross-encoder), before dedup so the
         // best-scoring copy of a duplicated passage is the one kept.
-        prioritizedChunks = await RerankAsync(request.Query, prioritizedChunks, cancellationToken);
+        prioritizedChunks = await RerankAsync(
+            request.Query, prioritizedChunks, request.PostRerankTopN, cancellationToken);
 
         // Drop near-duplicate chunks so overlapping text doesn't waste the character budget
         var distinctChunks = RemoveDuplicateChunks(prioritizedChunks);
@@ -115,26 +120,43 @@ public sealed class RagContextBuilder : IRagContextBuilder
             ChunksIncluded: citations.Count);
     }
 
+    /// <summary>True when a non-"None" reranking provider is configured and usable.</summary>
+    private bool IsRerankingActive =>
+        _rerankingProvider.ProviderId != NullRerankingProvider.Id && _rerankingProvider.IsAvailable;
+
+    /// <summary>Additive score boost for house rules over an equally relevant core-rules chunk.</summary>
+    public const float HomebrewRerankBoost = 0.10f;
+
+    /// <summary>Additive score boost for primary rules sources.</summary>
+    public const float RulesRerankBoost = 0.05f;
+
+    /// <summary>The additive boost applied to a chunk's rerank score, by source type.</summary>
+    public static float GetSourceBoost(SourceType sourceType) => sourceType switch
+    {
+        SourceType.Homebrew => HomebrewRerankBoost,
+        SourceType.Rules => RulesRerankBoost,
+        _ => 0f,
+    };
+
     /// <summary>
-    /// Reorders <paramref name="chunks"/> by the reranking provider's relevance scores. Skipped when
-    /// the provider is "None", unavailable, or there is nothing to reorder. Chunks the provider does
-    /// not score sort last (score 0), keeping their relative order.
+    /// Reorders <paramref name="chunks"/> by the reranking provider's relevance score plus a small
+    /// source-type boost (<see cref="GetSourceBoost"/>), then keeps the top
+    /// <paramref name="postRerankTopN"/>. Skipped entirely, with no boost and no truncation, when the
+    /// provider is "None", unavailable, or there is nothing to reorder. Chunks the provider does not
+    /// score get a base score of 0 (plus their boost).
     /// </summary>
     /// <remarks>
-    /// This replaces the source-priority ordering with relevance ordering whenever reranking is
-    /// active, so house rules no longer outrank core rules purely by source type.
+    /// The boost keeps the reranker's relevance ordering but lets a highly relevant Homebrew chunk
+    /// outrank an equally relevant Rules chunk, so house rules are not lost to core rules.
     /// </remarks>
     private async Task<IReadOnlyList<ChunkResultDto>> RerankAsync(
         string query,
         IReadOnlyList<ChunkResultDto> chunks,
+        int? postRerankTopN,
         CancellationToken cancellationToken)
     {
-        if (_rerankingProvider.ProviderId == NullRerankingProvider.Id
-            || chunks.Count <= 1
-            || !_rerankingProvider.IsAvailable)
-        {
+        if (chunks.Count <= 1 || !IsRerankingActive)
             return chunks;
-        }
 
         var candidates = chunks
             .Select(c => new RerankCandidate(c.ChunkId.ToString(), c.Text))
@@ -143,9 +165,15 @@ public sealed class RagContextBuilder : IRagContextBuilder
         var reranked = await _rerankingProvider.RerankAsync(query, candidates, cancellationToken);
 
         var scoreMap = reranked.ToDictionary(r => r.Id, r => r.Score);
-        return chunks
-            .OrderByDescending(c => scoreMap.GetValueOrDefault(c.ChunkId.ToString(), 0f))
-            .ToList();
+        var ordered = chunks
+            .OrderByDescending(c => scoreMap.GetValueOrDefault(c.ChunkId.ToString(), 0f) + GetSourceBoost(c.SourceType))
+            .AsEnumerable();
+
+        // Truncate before dedup so the context stays focused on the best few.
+        if (postRerankTopN is > 0)
+            ordered = ordered.Take(postRerankTopN.Value);
+
+        return ordered.ToList();
     }
 
     /// <summary>

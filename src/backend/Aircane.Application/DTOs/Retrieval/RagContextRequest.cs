@@ -36,4 +36,16 @@ public sealed record RagContextRequest(
     /// This prevents the AI from using poorly-matched content as source material.
     /// A value of 0.0 disables the filter. Default is 0.3.
     /// </summary>
-    double MinRelevanceScore = 0.3);
+    double MinRelevanceScore = 0.3,
+
+    /// <summary>
+    /// Candidate pool size to retrieve instead of <see cref="TopK"/> when reranking is active, so the
+    /// reranker can choose from a wider set. Null means reranking does not change the pool size.
+    /// </summary>
+    int? RerankCandidateTopK = null,
+
+    /// <summary>
+    /// After reranking, keep only this many chunks (before deduplication). Null keeps them all.
+    /// Ignored when reranking is not performed.
+    /// </summary>
+    int? PostRerankTopN = null);

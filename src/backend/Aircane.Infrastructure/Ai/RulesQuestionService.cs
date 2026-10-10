@@ -54,7 +54,10 @@ public sealed class RulesQuestionService : IRulesQuestionService
             RequesterRole: requesterRole, // Visibility follows the caller: players never see DM-only chunks
             TopK: 10,
             MaxContextChars: 8000,
-            MinRelevanceScore: 0.4); // Discard low-confidence chunks to reduce hallucination
+            MinRelevanceScore: 0.4, // Discard low-confidence chunks to reduce hallucination
+            // With reranking active: retrieve 25 candidates, keep the best 7 after reranking.
+            RerankCandidateTopK: 25,
+            PostRerankTopN: 7);
 
         var ragResult = await _ragContextBuilder.BuildContextAsync(ragRequest, cancellationToken);
 

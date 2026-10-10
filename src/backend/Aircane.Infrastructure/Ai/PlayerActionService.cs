@@ -86,7 +86,10 @@ public sealed class PlayerActionService : IPlayerActionService
             RequesterRole: ParticipantRole.Host, // AI DM has full visibility
             TopK: 10,
             MaxContextChars: 8000,
-            MinRelevanceScore: 0.4);
+            MinRelevanceScore: 0.4,
+            // With reranking active: retrieve 25 candidates, keep the best 7 after reranking.
+            RerankCandidateTopK: 25,
+            PostRerankTopN: 7);
 
         var ragResult = await _ragContextBuilder.BuildContextAsync(ragRequest, cancellationToken);
 

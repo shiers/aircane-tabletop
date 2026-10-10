@@ -768,6 +768,162 @@ public class RagContextBuilderTests
         Assert.Equal(0, reranker.CallCount);
     }
 
+    // ── Candidate pool, post-rerank truncation and source boost ───────────────
+
+    /// <summary>A distinct passage for index i, long enough that no two share 50-character windows.</summary>
+    private static string Passage(int i) =>
+        $"Passage {i} covers subject {i}. " + new string((char)('a' + i), 90);
+
+    private static ChunkResultDto Titled(string title, int i, SourceType type, double score = 0.9) =>
+        Chunk(title, Passage(i), score, type);
+
+    private static FakeRerankingProvider RerankerScoring(params (int Passage, float Score)[] scores)
+    {
+        var reranker = new FakeRerankingProvider("Cohere");
+        foreach (var (passage, score) in scores)
+            reranker.ScoresByText[Passage(passage)] = score;
+        return reranker;
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_UsesLargerCandidatePool_WhenRerankingActive()
+    {
+        _fakeRetrieval.SetResults([Titled("A", 0, SourceType.Rules), Titled("B", 1, SourceType.Rules)]);
+
+        await BuilderWith(RerankerScoring((0, 0.5f), (1, 0.4f))).BuildContextAsync(
+            new RagContextRequest(Query: "q", TopK: 10, RerankCandidateTopK: 25, MinRelevanceScore: 0));
+
+        Assert.Equal(25, _fakeRetrieval.LastSearchRequest!.TopK);
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_UsesStandardTopK_WhenRerankingIsNone()
+    {
+        _fakeRetrieval.SetResults([Titled("A", 0, SourceType.Rules)]);
+        var request = new RagContextRequest(Query: "q", TopK: 10, RerankCandidateTopK: 25, MinRelevanceScore: 0);
+
+        // Explicit "None" provider, the default (no provider), and a configured-but-unavailable provider.
+        await BuilderWith(new FakeRerankingProvider("None")).BuildContextAsync(request);
+        Assert.Equal(10, _fakeRetrieval.LastSearchRequest!.TopK);
+
+        await new RagContextBuilder(_fakeRetrieval, NullLogger<RagContextBuilder>.Instance).BuildContextAsync(request);
+        Assert.Equal(10, _fakeRetrieval.LastSearchRequest!.TopK);
+
+        await BuilderWith(new FakeRerankingProvider("Cohere") { Available = false }).BuildContextAsync(request);
+        Assert.Equal(10, _fakeRetrieval.LastSearchRequest!.TopK);
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_RerankingActive_WithoutCandidateTopK_KeepsTopK()
+    {
+        _fakeRetrieval.SetResults([Titled("A", 0, SourceType.Rules)]);
+
+        await BuilderWith(RerankerScoring((0, 0.5f))).BuildContextAsync(
+            new RagContextRequest(Query: "q", TopK: 10, MinRelevanceScore: 0));
+
+        Assert.Equal(10, _fakeRetrieval.LastSearchRequest!.TopK);
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_TruncatesToPostRerankTopN_AfterReranking()
+    {
+        // Retrieval order is 0..4; the reranker prefers 4, 3, 2, 1, 0.
+        _fakeRetrieval.SetResults(Enumerable.Range(0, 5)
+            .Select(i => Titled($"P{i}", i, SourceType.Rules, 0.9 - i * 0.01)).ToList());
+        var reranker = RerankerScoring((0, 0.1f), (1, 0.2f), (2, 0.3f), (3, 0.4f), (4, 0.5f));
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", PostRerankTopN: 3, MinRelevanceScore: 0));
+
+        Assert.Equal(["P4", "P3", "P2"], Titles(result));
+        Assert.Equal(5, result.TotalChunksRetrieved);
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_PostRerankTopN_IgnoredWhenRerankingIsNone()
+    {
+        _fakeRetrieval.SetResults(Enumerable.Range(0, 5)
+            .Select(i => Titled($"P{i}", i, SourceType.Rules, 0.9 - i * 0.01)).ToList());
+
+        var result = await BuilderWith(new FakeRerankingProvider("None")).BuildContextAsync(
+            new RagContextRequest(Query: "q", PostRerankTopN: 3, MinRelevanceScore: 0));
+
+        Assert.Equal(5, result.ChunksIncluded);
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_AppliesSourcePriorityBoost_AfterReranking()
+    {
+        // The reranker slightly prefers the Adventure chunk (0.52 vs 0.50); the +0.05 Rules boost
+        // lifts Rules to 0.55, so Rules comes first. An unboosted type (Adventure) gets +0.00.
+        _fakeRetrieval.SetResults([Titled("Adventure", 0, SourceType.Adventure), Titled("Rules", 1, SourceType.Rules)]);
+        var reranker = RerankerScoring((0, 0.52f), (1, 0.50f));
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(["Rules", "Adventure"], Titles(result));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_SourceBoost_DoesNotOverrideAClearRelevanceGap()
+    {
+        // Rules 0.90 vs Homebrew 0.70: even with +0.10 the Homebrew chunk (0.80) stays below.
+        _fakeRetrieval.SetResults([Titled("Homebrew", 0, SourceType.Homebrew), Titled("Rules", 1, SourceType.Rules)]);
+        var reranker = RerankerScoring((0, 0.70f), (1, 0.90f));
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(["Rules", "Homebrew"], Titles(result));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_SourceBoost_HomebrewOutranksRules_WhenSimilarRelevance()
+    {
+        // Rules scores 0.80 (+0.05 = 0.85) and Homebrew 0.76 (+0.10 = 0.86): Homebrew wins narrowly.
+        _fakeRetrieval.SetResults([Titled("Rules", 0, SourceType.Rules), Titled("Homebrew", 1, SourceType.Homebrew)]);
+        var reranker = RerankerScoring((0, 0.80f), (1, 0.76f));
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(["Homebrew", "Rules"], Titles(result));
+    }
+
+    [Fact]
+    public void RagContextBuilder_SourceBoost_Values()
+    {
+        Assert.Equal(0.10f, RagContextBuilder.GetSourceBoost(SourceType.Homebrew));
+        Assert.Equal(0.05f, RagContextBuilder.GetSourceBoost(SourceType.Rules));
+        foreach (var other in new[] { SourceType.Adventure, SourceType.Solo, SourceType.Generated, SourceType.Character, SourceType.Unknown })
+            Assert.Equal(0f, RagContextBuilder.GetSourceBoost(other));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_SourceBoost_NotApplied_WhenRerankingIsNone()
+    {
+        // Without reranking the order is exactly the plain source-priority order (type, then retrieval
+        // score), and the reranker, which would flip it, is never consulted.
+        var chunks = new[]
+        {
+            Titled("Adventure", 0, SourceType.Adventure, 0.95),
+            Titled("Rules", 1, SourceType.Rules, 0.60),
+            Titled("Homebrew", 2, SourceType.Homebrew, 0.50),
+        };
+        _fakeRetrieval.SetResults(chunks);
+        var reranker = new FakeRerankingProvider("None");
+        reranker.ScoresByText[Passage(0)] = 0.99f;
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(0, reranker.CallCount);
+        Assert.Equal(
+            RagContextBuilder.ApplySourcePriority(chunks).Select(c => c.SourceDocumentTitle),
+            Titles(result));
+    }
+
     private sealed class FakeRerankingProvider(string providerId) : IRerankingProvider
     {
         public string ProviderId => providerId;

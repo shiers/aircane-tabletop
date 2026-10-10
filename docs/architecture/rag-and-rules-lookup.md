@@ -35,7 +35,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
 | Retrieval | `src/backend/Aircane.Infrastructure/Retrieval/RetrievalService.cs` |
 | Keyword term extraction | `src/backend/Aircane.Infrastructure/Retrieval/KeywordQueryParser.cs` |
 | Ruleset normalization | `src/backend/Aircane.Infrastructure/Retrieval/RulesetNormalizer.cs` |
-| OCR text cleanup | `src/backend/Aircane.Infrastructure/DocumentProcessing/PdfPigTextExtractor.cs` |
+| Text normalisation (spaced letters, run-togethers) | `src/backend/Aircane.Infrastructure/DocumentProcessing/PdfPigTextExtractor.cs` |
 | Context assembly | `src/backend/Aircane.Infrastructure/Retrieval/RagContextBuilder.cs` |
 | Rules Lookup service | `src/backend/Aircane.Infrastructure/Ai/RulesQuestionService.cs` |
 | AI DM consumer | `src/backend/Aircane.Infrastructure/Ai/PlayerActionService.cs` |
@@ -53,10 +53,12 @@ This document describes how Aircane turns imported rulebooks into searchable con
 2. **PDF:** extracts text per page with PdfPig.
    - If there is too little text, the document is marked `OcrRequired`.
    - Re-OCR runs Tesseract via `POST /api/library/documents/{id}/reocr` or `reocr-all`.
-   - **OCR cleanup:** text produced by OCR (not the PdfPig text layer) is cleaned in `PdfPigTextExtractor.RecognizePageAsync` via `CleanOcrText`, which applies two regexes:
-     - `([a-z])([A-Z])` inserts a space where a lowercase letter runs into an uppercase one (`ActorSkilled` becomes `Actor Skilled`).
-     - `([.!?])([A-Z])` inserts a space where sentence punctuation runs into a capital (`feet.Actor` becomes `feet. Actor`).
-   - Documents already imported keep their old OCR text until they are re-OCRed.
+   - **Text normalisation** (`PdfPigTextExtractor.NormaliseText`) repairs spacing damage in extracted text. It runs on every page of PdfPig text-layer output, and on Tesseract output, with these steps in order:
+     1. **Spaced-letter collapse** (text layer only): `(?<!\w)([A-Za-z])(?: ([A-Za-z])){2,}(?!\w)` turns `A c t o r` into `Actor`. Some PDFs, such as the 2014 PHB (ABBYY FineReader 11), encode heading characters with inter-character spacing in the font metrics, which PdfPig reads back literally. That broke keyword search for `actor` and gave headings meaningless embeddings. It is skipped for Tesseract output, which is already spaced correctly. It needs 3 or more letters, so `a b` is left alone, but three genuine single-letter tokens (`x y z`) are collapsed too. Adjacent spaced-out words collapse into one run (`AbilityScores`), and step 2 restores the break.
+     2. **camelCase split:** `([a-z])([A-Z])` inserts a space (`ActorSkilled` becomes `Actor Skilled`).
+     3. **Sentence-end split:** `([.!?])([A-Z])` inserts a space (`feet.Actor` becomes `feet. Actor`).
+   - Steps 2 and 3 now also run on the text layer, so a legitimate internal capital (`McDonald`, `iPhone`) is split too.
+   - Documents already imported keep their old text until they are re-imported (or re-OCRed).
 3. **JSON:** marked `Completed` with no text extraction, so JSON documents are not searchable.
 4. **Other extensions:** marked `Failed`.
 5. Each page is chunked by `SlidingWindowTextChunker`:

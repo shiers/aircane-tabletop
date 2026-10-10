@@ -189,28 +189,43 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
             }
         }
 
-        // Only OCR output is cleaned up; the native PdfPig text layer already has correct spacing.
-        return CleanOcrText(string.Join("\n", recognizedParts));
+        return NormaliseText(string.Join("\n", recognizedParts), isOcrOutput: true);
     }
 
     /// <summary>
-    /// Fixes the common OCR run-together where a heading is glued to the following text, by
-    /// inserting a space where a lowercase letter is directly followed by an uppercase one
-    /// ("ActorSkilled" becomes "Actor Skilled", "10 feet.ActorSkilled" becomes
-    /// "10 feet. Actor Skilled").
+    /// Repairs spacing damage in extracted text, applying these steps in order:
+    /// <list type="number">
+    ///   <item>
+    ///     Collapse spaced-out single letters ("A c t o r" becomes "Actor"). Some PDFs (e.g. ABBYY
+    ///     FineReader output) encode heading characters with inter-character spacing in the font
+    ///     metrics, which PdfPig reads back literally. This comes from the PDF text layer, so it is
+    ///     skipped for Tesseract output (<paramref name="isOcrOutput"/>), which is already spaced
+    ///     correctly and could contain legitimate runs of single letters. Needs 3+ letters so "a b"
+    ///     is left alone. Adjacent spaced-out words collapse into one run ("AbilityScores"); step 2
+    ///     then restores the word break at the lower-to-upper boundary.
+    ///   </item>
+    ///   <item>Split camelCase run-togethers ("ActorSkilled" becomes "Actor Skilled").</item>
+    ///   <item>Split sentence punctuation glued to a capital ("feet.Actor" becomes "feet. Actor").</item>
+    /// </list>
     /// </summary>
-    internal static string CleanOcrText(string text)
+    internal static string NormaliseText(string text, bool isOcrOutput = false)
     {
-        text = OcrCamelCaseJoin().Replace(text, "$1 $2");
-        // Also separate sentence punctuation glued to a following capital ("feet.Actor").
-        return OcrSentenceJoin().Replace(text, "$1 $2");
+        if (!isOcrOutput)
+            text = SpacedLetters().Replace(text, m => m.Value.Replace(" ", string.Empty));
+
+        text = CamelCaseJoin().Replace(text, "$1 $2");
+        return SentenceJoin().Replace(text, "$1 $2");
     }
 
+    /// <summary>Three or more single letters separated by single spaces, not part of a longer word.</summary>
+    [GeneratedRegex(@"(?<!\w)([A-Za-z])(?: ([A-Za-z])){2,}(?!\w)")]
+    private static partial Regex SpacedLetters();
+
     [GeneratedRegex("([a-z])([A-Z])")]
-    private static partial Regex OcrCamelCaseJoin();
+    private static partial Regex CamelCaseJoin();
 
     [GeneratedRegex("([.!?])([A-Z])")]
-    private static partial Regex OcrSentenceJoin();
+    private static partial Regex SentenceJoin();
 
     /// <summary>True when full-page rasterization OCR is enabled and a rasterizer is wired in.</summary>
     private bool FullPageRasterizationEnabled =>
@@ -235,7 +250,9 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
         {
             ct.ThrowIfCancellationRequested();
 
-            var text = page.Text ?? string.Empty;
+            // The text layer may carry spaced-out heading characters; repair them before anything
+            // downstream (thresholds, chunking, keyword search, embeddings) sees the text.
+            var text = NormaliseText(page.Text ?? string.Empty);
 
             // Collect embedded raster images so OCR can be attempted on scanned pages.
             // Only materialize image bytes when the page text is sparse to avoid the cost

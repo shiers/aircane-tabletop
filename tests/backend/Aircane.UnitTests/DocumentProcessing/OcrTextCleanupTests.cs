@@ -10,8 +10,8 @@ public class OcrTextCleanupTests
     [InlineData("10 feet.ActorSkilled", "10 feet. Actor Skilled")]
     [InlineData("Already spaced Text stays", "Already spaced Text stays")]
     [InlineData("", "")]
-    public void CleanOcrText_InsertsMissingSpaces(string input, string expected)
+    public void NormaliseText_OcrOutput_InsertsMissingSpaces(string input, string expected)
     {
-        Assert.Equal(expected, PdfPigTextExtractor.CleanOcrText(input));
+        Assert.Equal(expected, PdfPigTextExtractor.NormaliseText(input, isOcrOutput: true));
     }
 }

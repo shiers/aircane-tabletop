@@ -142,7 +142,7 @@ Because of the 0.6 weight, a vector-only chunk needs a cosine similarity of abou
    - `Host` and `HumanDm` get `DMOnly`.
    - `Player`, `Spectator` and anything else get `Public`.
 2. Calls `SearchAsync` for `TopK` candidates, or for `RerankCandidateTopK` (25 for Rules Lookup and the AI DM) when a reranking provider is active and available, so the reranker has a wider pool.
-3. Drops chunks scoring below `MinRelevanceScore`. Chunks with a null score are kept.
+3. Drops chunks scoring below `MinRelevanceScore` (0.4 for Rules Lookup and the AI DM). When reranking is active the floor is lowered to 0.15 (never raised), so the reranker decides what reaches the context. Chunks with a null score are kept.
 4. **Applies source priority.** Chunks are ordered by source type, then by score within a type: Homebrew > Rules > Adventure > Solo > Generated > Character > Unknown. House rules therefore outrank core rulebook content even when they score lower, and are the last to be cut by the character budget.
 5. **Reranks (optional).** When the active reranking provider is not "None" and is available, and there is more than one chunk, the chunks are sent to `IRerankingProvider.RerankAsync` with the question. Then, in order:
    - **Source boost:** each chunk's rerank score gets an additive boost by source type: Homebrew +0.10, Rules +0.05, everything else +0.00. Chunks are ordered by the boosted score, so relevance still leads but a highly relevant Homebrew chunk outranks an equally relevant Rules chunk. Chunks the provider does not score start from 0.
@@ -169,7 +169,7 @@ Reranking is optional and off by default (provider "None"). It re-scores the ret
 - **Test Connection.** `POST /api/ai/settings/test-reranking-connection` makes a real call with the unsaved settings and returns `{ available, message }` ("None" is always available).
 - **UI.** AI Provider Settings has a "Reranking (optional)" section: provider select, per-provider fields and a Test Connection button. It is saved by Save Configuration.
 - **Ollama caveat.** As of Ollama 0.34.4, `bge-reranker-base` is not in the Ollama model library and there is no rerank endpoint. `/api/embed` returns a pooled embedding rather than a classifier score, so "first value" is only meaningful for a model converted to expose a score there. Without the model the Ollama provider reports itself unavailable and the pipeline keeps the original order. Use Cohere unless a local model has been verified to rank sensibly.
-- **Candidate count.** With reranking active the pool is 25 candidates (`RerankCandidateTopK`) instead of 10, and 7 are kept afterwards (`PostRerankTopN`). The minimum score filter (0.4) still runs on the retrieval scores *before* reranking, so a passage that scores below it never reaches the reranker, however large the pool.
+- **Candidate count.** With reranking active the pool is 25 candidates (`RerankCandidateTopK`) instead of 10, and 7 are kept afterwards (`PostRerankTopN`). The minimum score filter runs on the retrieval scores *before* reranking, at 0.15 instead of 0.4 when reranking is active, so only near-irrelevant chunks are kept from the reranker.
 
 ## 4. Rules Lookup
 

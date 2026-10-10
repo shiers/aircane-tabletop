@@ -924,6 +924,49 @@ public class RagContextBuilderTests
             Titles(result));
     }
 
+    [Fact]
+    public async Task RagContextBuilder_UsesLowerMinScore_WhenRerankingActive()
+    {
+        // Retrieval scores 0.9 / 0.3 / 0.1. The standard 0.4 floor would drop the last two; with
+        // reranking the floor is 0.15, so 0.3 reaches the reranker (which promotes it) and 0.1 does not.
+        _fakeRetrieval.SetResults([
+            Titled("High", 0, SourceType.Rules, 0.9),
+            Titled("Low", 1, SourceType.Rules, 0.3),
+            Titled("Noise", 2, SourceType.Rules, 0.1)]);
+        var reranker = RerankerScoring((0, 0.2f), (1, 0.8f), (2, 0.9f));
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0.4));
+
+        Assert.Equal(["Low", "High"], Titles(result));
+        Assert.Equal(3, result.TotalChunksRetrieved);
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_RerankingActive_NeverRaisesAnAlreadyLowerMinScore()
+    {
+        _fakeRetrieval.SetResults([Titled("A", 0, SourceType.Rules, 0.9), Titled("Noise", 1, SourceType.Rules, 0.05)]);
+
+        var result = await BuilderWith(RerankerScoring((0, 0.5f), (1, 0.4f))).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(2, result.ChunksIncluded);
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_UsesStandardMinScore_WhenRerankingIsNone()
+    {
+        _fakeRetrieval.SetResults([
+            Titled("High", 0, SourceType.Rules, 0.9),
+            Titled("Low", 1, SourceType.Rules, 0.3),
+            Titled("Noise", 2, SourceType.Rules, 0.1)]);
+
+        var result = await BuilderWith(new FakeRerankingProvider("None")).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0.4));
+
+        Assert.Equal(["High"], Titles(result));
+    }
+
     private sealed class FakeRerankingProvider(string providerId) : IRerankingProvider
     {
         public string ProviderId => providerId;

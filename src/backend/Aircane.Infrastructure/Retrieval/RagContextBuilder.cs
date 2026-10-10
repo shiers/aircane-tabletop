@@ -80,14 +80,19 @@ public sealed class RagContextBuilder : IRagContextBuilder
                 ChunksIncluded: 0);
         }
 
-        // Filter out low-confidence chunks below the minimum relevance score
-        var filteredChunks = FilterByMinRelevanceScore(chunks, request.MinRelevanceScore);
+        // Filter out low-confidence chunks below the minimum relevance score. With reranking active the
+        // floor is lowered (never raised) so the reranker, not the raw keyword/vector score, decides
+        // what makes it into the context.
+        var minScore = rerankingActive
+            ? Math.Min(request.MinRelevanceScore, RerankingMinRelevanceScore)
+            : request.MinRelevanceScore;
+        var filteredChunks = FilterByMinRelevanceScore(chunks, minScore);
 
         if (filteredChunks.Count == 0)
         {
             _logger.LogDebug(
                 "All {TotalChunks} chunks filtered out by minimum relevance score {MinScore} for query: {Query}",
-                chunks.Count, request.MinRelevanceScore, request.Query);
+                chunks.Count, minScore, request.Query);
             return new RagContextResult(
                 ContextText: string.Empty,
                 Citations: [],
@@ -119,6 +124,12 @@ public sealed class RagContextBuilder : IRagContextBuilder
             TotalChunksRetrieved: chunks.Count,
             ChunksIncluded: citations.Count);
     }
+
+    /// <summary>
+    /// Minimum retrieval score when reranking is active. Low enough to give the reranker a wide pool,
+    /// high enough to keep completely irrelevant chunks out of it.
+    /// </summary>
+    public const double RerankingMinRelevanceScore = 0.15;
 
     /// <summary>True when a non-"None" reranking provider is configured and usable.</summary>
     private bool IsRerankingActive =>

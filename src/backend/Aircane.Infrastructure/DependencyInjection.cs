@@ -315,6 +315,13 @@ public static class DependencyInjection
         services.AddHttpClient("OpenAI");
         services.AddHttpClient("Ollama");
         services.AddHttpClient("AzureOpenAI");
+        services.AddHttpClient("Cohere");
+
+        // Reranking is optional and, like IAiProvider, resolved per request from the live settings
+        // (Reranking:Provider = None / Ollama / Cohere, default None) so it can be switched without a restart.
+        services.AddScoped<Application.Retrieval.IRerankingProviderFactory, Retrieval.Reranking.RerankingProviderFactory>();
+        services.AddScoped<Application.Retrieval.IRerankingProvider>(sp =>
+            sp.GetRequiredService<Application.Retrieval.IRerankingProviderFactory>().CreateActive());
 
         // Use a scoped factory that resolves the correct provider based on the
         // current AiSettingsService state. This allows the user to switch providers

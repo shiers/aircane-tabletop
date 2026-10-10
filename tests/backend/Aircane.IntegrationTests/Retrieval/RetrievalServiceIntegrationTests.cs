@@ -6,6 +6,7 @@ using Aircane.Infrastructure.Embeddings;
 using Aircane.Infrastructure.GameSystems;
 using Aircane.Infrastructure.Persistence;
 using Aircane.Infrastructure.Retrieval;
+using Aircane.Infrastructure.Retrieval.Reranking;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pgvector;
 using Xunit;
@@ -391,5 +392,34 @@ public class RetrievalServiceIntegrationTests : IClassFixture<PostgresFixture>, 
             context.ContextText.IndexOf("House rule: grapple", StringComparison.Ordinal)
             < context.ContextText.IndexOf("Grappling: a grappled", StringComparison.Ordinal),
             "The Homebrew chunk should appear before the Rules chunk in the assembled context.");
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_WithNullReranker_SameResultAsCurrentPipeline()
+    {
+        // Regression guard: with the null reranker the pipeline is exactly
+        // search -> min-score filter -> source priority -> dedup -> format, as before reranking existed.
+        var request = new RagContextRequest(
+            Query: "grapple athletics", RequesterRole: ParticipantRole.Player, TopK: 20, MinRelevanceScore: 0.1);
+
+        var withoutReranker = await NewContextBuilder().BuildContextAsync(request);
+        var withNullReranker = await new RagContextBuilder(
+            _service, NullLogger<RagContextBuilder>.Instance, new NullRerankingProvider()).BuildContextAsync(request);
+
+        // The same chunks, in the same order, producing byte-identical context text.
+        Assert.Equal(withoutReranker.ContextText, withNullReranker.ContextText);
+        Assert.Equal(
+            withoutReranker.Citations.Select(c => c.ChunkId),
+            withNullReranker.Citations.Select(c => c.ChunkId));
+
+        // And that order is what the pre-reranking steps produce when applied by hand.
+        var searched = await _service.SearchAsync(
+            new SearchRequest(request.Query, request.TopK), RagContextBuilder.GetMaxVisibility(request.RequesterRole));
+        var expected = RagContextBuilder.RemoveDuplicateChunks(
+            RagContextBuilder.ApplySourcePriority(
+                RagContextBuilder.FilterByMinRelevanceScore(searched, request.MinRelevanceScore)));
+
+        Assert.NotEmpty(withNullReranker.Citations);
+        Assert.Equal(expected.Select(c => c.ChunkId), withNullReranker.Citations.Select(c => c.ChunkId));
     }
 }

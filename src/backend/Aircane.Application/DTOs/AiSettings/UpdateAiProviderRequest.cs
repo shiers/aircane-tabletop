@@ -23,4 +23,7 @@ public sealed class UpdateAiProviderRequest
 
     /// <summary>Grok settings (required when ActiveProvider is Grok).</summary>
     public GrokSettingsDto? Grok { get; init; }
+
+    /// <summary>Reranking settings. When omitted, the saved reranking configuration is left unchanged.</summary>
+    public RerankingSettingsDto? Reranking { get; init; }
 }

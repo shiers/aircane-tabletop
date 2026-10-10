@@ -23,6 +23,9 @@ public sealed class AiProviderConfigDto
 
     /// <summary>Grok-specific settings.</summary>
     public GrokSettingsDto? Grok { get; init; }
+
+    /// <summary>Optional reranking settings (independent of the active chat provider).</summary>
+    public RerankingSettingsDto? Reranking { get; init; }
 }
 
 /// <summary>OpenAI provider settings (API key is masked in responses).</summary>

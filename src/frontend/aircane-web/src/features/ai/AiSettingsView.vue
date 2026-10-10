@@ -5,10 +5,14 @@ import {
   getAiConfig,
   updateAiConfig,
   testAiConnection,
+  testRerankingConnection,
   getProviders,
   getAvailableModels,
   type UpdateAiProviderRequest,
   type TestConnectionResult,
+  type RerankingConnectionResult,
+  type RerankingProviderId,
+  type RerankingSettings,
   type ProviderInfo,
 } from './api'
 import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
@@ -103,6 +107,19 @@ function openSetupGuide() {
 const grokApiKey = ref('')
 const grokModel = ref('grok-3-mini')
 
+// Reranking (optional, independent of the chat provider)
+const rerankingProvider = ref<RerankingProviderId>('None')
+const rerankOllamaModel = ref('bge-reranker-base')
+const rerankCohereApiKey = ref('')
+const rerankCohereModel = ref('rerank-english-v3.0')
+const rerankTesting = ref(false)
+const rerankTestResult = ref<RerankingConnectionResult | null>(null)
+
+// A different provider or model invalidates the previous test result.
+watch([rerankingProvider, rerankOllamaModel, rerankCohereApiKey, rerankCohereModel], () => {
+  rerankTestResult.value = null
+})
+
 const providerLabel = computed(() => {
   const p = providers.value.find((p) => p.id === activeProvider.value)
   return p?.name ?? 'Unknown'
@@ -186,6 +203,12 @@ async function loadConfig() {
       grokApiKey.value = config.grok.apiKey ?? ''
       grokModel.value = config.grok.model ?? 'grok-3-mini'
     }
+    if (config.reranking) {
+      rerankingProvider.value = config.reranking.provider ?? 'None'
+      rerankOllamaModel.value = config.reranking.ollama?.model ?? 'bge-reranker-base'
+      rerankCohereApiKey.value = config.reranking.cohere?.apiKey ?? ''
+      rerankCohereModel.value = config.reranking.cohere?.model ?? 'rerank-english-v3.0'
+    }
   } catch (e: any) {
     error.value = e?.response?.data?.error ?? e?.message ?? 'Failed to load AI settings'
   } finally {
@@ -193,9 +216,22 @@ async function loadConfig() {
   }
 }
 
+/** The reranking form state as an API payload. A masked (unchanged) key is omitted so the saved key is kept. */
+function buildRerankingSettings(): RerankingSettings {
+  return {
+    provider: rerankingProvider.value,
+    ollama: { model: rerankOllamaModel.value },
+    cohere: {
+      apiKey: isKeyMasked(rerankCohereApiKey.value) ? undefined : rerankCohereApiKey.value || undefined,
+      model: rerankCohereModel.value,
+    },
+  }
+}
+
 function buildRequest(): UpdateAiProviderRequest {
   const request: UpdateAiProviderRequest = {
     activeProvider: activeProvider.value,
+    reranking: buildRerankingSettings(),
   }
 
   switch (activeProvider.value) {
@@ -273,6 +309,21 @@ async function testConnection() {
     }
   } finally {
     testing.value = false
+  }
+}
+
+async function testReranking() {
+  rerankTesting.value = true
+  rerankTestResult.value = null
+  try {
+    rerankTestResult.value = await testRerankingConnection(buildRerankingSettings())
+  } catch (e: any) {
+    rerankTestResult.value = {
+      available: false,
+      message: e?.response?.data?.error ?? e?.message ?? 'Connection test failed',
+    }
+  } finally {
+    rerankTesting.value = false
   }
 }
 
@@ -629,6 +680,87 @@ function isKeyMasked(value: string): boolean {
           The fake provider returns deterministic responses for testing. No external API calls are made.
         </p>
       </div>
+
+      <!-- Reranking (optional) -->
+      <fieldset class="border border-surface-700/50 rounded-md p-4 space-y-4" data-testid="reranking-section">
+        <legend class="text-sm font-medium text-gray-300 px-2">Reranking (optional)</legend>
+        <p class="text-sm text-gray-400">
+          Improves rules lookup accuracy by re-scoring retrieved chunks against your full question.
+          Recommended for best AI DM rulings quality.
+        </p>
+
+        <div>
+          <label for="reranking-provider" class="block text-sm font-medium text-gray-300 mb-1">Provider</label>
+          <select
+            id="reranking-provider"
+            v-model="rerankingProvider"
+            class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500 focus:border-aircane-500"
+          >
+            <option value="None">None</option>
+            <option value="Ollama">Ollama</option>
+            <option value="Cohere">Cohere</option>
+          </select>
+        </div>
+
+        <!-- Ollama -->
+        <div v-if="rerankingProvider === 'Ollama'" class="space-y-4">
+          <div>
+            <label for="rerank-ollama-model" class="block text-sm font-medium text-gray-300 mb-1">Model</label>
+            <input
+              id="rerank-ollama-model"
+              v-model="rerankOllamaModel"
+              type="text"
+              placeholder="bge-reranker-base"
+              class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
+            />
+            <p class="text-xs text-gray-500 mt-1">
+              Uses the Ollama server configured above. The model must be installed locally; if it is not,
+              reranking is skipped and the original order is kept.
+            </p>
+          </div>
+        </div>
+
+        <!-- Cohere -->
+        <div v-if="rerankingProvider === 'Cohere'" class="space-y-4">
+          <div>
+            <label for="rerank-cohere-key" class="block text-sm font-medium text-gray-300 mb-1">API Key</label>
+            <ApiKeyField id="rerank-cohere-key" v-model="rerankCohereApiKey" placeholder="Cohere API key" />
+            <p class="text-xs text-gray-500 mt-1">Stored server-side only. Leave unchanged to keep existing key.</p>
+          </div>
+          <div>
+            <label for="rerank-cohere-model" class="block text-sm font-medium text-gray-300 mb-1">Model</label>
+            <input
+              id="rerank-cohere-model"
+              v-model="rerankCohereModel"
+              type="text"
+              placeholder="rerank-english-v3.0"
+              class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
+            />
+          </div>
+        </div>
+
+        <div v-if="rerankingProvider !== 'None'" class="flex items-center gap-4">
+          <button
+            type="button"
+            :disabled="rerankTesting"
+            class="art-button art-button--test text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-aircane-400"
+            v-bg-asset="{ url: '/assets/ai-settings/test-connection-button-art.png', fallback: 'transparent', size: '100% 100%' }"
+            data-testid="test-reranking"
+            @click="testReranking"
+          >
+            <span class="art-button-label">{{ rerankTesting ? 'Testing...' : 'Test Connection' }}</span>
+          </button>
+          <p
+            v-if="rerankTestResult"
+            :class="['text-sm', rerankTestResult.available ? 'text-green-400' : 'text-red-400']"
+            role="status"
+            data-testid="reranking-test-result"
+          >
+            {{ rerankTestResult.available ? '✓' : '✗' }} {{ rerankTestResult.message }}
+          </p>
+        </div>
+        <p class="text-xs text-gray-500">Reranking settings are saved with Save Configuration below.</p>
+      </fieldset>
 
       <!-- Action buttons -->
       <div class="flex gap-3 pt-2">

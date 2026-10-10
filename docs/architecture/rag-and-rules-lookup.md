@@ -22,7 +22,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
             │                        │
             ▼                        ▼
  RagContextBuilder ──► RetrievalService (keyword + vector, filtered)
-            │   source priority → dedup → character budget
+            │   source priority → rerank (optional) → dedup → character budget
             ▼
  Prompt with numbered context [N] ──► IAiProvider ──► answer + citations
 ```
@@ -37,6 +37,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
 | Ruleset normalization | `src/backend/Aircane.Infrastructure/Retrieval/RulesetNormalizer.cs` |
 | Text normalisation (spaced letters, run-togethers) | `src/backend/Aircane.Infrastructure/DocumentProcessing/PdfPigTextExtractor.cs` |
 | Context assembly | `src/backend/Aircane.Infrastructure/Retrieval/RagContextBuilder.cs` |
+| Reranking providers (None / Ollama / Cohere) | `src/backend/Aircane.Infrastructure/Retrieval/Reranking/` (interface: `Aircane.Application/Retrieval/IRerankingProvider.cs`) |
 | Rules Lookup service | `src/backend/Aircane.Infrastructure/Ai/RulesQuestionService.cs` |
 | AI DM consumer | `src/backend/Aircane.Infrastructure/Ai/PlayerActionService.cs` |
 | Game system name matching | `src/backend/Aircane.Infrastructure/GameSystems/GameSystemCanonicalizer.cs` |
@@ -143,11 +144,31 @@ Because of the 0.6 weight, a vector-only chunk needs a cosine similarity of abou
 2. Calls `SearchAsync`.
 3. Drops chunks scoring below `MinRelevanceScore`. Chunks with a null score are kept.
 4. **Applies source priority.** Chunks are ordered by source type, then by score within a type: Homebrew > Rules > Adventure > Solo > Generated > Character > Unknown. House rules therefore outrank core rulebook content even when they score lower, and are the last to be cut by the character budget.
-5. **Removes near-duplicates** (`RemoveDuplicateChunks`). Walking the chunks in priority order, a chunk is skipped when `overlap_chars / min(len_a, len_b) > 0.40` against any chunk already kept.
+5. **Reranks (optional).** When the active reranking provider is not "None" and is available, and there is more than one chunk, the chunks are sent to `IRerankingProvider.RerankAsync` with the question and reordered by the returned score. Chunks the provider does not score sort last. See "Reranking" below.
+   - Reranking replaces the source-priority ordering with relevance ordering, so with reranking on, house rules no longer outrank core rules purely by source type.
+   - With the "None" provider this step is skipped and the pipeline is unchanged.
+6. **Removes near-duplicates** (`RemoveDuplicateChunks`), after reranking so the better-reranked copy of a duplicated passage is the one kept. Walking the chunks in priority order, a chunk is skipped when `overlap_chars / min(len_a, len_b) > 0.40` against any chunk already kept.
    - Overlap counts the 50-character windows of the shorter text that also occur in the longer one (whitespace-normalized). Texts under 50 characters count as duplicates only if wholly contained in the other.
    - Earlier chunks win, so the higher-priority copy is kept.
    - Adjacent sliding-window chunks share at most about 27% of their text (300 of 1100 characters), below the threshold. Dedup removes near-copies, such as the same passage in two documents or an overlapping re-import, not neighbouring chunks.
-6. Formats the chunks as `[N] (Title - Section, p.X)` followed by the text, until `MaxContextChars` is reached. It then appends a `Sources:` list if it fits.
+7. Formats the chunks as `[N] (Title - Section, p.X)` followed by the text, until `MaxContextChars` is reached. It then appends a `Sources:` list if it fits.
+
+### Reranking
+
+Reranking is optional and off by default (provider "None"). It re-scores the retrieved chunks against the full question with a model, which helps natural-language questions that share few keywords with the right passage.
+
+| Provider | How it scores | Needs |
+|---|---|---|
+| None (default) | Keeps the input order (scores 1.0, 0.99, ...) | Nothing |
+| Cohere | `POST https://api.cohere.com/v1/rerank` (`rerank-english-v3.0` by default) | `Reranking:Cohere:ApiKey` |
+| Ollama | `POST /api/embed` with `[CLS] query [SEP] chunk [SEP]` per chunk; the first value of the returned vector is the score | A reranker model installed in Ollama (`Reranking:Ollama:Model`, default `bge-reranker-base`) |
+
+- **Never fails a request.** On a 401, a 429, any other HTTP error, a network error or a bad payload, a provider logs a warning and returns the candidates in their original order. Providers are created per request from the live settings, so a change in Settings applies without a restart.
+- **Settings.** `GET`/`PUT /api/ai/settings` carry a `reranking` block (`provider`, `ollama.model`, `cohere.apiKey`, `cohere.model`). The Cohere key is returned masked (last 4 characters) and a masked or empty key on save keeps the stored key. The block is saved to `ai-settings.json` with the other AI settings under `Reranking:*` keys, and is left unchanged when a request omits it.
+- **Test Connection.** `POST /api/ai/settings/test-reranking-connection` makes a real call with the unsaved settings and returns `{ available, message }` ("None" is always available).
+- **UI.** AI Provider Settings has a "Reranking (optional)" section: provider select, per-provider fields and a Test Connection button. It is saved by Save Configuration.
+- **Ollama caveat.** As of Ollama 0.34.4, `bge-reranker-base` is not in the Ollama model library and there is no rerank endpoint. `/api/embed` returns a pooled embedding rather than a classifier score, so "first value" is only meaningful for a model converted to expose a score there. Without the model the Ollama provider reports itself unavailable and the pipeline keeps the original order. Use Cohere unless a local model has been verified to rank sensibly.
+- **Candidate count.** Reranking only reorders what retrieval returned (`TopK`, then the minimum score filter). It cannot recover a passage retrieval missed.
 
 ## 4. Rules Lookup
 
@@ -213,4 +234,6 @@ Tests: `RetrievalServiceTests` (scoring, source type, ruleset aliases, available
 | 4 | Built-in bundle game systems aren't canonicalized | SRD stored as `D&D 5e` | Works now through alias expansion, but stored data is inconsistent. |
 | 5 | JSON documents are not chunked | Imported JSON content isn't searchable | |
 | 6 | Page numbers are PDF page indexes | Citations can differ from the printed page (PHB Actor feat: PDF p.154, printed p.165) | |
-| 7 | `docs/known-limitations.md` is partly stale | It says there's no cloud embedding provider and no alias table; both now exist | Update it alongside this doc. |
+| 7 | Ollama reranking has no working default model | `bge-reranker-base` is not in the Ollama library, so Ollama reranking is unavailable out of the box | Cohere works with an API key. A local option needs a model that exposes a score through `/api/embed`, or a rerank endpoint in Ollama. |
+| 8 | Reranking overrides source priority | With reranking on, Homebrew no longer outranks Rules by type | Could re-apply priority as a tie-break or boost on top of the rerank score. |
+| 9 | `docs/known-limitations.md` is partly stale | It says there's no cloud embedding provider and no alias table; both now exist | Update it alongside this doc. |

@@ -88,6 +88,19 @@ public sealed class AiSettingsService : IAiSettingsService
                     ApiKey = MaskKey(GetSetting("Ai:Grok:ApiKey")),
                     Model = GetSetting("Ai:Grok:Model") ?? "grok-3-mini",
                 },
+                Reranking = new RerankingSettingsDto
+                {
+                    Provider = GetSetting("Reranking:Provider") ?? "None",
+                    Ollama = new OllamaRerankingSettingsDto
+                    {
+                        Model = GetSetting("Reranking:Ollama:Model") ?? "bge-reranker-base",
+                    },
+                    Cohere = new CohereRerankingSettingsDto
+                    {
+                        ApiKey = MaskKey(GetSetting("Reranking:Cohere:ApiKey")),
+                        Model = GetSetting("Reranking:Cohere:Model") ?? "rerank-english-v3.0",
+                    },
+                },
             };
         }
     }
@@ -151,6 +164,10 @@ public sealed class AiSettingsService : IAiSettingsService
                     break;
             }
 
+            // Reranking is independent of the chat provider; only touched when the request carries it.
+            if (request.Reranking is not null)
+                ApplyRerankingSettings(request.Reranking);
+
             // Update the Ai:Provider key so DI can pick it up on next resolution
             SetSetting("Ai:Provider", ProviderTypeToConfigName(request.ActiveProvider));
 
@@ -203,6 +220,28 @@ public sealed class AiSettingsService : IAiSettingsService
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    private void ApplyRerankingSettings(RerankingSettingsDto reranking)
+    {
+        var provider = reranking.Provider?.Trim().ToLowerInvariant() switch
+        {
+            "ollama" => "Ollama",
+            "cohere" => "Cohere",
+            _ => "None",
+        };
+        SetSetting("Reranking:Provider", provider);
+
+        if (reranking.Ollama is not null)
+            SetSettingIfNotEmpty("Reranking:Ollama:Model", reranking.Ollama.Model);
+
+        if (reranking.Cohere is not null)
+        {
+            // A masked key (echoed back by the UI) means "keep the saved key".
+            if (!Retrieval.Reranking.RerankingProviderFactory.IsMasked(reranking.Cohere.ApiKey))
+                SetSettingIfNotEmpty("Reranking:Cohere:ApiKey", reranking.Cohere.ApiKey);
+            SetSettingIfNotEmpty("Reranking:Cohere:Model", reranking.Cohere.Model);
+        }
+    }
 
     private async Task<TestConnectionResult> TestOpenAiAsync(
         OpenAiSettingsDto? settings, CancellationToken ct)
@@ -403,6 +442,8 @@ public sealed class AiSettingsService : IAiSettingsService
             "Ai:AwsBedrock:Region", "Ai:AwsBedrock:ModelId",
             "Ai:Ollama:BaseUrl", "Ai:Ollama:Model",
             "Ai:Grok:ApiKey", "Ai:Grok:Model",
+            "Reranking:Provider", "Reranking:Ollama:Model",
+            "Reranking:Cohere:ApiKey", "Reranking:Cohere:Model",
         };
 
         foreach (var key in keys)

@@ -1,6 +1,7 @@
 using Aircane.Api.Authorization;
 using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.AiSettings;
+using Aircane.Application.Retrieval;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,10 +18,14 @@ namespace Aircane.Api.Controllers;
 public class AiSettingsController : ControllerBase
 {
     private readonly IAiSettingsService _settingsService;
+    private readonly IRerankingProviderFactory _rerankingFactory;
 
-    public AiSettingsController(IAiSettingsService settingsService)
+    public AiSettingsController(
+        IAiSettingsService settingsService,
+        IRerankingProviderFactory rerankingFactory)
     {
         _settingsService = settingsService;
+        _rerankingFactory = rerankingFactory;
     }
 
     /// <summary>
@@ -67,6 +72,19 @@ public class AiSettingsController : ControllerBase
 
         var result = await _settingsService.TestConnectionAsync(request, ct);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Tests the given reranking configuration (without saving it) with a real call. A missing or
+    /// masked Cohere key falls back to the saved key. "None" is always available.
+    /// </summary>
+    [HttpPost("test-reranking-connection")]
+    public async Task<ActionResult<RerankingConnectionResult>> TestRerankingConnection(
+        [FromBody] RerankingSettingsDto request,
+        CancellationToken ct)
+    {
+        var provider = _rerankingFactory.Create(request);
+        return Ok(await provider.CheckConnectionAsync(ct));
     }
 
     /// <summary>

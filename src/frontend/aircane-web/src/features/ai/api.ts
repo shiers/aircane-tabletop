@@ -38,6 +38,20 @@ export interface GrokSettings {
   model: string
 }
 
+export type RerankingProviderId = 'None' | 'Ollama' | 'Cohere'
+
+export interface RerankingSettings {
+  provider: RerankingProviderId
+  ollama?: { model: string } | null
+  /** The API key is masked (last 4 characters) in responses; omit or send it masked to keep the saved key. */
+  cohere?: { apiKey?: string | null; model: string } | null
+}
+
+export interface RerankingConnectionResult {
+  available: boolean
+  message: string
+}
+
 export interface AiProviderConfig {
   activeProvider: AiProviderType
   openAi?: OpenAiSettings | null
@@ -45,6 +59,7 @@ export interface AiProviderConfig {
   awsBedrock?: AwsBedrockSettings | null
   ollama?: OllamaSettings | null
   grok?: GrokSettings | null
+  reranking?: RerankingSettings | null
 }
 
 export interface UpdateAiProviderRequest {
@@ -54,6 +69,8 @@ export interface UpdateAiProviderRequest {
   awsBedrock?: AwsBedrockSettings | null
   ollama?: OllamaSettings | null
   grok?: GrokSettings | null
+  /** When omitted, the saved reranking configuration is left unchanged. */
+  reranking?: RerankingSettings | null
 }
 
 export interface TestConnectionResult {
@@ -81,6 +98,17 @@ export async function updateAiConfig(request: UpdateAiProviderRequest): Promise<
 
 export async function testAiConnection(request: UpdateAiProviderRequest): Promise<TestConnectionResult> {
   const response = await apiClient.post<TestConnectionResult>('/api/ai/settings/test-connection', request)
+  return response.data
+}
+
+/** Tests a (possibly unsaved) reranking configuration with a real call. */
+export async function testRerankingConnection(
+  settings: RerankingSettings,
+): Promise<RerankingConnectionResult> {
+  const response = await apiClient.post<RerankingConnectionResult>(
+    '/api/ai/settings/test-reranking-connection',
+    settings,
+  )
   return response.data
 }
 

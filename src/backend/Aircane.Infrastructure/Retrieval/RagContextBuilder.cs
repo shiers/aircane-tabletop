@@ -1,7 +1,9 @@
 using System.Text;
 using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Retrieval;
+using Aircane.Application.Retrieval;
 using Aircane.Domain.Enums;
+using Aircane.Infrastructure.Retrieval.Reranking;
 using Microsoft.Extensions.Logging;
 
 namespace Aircane.Infrastructure.Retrieval;
@@ -13,6 +15,7 @@ namespace Aircane.Infrastructure.Retrieval;
 public sealed class RagContextBuilder : IRagContextBuilder
 {
     private readonly IRetrievalService _retrievalService;
+    private readonly IRerankingProvider _rerankingProvider;
     private readonly ILogger<RagContextBuilder> _logger;
 
     /// <summary>
@@ -32,9 +35,11 @@ public sealed class RagContextBuilder : IRagContextBuilder
 
     public RagContextBuilder(
         IRetrievalService retrievalService,
-        ILogger<RagContextBuilder> logger)
+        ILogger<RagContextBuilder> logger,
+        IRerankingProvider? rerankingProvider = null)
     {
         _retrievalService = retrievalService;
+        _rerankingProvider = rerankingProvider ?? new NullRerankingProvider();
         _logger = logger;
     }
 
@@ -89,6 +94,10 @@ public sealed class RagContextBuilder : IRagContextBuilder
         // Apply source priority ordering
         var prioritizedChunks = ApplySourcePriority(filteredChunks);
 
+        // Optionally rerank against the full question (cross-encoder), before dedup so the
+        // best-scoring copy of a duplicated passage is the one kept.
+        prioritizedChunks = await RerankAsync(request.Query, prioritizedChunks, cancellationToken);
+
         // Drop near-duplicate chunks so overlapping text doesn't waste the character budget
         var distinctChunks = RemoveDuplicateChunks(prioritizedChunks);
 
@@ -104,6 +113,39 @@ public sealed class RagContextBuilder : IRagContextBuilder
             Citations: citations,
             TotalChunksRetrieved: chunks.Count,
             ChunksIncluded: citations.Count);
+    }
+
+    /// <summary>
+    /// Reorders <paramref name="chunks"/> by the reranking provider's relevance scores. Skipped when
+    /// the provider is "None", unavailable, or there is nothing to reorder. Chunks the provider does
+    /// not score sort last (score 0), keeping their relative order.
+    /// </summary>
+    /// <remarks>
+    /// This replaces the source-priority ordering with relevance ordering whenever reranking is
+    /// active, so house rules no longer outrank core rules purely by source type.
+    /// </remarks>
+    private async Task<IReadOnlyList<ChunkResultDto>> RerankAsync(
+        string query,
+        IReadOnlyList<ChunkResultDto> chunks,
+        CancellationToken cancellationToken)
+    {
+        if (_rerankingProvider.ProviderId == NullRerankingProvider.Id
+            || chunks.Count <= 1
+            || !_rerankingProvider.IsAvailable)
+        {
+            return chunks;
+        }
+
+        var candidates = chunks
+            .Select(c => new RerankCandidate(c.ChunkId.ToString(), c.Text))
+            .ToList();
+
+        var reranked = await _rerankingProvider.RerankAsync(query, candidates, cancellationToken);
+
+        var scoreMap = reranked.ToDictionary(r => r.Id, r => r.Score);
+        return chunks
+            .OrderByDescending(c => scoreMap.GetValueOrDefault(c.ChunkId.ToString(), 0f))
+            .ToList();
     }
 
     /// <summary>

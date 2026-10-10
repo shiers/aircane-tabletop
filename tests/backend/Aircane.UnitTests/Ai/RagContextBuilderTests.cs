@@ -1,5 +1,6 @@
 using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Retrieval;
+using Aircane.Application.Retrieval;
 using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Retrieval;
 using Microsoft.Extensions.Logging;
@@ -635,6 +636,161 @@ public class RagContextBuilderTests
     public void OverlapFraction_UnrelatedTexts_IsZero()
     {
         Assert.Equal(0.0, RagContextBuilder.OverlapFraction(LongText, new string('z', 300)), 6);
+    }
+
+    // ── Reranking ─────────────────────────────────────────────────────────────
+
+    private const string TextA = "Grappling: a grappled creature has speed zero and the condition ends when the grappler is incapacitated or moved away.";
+    private const string TextANearCopy = "Grappling: a grappled creature has speed zero and the condition ends when the grappler is incapacitated or moved far away.";
+    private const string TextB = "Opportunity attacks: a creature can use its reaction to strike a foe that leaves its reach without disengaging first.";
+    private const string TextC = "The Actor feat: gain advantage on Deception and Performance checks when impersonating someone you have listened to for a minute.";
+
+    private RagContextBuilder BuilderWith(FakeRerankingProvider reranker) =>
+        new(_fakeRetrieval, NullLogger<RagContextBuilder>.Instance, reranker);
+
+    private static string[] Titles(RagContextResult result) =>
+        result.Citations.Select(c => c.SourceDocumentTitle).ToArray();
+
+    [Fact]
+    public async Task RagContextBuilder_SkipsReranking_WhenProviderIsNone()
+    {
+        var reranker = new FakeRerankingProvider("None") { ScoresByText = { [TextC] = 9f } };
+        _fakeRetrieval.SetResults([
+            Chunk("A", TextA, 0.9, SourceType.Rules),
+            Chunk("C", TextC, 0.8, SourceType.Rules)]);
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(0, reranker.CallCount);
+        Assert.Equal(["A", "C"], Titles(result));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_SkipsReranking_WhenProviderIsUnavailable()
+    {
+        var reranker = new FakeRerankingProvider("Cohere") { Available = false, ScoresByText = { [TextC] = 9f } };
+        _fakeRetrieval.SetResults([
+            Chunk("A", TextA, 0.9, SourceType.Rules),
+            Chunk("C", TextC, 0.8, SourceType.Rules)]);
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(0, reranker.CallCount);
+        Assert.Equal(["A", "C"], Titles(result));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_ReordersByRerankScore_WhenProviderIsNotNone()
+    {
+        var reranker = new FakeRerankingProvider("Cohere")
+        {
+            ScoresByText = { [TextC] = 0.95f, [TextA] = 0.40f, [TextB] = 0.10f },
+        };
+        _fakeRetrieval.SetResults([
+            Chunk("A", TextA, 0.9, SourceType.Rules),
+            Chunk("B", TextB, 0.8, SourceType.Rules),
+            Chunk("C", TextC, 0.7, SourceType.Rules)]);
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "explain the actor feat", MinRelevanceScore: 0));
+
+        Assert.Equal(1, reranker.CallCount);
+        Assert.Equal("explain the actor feat", reranker.LastQuery);
+        Assert.Equal(["C", "A", "B"], Titles(result));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_ReranksBeforeDedup_WhenProviderIsNotNone()
+    {
+        // A and A2 are near-duplicates. Retrieval ranks A first, but the reranker prefers A2. Because
+        // reranking runs before dedup, A2 (the better-reranked copy) is the one kept.
+        var reranker = new FakeRerankingProvider("Cohere")
+        {
+            ScoresByText = { [TextANearCopy] = 0.9f, [TextA] = 0.5f, [TextB] = 0.3f },
+        };
+        _fakeRetrieval.SetResults([
+            Chunk("A", TextA, 0.9, SourceType.Rules),
+            Chunk("A2", TextANearCopy, 0.8, SourceType.Rules),
+            Chunk("B", TextB, 0.7, SourceType.Rules)]);
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(["A2", "B"], Titles(result));
+        Assert.Equal(3, result.TotalChunksRetrieved);
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_RerankedOrderPreservedAfterDedup()
+    {
+        var reranker = new FakeRerankingProvider("Cohere")
+        {
+            ScoresByText = { [TextC] = 0.9f, [TextA] = 0.6f, [TextANearCopy] = 0.55f, [TextB] = 0.2f },
+        };
+        _fakeRetrieval.SetResults([
+            Chunk("A", TextA, 0.9, SourceType.Rules),
+            Chunk("B", TextB, 0.8, SourceType.Rules),
+            Chunk("A2", TextANearCopy, 0.7, SourceType.Rules),
+            Chunk("C", TextC, 0.6, SourceType.Rules)]);
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        // C first (reranked top), then A (the dup A2 is dropped), then B.
+        Assert.Equal(["C", "A", "B"], Titles(result));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_ChunksTheRerankerDoesNotScore_SortLast()
+    {
+        var reranker = new FakeRerankingProvider("Cohere") { ScoresByText = { [TextC] = 0.5f } };
+        _fakeRetrieval.SetResults([
+            Chunk("A", TextA, 0.9, SourceType.Rules),
+            Chunk("B", TextB, 0.8, SourceType.Rules),
+            Chunk("C", TextC, 0.7, SourceType.Rules)]);
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(["C", "A", "B"], Titles(result));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_SingleChunk_NotSentToReranker()
+    {
+        var reranker = new FakeRerankingProvider("Cohere");
+        _fakeRetrieval.SetResults([Chunk("A", TextA, 0.9, SourceType.Rules)]);
+
+        await BuilderWith(reranker).BuildContextAsync(new RagContextRequest(Query: "q", MinRelevanceScore: 0));
+
+        Assert.Equal(0, reranker.CallCount);
+    }
+
+    private sealed class FakeRerankingProvider(string providerId) : IRerankingProvider
+    {
+        public string ProviderId => providerId;
+        public bool Available { get; init; } = true;
+        public bool IsAvailable => Available;
+        public Dictionary<string, float> ScoresByText { get; } = new();
+        public int CallCount { get; private set; }
+        public string? LastQuery { get; private set; }
+
+        public Task<IReadOnlyList<RerankResult>> RerankAsync(
+            string query, IReadOnlyList<RerankCandidate> candidates, CancellationToken ct = default)
+        {
+            CallCount++;
+            LastQuery = query;
+            IReadOnlyList<RerankResult> results = candidates
+                .Where(c => ScoresByText.ContainsKey(c.Text))
+                .Select(c => new RerankResult(c.Id, ScoresByText[c.Text]))
+                .ToList();
+            return Task.FromResult(results);
+        }
+
+        public Task<RerankingConnectionResult> CheckConnectionAsync(CancellationToken ct = default) =>
+            Task.FromResult(new RerankingConnectionResult(true, "ok"));
     }
 
     /// <summary>

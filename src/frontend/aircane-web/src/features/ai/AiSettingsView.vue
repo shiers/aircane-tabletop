@@ -719,6 +719,14 @@ function isKeyMasked(value: string): boolean {
               reranking is skipped and the original order is kept.
             </p>
           </div>
+          <div
+            class="rounded-lg border border-yellow-800 bg-yellow-950/40 px-4 py-3 text-sm text-yellow-300"
+            role="note"
+            data-testid="ollama-rerank-latency-warning"
+          >
+            Ollama reranking scores each candidate with a local LLM call. This adds approximately 10–15
+            seconds to rules lookups depending on your hardware. Use Cohere for faster reranking.
+          </div>
         </div>
 
         <!-- Cohere -->

@@ -1,35 +1,48 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Aircane.Application.Retrieval;
 using Microsoft.Extensions.Logging;
 
 namespace Aircane.Infrastructure.Retrieval.Reranking;
 
 /// <summary>
-/// Reranking via a cross-encoder model served by Ollama, following the scheme in the feature
-/// request: each candidate is sent as <c>[CLS] query [SEP] chunk [SEP]</c> to <c>POST /api/embed</c>
-/// and the first value of the returned vector is used as its relevance score.
+/// Local reranking by asking an Ollama chat model to score each chunk's relevance to the question.
 /// <para>
-/// <b>Caveat:</b> Ollama has no rerank endpoint and, as of 0.34.4, <c>bge-reranker-base</c> is not in
-/// its model library (<c>ollama pull bge-reranker-base</c> fails). <c>/api/embed</c> also returns a
-/// pooled embedding, not a classifier score, so the "first value" is only meaningful if a model that
-/// was converted to expose a score there is installed. When the model is missing this provider reports
-/// itself unavailable and <see cref="RerankAsync"/> keeps the original order. Prefer Cohere unless you
-/// have verified a local model produces meaningful scores.
+/// For every candidate the provider calls <c>POST /api/generate</c> with a prompt that asks for a single
+/// relevance number from 0 to 10, parses the number out of the <c>response</c> field and normalises it to
+/// 0..1. A candidate whose answer has no number scores 0.0. If <i>no</i> candidate yields a number, the
+/// original order is kept and a warning is logged.
 /// </para>
-/// Configuration: <c>Reranking:Ollama:Model</c> (default <c>bge-reranker-base</c>); the server URL is
-/// the Ollama chat provider's <c>Ai:Ollama:BaseUrl</c>.
+/// <para>
+/// This is an LLM judge, not a trained cross-encoder: it needs no special model (any instruction-following
+/// chat model installed in Ollama works, e.g. <c>llama3.2:3b</c>), but it is slower than a hosted reranker
+/// (one call per candidate, a few in parallel) and its quality depends on the model. The dedicated
+/// <c>bge-reranker-*</c> models are not in the Ollama library, and <c>/api/generate</c> cannot read a
+/// classifier score from them.
+/// </para>
+/// Configuration: <c>Reranking:Ollama:Model</c> (default <c>llama3.2:3b</c>); the server URL is the
+/// Ollama chat provider's <c>Ai:Ollama:BaseUrl</c>.
 /// </summary>
-public sealed class OllamaRerankingProvider : IRerankingProvider
+public sealed partial class OllamaRerankingProvider : IRerankingProvider
 {
     public const string Id = "Ollama";
-    public const string DefaultModel = "bge-reranker-base";
+    public const string DefaultModel = "llama3.2:3b";
     public const string DefaultBaseUrl = "http://localhost:11434";
 
+    /// <summary>Candidates scored at the same time. Ollama queues requests beyond its own parallelism.</summary>
+    private const int MaxConcurrentScoring = 4;
+
+    /// <summary>The longest chunk text sent to the model, to bound prompt size.</summary>
+    private const int MaxCandidateChars = 1500;
+
     private static readonly TimeSpan AvailabilityCacheDuration = TimeSpan.FromSeconds(60);
-    private static readonly TimeSpan AvailabilityProbeTimeout = TimeSpan.FromSeconds(3);
+
+    // Generous: the first call may have to load the model into memory.
+    private static readonly TimeSpan AvailabilityProbeTimeout = TimeSpan.FromSeconds(30);
 
     // Provider instances are created per request, so the availability cache is shared across them.
     private static readonly ConcurrentDictionary<string, (DateTime CheckedAtUtc, bool Available)> AvailabilityCache = new();
@@ -55,8 +68,8 @@ public sealed class OllamaRerankingProvider : IRerankingProvider
     public string ProviderId => Id;
 
     /// <summary>
-    /// True when Ollama is reachable and the model answers a test embed call. The result is cached
-    /// for 60 seconds so the probe does not run on every request.
+    /// True when Ollama is reachable and the configured model answers a test scoring prompt with a number.
+    /// The result is cached for 60 seconds so the probe does not run on every request.
     /// </summary>
     public bool IsAvailable
     {
@@ -69,7 +82,8 @@ public sealed class OllamaRerankingProvider : IRerankingProvider
                 return cached.Available;
             }
 
-            // The interface exposes a synchronous property; the probe is short (3s cap) and cached.
+            // The interface exposes a synchronous property; the probe is cached and only slow while a
+            // model is loading.
             using var cts = new CancellationTokenSource(AvailabilityProbeTimeout);
             var result = ProbeAsync(cts.Token).GetAwaiter().GetResult();
             AvailabilityCache[key] = (DateTime.UtcNow, result.Available);
@@ -88,33 +102,43 @@ public sealed class OllamaRerankingProvider : IRerankingProvider
 
         try
         {
-            var scores = new List<RerankResult>(candidates.Count);
-
-            foreach (var candidate in candidates)
+            using var gate = new SemaphoreSlim(MaxConcurrentScoring);
+            var outcomes = await Task.WhenAll(candidates.Select(async candidate =>
             {
-                var (status, score) = await EmbedFirstValueAsync(BuildInput(query, candidate.Text), ct);
-
-                if (status == HttpStatusCode.NotFound)
+                await gate.WaitAsync(ct);
+                try
                 {
-                    _logger.LogWarning(
-                        "Ollama reranking model '{Model}' was not found at {BaseUrl}; keeping the original chunk order.",
-                        _model, _baseUrl);
-                    AvailabilityCache[CacheKey] = (DateTime.UtcNow, false);
-                    return NullRerankingProvider.PreserveOrder(candidates);
+                    return await GenerateScoreAsync(BuildPrompt(query, candidate.Text), ct);
                 }
-
-                if (score is null)
+                finally
                 {
-                    _logger.LogWarning(
-                        "Ollama reranking returned HTTP {Status} / no score; keeping the original chunk order.",
-                        (int)status);
-                    return NullRerankingProvider.PreserveOrder(candidates);
+                    gate.Release();
                 }
+            }));
 
-                scores.Add(new RerankResult(candidate.Id, score.Value));
+            if (outcomes.Any(o => o.Status == HttpStatusCode.NotFound))
+            {
+                _logger.LogWarning(
+                    "Ollama reranking model '{Model}' was not found at {BaseUrl}; keeping the original chunk order.",
+                    _model, _baseUrl);
+                AvailabilityCache[CacheKey] = (DateTime.UtcNow, false);
+                return NullRerankingProvider.PreserveOrder(candidates);
             }
 
-            return scores.OrderByDescending(r => r.Score).ToList();
+            if (outcomes.All(o => o.Score is null))
+            {
+                _logger.LogWarning(
+                    "Ollama model '{Model}' returned no parseable relevance score for any of {Count} candidates; " +
+                    "keeping the original chunk order.",
+                    _model, candidates.Count);
+                return NullRerankingProvider.PreserveOrder(candidates);
+            }
+
+            // A candidate with no parseable answer scores 0.0 rather than being dropped.
+            return candidates
+                .Select((c, i) => new RerankResult(c.Id, outcomes[i].Score ?? 0f))
+                .OrderByDescending(r => r.Score)
+                .ToList();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -131,18 +155,57 @@ public sealed class OllamaRerankingProvider : IRerankingProvider
     public async Task<RerankingConnectionResult> CheckConnectionAsync(CancellationToken ct = default)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        cts.CancelAfter(AvailabilityProbeTimeout);
 
         var result = await ProbeAsync(cts.Token);
         AvailabilityCache[CacheKey] = (DateTime.UtcNow, result.Available);
         return result;
     }
 
-    /// <summary>The cross-encoder input format: <c>[CLS] query [SEP] chunk [SEP]</c>.</summary>
-    internal static string BuildInput(string query, string chunkText) => $"[CLS] {query} [SEP] {chunkText} [SEP]";
+    /// <summary>The scoring prompt sent to the model for one query/chunk pair.</summary>
+    internal static string BuildPrompt(string query, string chunkText)
+    {
+        var text = chunkText.Length <= MaxCandidateChars ? chunkText : chunkText[..MaxCandidateChars];
+
+        return "You are a relevance judge for a tabletop RPG rules search.\n" +
+               "Rate how well the PASSAGE answers the QUESTION on a scale from 0 (irrelevant) to 10 " +
+               "(directly answers it).\n" +
+               "Reply with only the number, nothing else.\n\n" +
+               $"QUESTION: {query}\n\n" +
+               $"PASSAGE: {text}\n\n" +
+               "RELEVANCE (0-10):";
+    }
+
+    /// <summary>
+    /// Extracts a relevance score from model output and normalises it to 0..1 (the model is asked for
+    /// 0-10). Reasoning blocks (<c>&lt;think&gt;...&lt;/think&gt;</c>) are ignored. Returns null when the
+    /// text contains no number.
+    /// </summary>
+    internal static float? ParseScore(string? response)
+    {
+        if (string.IsNullOrWhiteSpace(response))
+            return null;
+
+        var cleaned = ThinkBlock().Replace(response, string.Empty);
+        var match = Number().Match(cleaned);
+        if (!match.Success
+            || !float.TryParse(match.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            || float.IsNaN(value))
+        {
+            return null;
+        }
+
+        return Math.Clamp(value, 0f, 10f) / 10f;
+    }
 
     /// <summary>Clears the shared availability cache (for tests).</summary>
     internal static void ClearAvailabilityCache() => AvailabilityCache.Clear();
+
+    [GeneratedRegex(@"<think>.*?</think>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex ThinkBlock();
+
+    [GeneratedRegex(@"-?\d+(?:\.\d+)?")]
+    private static partial Regex Number();
 
     private string CacheKey => $"{_baseUrl}|{_model}";
 
@@ -150,15 +213,20 @@ public sealed class OllamaRerankingProvider : IRerankingProvider
     {
         try
         {
-            var (status, score) = await EmbedFirstValueAsync(BuildInput("test", "test"), ct);
+            var outcome = await GenerateScoreAsync(
+                BuildPrompt("How many hit points does a goblin have?", "A goblin has 7 (2d6) hit points."), ct);
 
-            if (status == HttpStatusCode.NotFound)
+            if (outcome.Status == HttpStatusCode.NotFound)
                 return new RerankingConnectionResult(false,
-                    $"Model '{_model}' was not found on the Ollama server at {_baseUrl}.");
+                    $"Model '{_model}' was not found on the Ollama server at {_baseUrl}. Run: ollama pull {_model}");
 
-            if (score is null)
+            if (outcome.Status != HttpStatusCode.OK)
                 return new RerankingConnectionResult(false,
-                    $"Ollama at {_baseUrl} returned HTTP {(int)status} for model '{_model}'.");
+                    $"Ollama at {_baseUrl} returned HTTP {(int)outcome.Status} for model '{_model}'.");
+
+            if (outcome.Score is null)
+                return new RerankingConnectionResult(false,
+                    $"Model '{_model}' did not reply with a relevance number. Choose an instruction-following chat model.");
 
             return new RerankingConnectionResult(true, $"Ollama reranker is running (model {_model}).");
         }
@@ -172,11 +240,18 @@ public sealed class OllamaRerankingProvider : IRerankingProvider
         }
     }
 
-    /// <summary>Calls <c>/api/embed</c> and returns the status plus the first value of the first embedding, if any.</summary>
-    private async Task<(HttpStatusCode Status, float? Score)> EmbedFirstValueAsync(string input, CancellationToken ct)
+    /// <summary>Calls <c>/api/generate</c> once and returns the HTTP status and the parsed score, if any.</summary>
+    private async Task<(HttpStatusCode Status, float? Score)> GenerateScoreAsync(string prompt, CancellationToken ct)
     {
-        var body = JsonSerializer.Serialize(new { model = _model, input });
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/api/embed")
+        var body = JsonSerializer.Serialize(new
+        {
+            model = _model,
+            prompt,
+            stream = false,
+            options = new { temperature = 0, num_predict = 16 },
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/api/generate")
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
         };
@@ -185,14 +260,15 @@ public sealed class OllamaRerankingProvider : IRerankingProvider
         if (!response.IsSuccessStatusCode)
             return (response.StatusCode, null);
 
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-        if (doc.RootElement.TryGetProperty("embeddings", out var embeddings)
-            && embeddings.GetArrayLength() > 0
-            && embeddings[0].GetArrayLength() > 0)
+        try
         {
-            return (response.StatusCode, embeddings[0][0].GetSingle());
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            var text = doc.RootElement.TryGetProperty("response", out var r) ? r.GetString() : null;
+            return (response.StatusCode, ParseScore(text));
         }
-
-        return (response.StatusCode, null);
+        catch (JsonException)
+        {
+            return (response.StatusCode, null);
+        }
     }
 }

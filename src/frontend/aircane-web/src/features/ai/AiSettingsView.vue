@@ -109,7 +109,7 @@ const grokModel = ref('grok-3-mini')
 
 // Reranking (optional, independent of the chat provider)
 const rerankingProvider = ref<RerankingProviderId>('None')
-const rerankOllamaModel = ref('bge-reranker-base')
+const rerankOllamaModel = ref('llama3.2:3b')
 const rerankCohereApiKey = ref('')
 const rerankCohereModel = ref('rerank-english-v3.0')
 const rerankTesting = ref(false)
@@ -205,7 +205,7 @@ async function loadConfig() {
     }
     if (config.reranking) {
       rerankingProvider.value = config.reranking.provider ?? 'None'
-      rerankOllamaModel.value = config.reranking.ollama?.model ?? 'bge-reranker-base'
+      rerankOllamaModel.value = config.reranking.ollama?.model ?? 'llama3.2:3b'
       rerankCohereApiKey.value = config.reranking.cohere?.apiKey ?? ''
       rerankCohereModel.value = config.reranking.cohere?.model ?? 'rerank-english-v3.0'
     }
@@ -710,11 +710,12 @@ function isKeyMasked(value: string): boolean {
               id="rerank-ollama-model"
               v-model="rerankOllamaModel"
               type="text"
-              placeholder="bge-reranker-base"
+              placeholder="llama3.2:3b"
               class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 focus:ring-2 focus:ring-aircane-500"
             />
             <p class="text-xs text-gray-500 mt-1">
-              Uses the Ollama server configured above. The model must be installed locally; if it is not,
+              Any chat model installed in Ollama, for example llama3.2:3b (run <code>ollama pull llama3.2:3b</code>).
+              The model scores each retrieved chunk, so it is slower than Cohere. If the model is not installed,
               reranking is skipped and the original order is kept.
             </p>
           </div>

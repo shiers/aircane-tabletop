@@ -93,7 +93,7 @@ public sealed class AiSettingsService : IAiSettingsService
                     Provider = GetSetting("Reranking:Provider") ?? "None",
                     Ollama = new OllamaRerankingSettingsDto
                     {
-                        Model = GetSetting("Reranking:Ollama:Model") ?? "bge-reranker-base",
+                        Model = GetSetting("Reranking:Ollama:Model") ?? "llama3.2:3b",
                     },
                     Cohere = new CohereRerankingSettingsDto
                     {

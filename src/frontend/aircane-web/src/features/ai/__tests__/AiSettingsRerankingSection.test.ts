@@ -27,7 +27,7 @@ const baseConfig = {
   activeProvider: 0,
   reranking: {
     provider: 'Cohere',
-    ollama: { model: 'bge-reranker-base' },
+    ollama: { model: 'llama3.2:3b' },
     cohere: { apiKey: '**********1234', model: 'rerank-english-v3.0' },
   },
 }
@@ -78,7 +78,7 @@ describe('AiSettingsView reranking section', () => {
 
     await wrapper.get('#reranking-provider').setValue('Ollama')
 
-    expect((wrapper.get('#rerank-ollama-model').element as HTMLInputElement).value).toBe('bge-reranker-base')
+    expect((wrapper.get('#rerank-ollama-model').element as HTMLInputElement).value).toBe('llama3.2:3b')
     expect(wrapper.find('#rerank-cohere-key').exists()).toBe(false)
   })
 
@@ -113,7 +113,7 @@ describe('AiSettingsView reranking section', () => {
 
     expect(api.testRerankingConnection).toHaveBeenCalledWith({
       provider: 'Cohere',
-      ollama: { model: 'bge-reranker-base' },
+      ollama: { model: 'llama3.2:3b' },
       cohere: { apiKey: undefined, model: 'rerank-english-v3.0' },
     })
     expect(wrapper.get('[data-testid="reranking-test-result"]').text()).toBe('✗ Cohere API key is invalid.')

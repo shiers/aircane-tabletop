@@ -14,10 +14,13 @@ public sealed class RerankingSettingsDto
     public CohereRerankingSettingsDto? Cohere { get; init; }
 }
 
-/// <summary>Ollama reranking settings. The server URL comes from the Ollama chat provider settings.</summary>
+/// <summary>
+/// Ollama reranking settings: the chat model that scores each chunk. The server URL comes from the
+/// Ollama chat provider settings.
+/// </summary>
 public sealed class OllamaRerankingSettingsDto
 {
-    public string Model { get; init; } = "bge-reranker-base";
+    public string Model { get; init; } = "llama3.2:3b";
 }
 
 /// <summary>Cohere reranking settings (API key is masked in responses).</summary>

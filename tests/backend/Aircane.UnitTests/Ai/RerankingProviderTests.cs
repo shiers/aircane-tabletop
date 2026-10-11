@@ -171,7 +171,7 @@ public class RerankingProviderTests
         Assert.True(result.Available);
     }
 
-    // ── Ollama ────────────────────────────────────────────────────────────────
+    // ── Ollama (LLM-scored via /api/generate) ─────────────────────────────────
 
     private static OllamaRerankingProvider Ollama(StubHandler handler, string baseUrl = "http://ollama.test:11434")
     {
@@ -180,44 +180,110 @@ public class RerankingProviderTests
             NullLogger<OllamaRerankingProvider>.Instance);
     }
 
+    private static string GenerateReply(string text) => JsonSerializer.Serialize(new { response = text, done = true });
+
     [Fact]
-    public void OllamaRerankingProvider_BuildsCrossEncoderInput_Correctly()
+    public void OllamaRerankingProvider_BuildsScoringPrompt_WithQuestionAndPassage()
     {
-        Assert.Equal(
-            "[CLS] how does grappling work [SEP] A grappled creature has speed 0. [SEP]",
-            OllamaRerankingProvider.BuildInput("how does grappling work", "A grappled creature has speed 0."));
+        var prompt = OllamaRerankingProvider.BuildPrompt("how does grappling work", "A grappled creature has speed 0.");
+
+        Assert.Contains("QUESTION: how does grappling work", prompt);
+        Assert.Contains("PASSAGE: A grappled creature has speed 0.", prompt);
+        Assert.Contains("0 (irrelevant) to 10", prompt);
+        Assert.Contains("only the number", prompt);
     }
 
     [Fact]
-    public async Task OllamaRerankingProvider_SendsInputToEmbedEndpoint_AndRanksByFirstValue()
+    public void OllamaRerankingProvider_LongPassage_IsTruncatedInPrompt()
     {
-        // The first embedding value is the score: b (0.9) > c (0.5) > a (0.1).
-        var scores = new Queue<string>(["0.1", "0.9", "0.5"]);
+        var prompt = OllamaRerankingProvider.BuildPrompt("q", new string('x', 5000));
+
+        Assert.True(prompt.Length < 2000);
+    }
+
+    [Theory]
+    [InlineData("8", 0.8f)]
+    [InlineData(" 7.5 ", 0.75f)]
+    [InlineData("Score: 3", 0.3f)]
+    [InlineData("10", 1.0f)]
+    [InlineData("0", 0f)]
+    [InlineData("15", 1.0f)]                          // clamped
+    [InlineData("-2", 0f)]                            // clamped
+    [InlineData("<think>maybe a 2</think>9", 0.9f)]   // reasoning block ignored
+    public void OllamaRerankingProvider_ParseScore_NormalisesToZeroToOne(string response, float expected)
+    {
+        Assert.Equal(expected, OllamaRerankingProvider.ParseScore(response)!.Value, 4);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("I cannot rate this.")]
+    public void OllamaRerankingProvider_ParseScore_NoNumber_IsNull(string? response)
+    {
+        Assert.Null(OllamaRerankingProvider.ParseScore(response));
+    }
+
+    [Fact]
+    public async Task OllamaRerankingProvider_PostsToGenerateEndpoint_AndRanksByModelScore()
+    {
+        // The model scores a=2, b=9, c=5 (concurrency means we match the reply to the prompt, not the call order).
         var handler = new StubHandler(HttpStatusCode.OK, "")
         {
-            Respond = _ => $$"""{"embeddings":[[{{scores.Dequeue()}},0.0,0.0]]}""",
+            Respond = request =>
+            {
+                var prompt = JsonDocument.Parse(request.Content!.ReadAsStringAsync().Result)
+                    .RootElement.GetProperty("prompt").GetString()!;
+                return GenerateReply(prompt.Contains("Grappling") ? "2" : prompt.Contains("Opportunity") ? "9" : "5");
+            },
         };
 
         var results = await Ollama(handler).RerankAsync("my question", Candidates);
 
         Assert.Equal(["b", "c", "a"], results.Select(r => r.Id));
-        Assert.Equal("http://ollama.test:11434/api/embed", handler.LastRequest!.RequestUri!.ToString());
+        Assert.Equal(0.9f, results[0].Score, 4);
+
+        Assert.Equal("http://ollama.test:11434/api/generate", handler.LastRequest!.RequestUri!.ToString());
         using var body = JsonDocument.Parse(handler.LastBody!);
-        Assert.Equal("bge-reranker-base", body.RootElement.GetProperty("model").GetString());
-        Assert.Equal(
-            "[CLS] my question [SEP] The Actor feat grants mimicry. [SEP]",
-            body.RootElement.GetProperty("input").GetString());
+        Assert.Equal("llama3.2:3b", body.RootElement.GetProperty("model").GetString());
+        Assert.False(body.RootElement.GetProperty("stream").GetBoolean());
+        Assert.Contains("QUESTION: my question", body.RootElement.GetProperty("prompt").GetString());
+    }
+
+    [Fact]
+    public async Task OllamaRerankingProvider_UnparseableCandidate_ScoresZero_NotDropped()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, "")
+        {
+            Respond = request => GenerateReply(
+                request.Content!.ReadAsStringAsync().Result.Contains("Actor") ? "I am not sure" : "6"),
+        };
+
+        var results = await Ollama(handler).RerankAsync("q", Candidates);
+
+        Assert.Equal(3, results.Count);
+        Assert.Equal("c", results[^1].Id);
+        Assert.Equal(0f, results[^1].Score);
+    }
+
+    [Fact]
+    public async Task OllamaRerankingProvider_NothingParseable_FallsBackToOriginalOrder()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, GenerateReply("no idea"));
+
+        var results = await Ollama(handler).RerankAsync("q", Candidates);
+
+        Assert.Equal(["a", "b", "c"], results.Select(r => r.Id));
     }
 
     [Fact]
     public async Task OllamaRerankingProvider_ModelNotFound_FallsBackToOriginalOrder()
     {
-        var handler = new StubHandler(HttpStatusCode.NotFound, """{"error":"model \"bge-reranker-base\" not found"}""");
+        var handler = new StubHandler(HttpStatusCode.NotFound, """{"error":"model \"llama3.2:3b\" not found"}""");
 
         var results = await Ollama(handler).RerankAsync("q", Candidates);
 
         Assert.Equal(["a", "b", "c"], results.Select(r => r.Id));
-        Assert.Equal(1, handler.RequestCount); // stops after the first 404 instead of retrying per chunk
     }
 
     [Fact]
@@ -243,11 +309,24 @@ public class RerankingProviderTests
     }
 
     [Fact]
-    public void OllamaRerankingProvider_IsAvailable_TrueWhenModelAnswers()
+    public void OllamaRerankingProvider_IsAvailable_TrueWhenModelAnswersWithANumber()
     {
-        var handler = new StubHandler(HttpStatusCode.OK, """{"embeddings":[[0.3,0.1]]}""");
+        Assert.True(Ollama(new StubHandler(HttpStatusCode.OK, GenerateReply("7"))).IsAvailable);
+    }
 
-        Assert.True(Ollama(handler).IsAvailable);
+    [Fact]
+    public void OllamaRerankingProvider_IsAvailable_FalseWhenModelDoesNotAnswerWithANumber()
+    {
+        Assert.False(Ollama(new StubHandler(HttpStatusCode.OK, GenerateReply("Sure! Here is a poem."))).IsAvailable);
+    }
+
+    [Fact]
+    public async Task OllamaRerankingProvider_CheckConnection_MissingModel_SaysHowToPullIt()
+    {
+        var result = await Ollama(new StubHandler(HttpStatusCode.NotFound, "{}")).CheckConnectionAsync();
+
+        Assert.False(result.Available);
+        Assert.Contains("ollama pull llama3.2:3b", result.Message);
     }
 
     // ── Factory and settings ──────────────────────────────────────────────────
@@ -274,7 +353,7 @@ public class RerankingProviderTests
         var reranking = settings.GetCurrentConfig().Reranking!;
 
         Assert.Equal("None", reranking.Provider);
-        Assert.Equal("bge-reranker-base", reranking.Ollama!.Model);
+        Assert.Equal("llama3.2:3b", reranking.Ollama!.Model);
         Assert.Equal("rerank-english-v3.0", reranking.Cohere!.Model);
         Assert.Null(reranking.Cohere.ApiKey);
         Assert.Equal("None", factory.CreateActive().ProviderId);

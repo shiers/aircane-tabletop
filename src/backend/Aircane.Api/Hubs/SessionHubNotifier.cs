@@ -110,6 +110,36 @@ public sealed class SessionHubNotifier : ISessionHubNotifier
         return SessionGroup(sessionId).SendAsync("ImportStatusUpdated", notification, ct);
     }
 
+    /// <inheritdoc />
+    public Task NotifyAdventureSceneAdvancedAsync(Guid sessionId, AdventureSceneAdvancedNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("AdventureSceneAdvanced", notification, ct);
+    }
+
+    /// <inheritdoc />
+    public Task NotifyAdventureClueRevealedAsync(Guid sessionId, AdventureClueRevealedNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("AdventureClueRevealed", notification, ct);
+    }
+
+    /// <inheritdoc />
+    public Task NotifyAdventureSecretRevealedAsync(Guid sessionId, AdventureSecretRevealedNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("AdventureSecretRevealed", notification, ct);
+    }
+
+    /// <inheritdoc />
+    public Task NotifyAdventureNpcUpdatedAsync(Guid sessionId, AdventureNpcUpdatedNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("AdventureNpcUpdated", notification, ct);
+    }
+
+    /// <inheritdoc />
+    public Task NotifyAdventureCompletedAsync(Guid sessionId, AdventureCompletedNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("AdventureCompleted", notification, ct);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private IClientProxy SessionGroup(Guid sessionId)

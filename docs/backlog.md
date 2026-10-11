@@ -92,6 +92,52 @@ Docs: `docs/setup/feedback.md`. **Known mismatch:** no persistent AI-provider/us
 setup already done:** `bug` + `beta-feedback` labels exist on the repo, and the feedback GitHub
 secrets are in .NET user-secrets for `Aircane.Api` (token verified against the Issues API).
 
+### Solo Adventure Execution (AI-run play of a generated adventure)
+
+> **✅ Delivered on `dev`** (`feat(adventures): solo adventure execution for generated adventures`).
+> Backend unit (2,421), integration (140, incl. 6 against real PostgreSQL) and frontend (411) suites green; `vue-tsc` clean; migration `AddAdventureSession` applies cleanly on top of the full chain.
+
+An approved generated adventure can be played solo: the AI DM runs one player through it scene by scene,
+narrating, tracking state, and advancing the story from the player's actions.
+
+- **State.** New `AdventureSession` entity (`Aircane.Domain`): current scene, completed scenes, per-NPC state,
+  revealed clue/secret IDs, encounter outcomes, status (`NotStarted/InProgress/Completed/Abandoned`). Lists are
+  jsonb columns (with a snapshot `ValueComparer` so in-place edits are tracked); FKs cascade from the adventure and
+  campaign. It also carries the **play `Session`** it broadcasts to (`SessionId`), created automatically on first start.
+- **Service.** `IAdventureSessionService` / `AdventureSessionService` — start (idempotent; one in-progress run per
+  campaign), state DTO, advance (target must exist **and** be an exit of the current scene), reveal clue/secret,
+  patch NPC, complete, abandon, and `BuildAdventureContext`. Every change appends a non-reversible `Adventure:*` event
+  to the campaign log (so undo/replay ignore it) and broadcasts `AdventureSceneAdvanced/ClueRevealed/SecretRevealed/
+  NpcUpdated/Completed` over SignalR.
+- **AI loop.** `PlayerActionService` injects the adventure context + action-schema instructions when a run is active
+  and applies five new `AiActionType`s (`AdvanceScene`, `RevealClue`, `RevealSecret`, `UpdateNpc`,
+  `CompleteAdventure`) through the session service. They are **role/authority-gated and never queued**: the proposal
+  queue can't replay them, so a campaign whose authority isn't Full Session Control gets a `PermissionDenied` result
+  with an explanatory message instead of a stuck proposal.
+- **API.** `AdventureSessionsController` (`/api/adventure-sessions`): start/resume, get state, get active, advance,
+  abandon, available scenes, plus `POST /{id}/player-action` (the solo loop; solo play has no formal character).
+  Callers must be the Host, or the Player whose token was issued for the run's play session.
+- **Frontend.** `features/adventures/`: `AdventureSoloSession.vue` (narration feed, scene panel, action input),
+  `adventureSessionStore.ts`, `PlaySoloLauncher.vue` (campaign picker, shown on the review screen of approved
+  adventures), route `/adventures/solo/:sessionId`. Exits ask the AI to narrate the move; if the AI agrees but the
+  campaign's authority blocks it, the chosen exit is applied as a host override.
+- **Content IDs.** The generation pipeline only numbers scenes, so NPCs/clues/secrets/encounters are addressed by
+  deterministic derived IDs (`npc-<slug>`, `clue-N`, `secret-N`, `encounter-N`; see `AdventureContentIds`). Scenes also gained
+  an optional `objectives` list (requested in the scenes prompt; older adventures simply have none).
+- **Provider fix required for this to work.** The OpenAI/Ollama providers read structured output as snake_case with numeric
+  enums, but the AI DM prompt tells the model to emit camelCase and action types by name — so `proposedActions` was
+  silently dropped on real providers. They now share `AiStructuredOutputSerializer`, which accepts both key styles and
+  string or numeric enums (existing snake_case tests unchanged).
+
+**Known gaps / follow-ups:**
+(1) `AdventureEncounterOutcome` is persisted and shown in the state DTO, but nothing records outcomes yet (no AI action
+or endpoint). (2) The narration feed is client-side only; reopening a run re-seeds it from the current scene. Persisting
+a transcript (or deriving it from the `Adventure:*` events) would fix that. (3) There is no generated-adventure *list*
+view, so "Play Solo" lives on the adventure review screen. (4) Run history / replaying a finished adventure isn't surfaced
+in the UI. (5) **Test hygiene:** the Web SDK copies a developer's local `data/ai-settings.json` into test output, so
+integration tests that reach the AI provider call the *real* provider on a machine with one configured (the new solo tests
+point `Storage:DocumentsPath` at a temp dir to avoid this; the shared `AircaneWebApplicationFactory` should do the same).
+
 ---
 
 ## Priority 1 - High Impact / Frequently Requested
@@ -321,4 +367,4 @@ Localize the UI and support non-English source documents.
 
 ---
 
-_Last updated: 2026-10-11 — structured stat block chunker delivered (RAG item 11; follow-ups added to P4). Earlier (2026-10-11): RAG pipeline optimization delivered (items 1–10: visibility fix, source priority, ruleset normalization, scoring, retrieval limits, dedup, OCR cleanup, heading-aware chunking, Postgres integration tests, cross-encoder reranking with Cohere and Ollama LLM-judge providers); "Reranking in RAG Pipeline" removed from P4 (delivered); query decomposition (agentic retrieval) and vector column dimension fix added to P4. Earlier (2026-10-04): source-specific character import adapters (D&D Beyond URL+file, Foundry VTT 5e/PF2e, Roll20, Pathbuilder 2e, Generic VTT) delivered and merged to `dev` via PR #15; the P2 items "D&D Beyond / VTT Integration" and "Pathbuilder 2e Character Import" moved to Recently Delivered. Earlier (2026-10-04): in-app "Report a bug" feedback feature delivered and merged to `dev` (moved from In Progress to Recently Delivered). Earlier (2026-10-01): added the feedback feature as an In Progress item. Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter._
+_Last updated: 2026-10-12 — solo adventure execution delivered (AI-run play of generated adventures; see Recently Delivered). Earlier (2026-10-11): structured stat block chunker delivered (RAG item 11; follow-ups added to P4). Earlier (2026-10-11): RAG pipeline optimization delivered (items 1–10: visibility fix, source priority, ruleset normalization, scoring, retrieval limits, dedup, OCR cleanup, heading-aware chunking, Postgres integration tests, cross-encoder reranking with Cohere and Ollama LLM-judge providers); "Reranking in RAG Pipeline" removed from P4 (delivered); query decomposition (agentic retrieval) and vector column dimension fix added to P4. Earlier (2026-10-04): source-specific character import adapters (D&D Beyond URL+file, Foundry VTT 5e/PF2e, Roll20, Pathbuilder 2e, Generic VTT) delivered and merged to `dev` via PR #15; the P2 items "D&D Beyond / VTT Integration" and "Pathbuilder 2e Character Import" moved to Recently Delivered. Earlier (2026-10-04): in-app "Report a bug" feedback feature delivered and merged to `dev` (moved from In Progress to Recently Delivered). Earlier (2026-10-01): added the feedback feature as an In Progress item. Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter._

@@ -6,6 +6,7 @@ import {
   approveAdventure,
   type AdventureDraft,
 } from './api'
+import PlaySoloLauncher from '@/features/adventures/components/PlaySoloLauncher.vue'
 
 const props = defineProps<{
   adventureId: string
@@ -35,6 +36,8 @@ const sections = computed(() => {
 
 const isApproved = computed(() => draft.value?.status === 'Approved')
 const isDraft = computed(() => draft.value?.status === 'Draft')
+// Approved (or already Active) adventures can be played solo.
+const isPlayable = computed(() => isApproved.value || draft.value?.status === 'Active')
 
 onMounted(async () => {
   await loadDraft()
@@ -142,6 +145,8 @@ function getSceneTypeColor(sceneType: string): string {
           </span>
           <span v-else>✓ Approve Adventure</span>
         </button>
+        <!-- Play Solo: the AI DM runs the player through the approved adventure -->
+        <PlaySoloLauncher v-if="isPlayable" :adventure-id="props.adventureId" />
       </div>
     </div>
 

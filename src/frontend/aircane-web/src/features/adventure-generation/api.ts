@@ -48,6 +48,8 @@ export interface GeneratedScene {
   description: string
   sceneType: string
   connectsTo: string[]
+  /** Player-facing goals; empty for adventures generated before objectives existed. */
+  objectives?: string[]
   readAloudText?: string | null
   dmNotes?: string | null
 }

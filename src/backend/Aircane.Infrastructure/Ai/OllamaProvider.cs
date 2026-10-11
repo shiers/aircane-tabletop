@@ -80,7 +80,7 @@ public sealed class OllamaProvider : IAiProvider, IDisposable
 
         try
         {
-            var output = JsonSerializer.Deserialize<AiStructuredOutput>(json, JsonOptions);
+            var output = AiStructuredOutputSerializer.Deserialize(json);
             if (output is null)
                 throw new InvalidOperationException(
                     "Ollama returned a null structured output after deserialization.");

@@ -1,6 +1,10 @@
+using System.Text.Json;
 using Aircane.Domain.Entities;
 using Aircane.Domain.Entities.GameSystems;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Pgvector.EntityFrameworkCore;
 
 namespace Aircane.Infrastructure.Persistence;
@@ -35,6 +39,7 @@ public class AircaneDbContext : DbContext
     public DbSet<GameStateSnapshot> GameStateSnapshots => Set<GameStateSnapshot>();
     public DbSet<AiActionProposal> AiActionProposals => Set<AiActionProposal>();
     public DbSet<GeneratedAdventure> GeneratedAdventures => Set<GeneratedAdventure>();
+    public DbSet<AdventureSession> AdventureSessions => Set<AdventureSession>();
     public DbSet<GameSystemDefinition> GameSystemDefinitions => Set<GameSystemDefinition>();
     public DbSet<GameSystemDefinitionVersion> GameSystemDefinitionVersions => Set<GameSystemDefinitionVersion>();
     public DbSet<GameSystemAlias> GameSystemAliases => Set<GameSystemAlias>();
@@ -378,6 +383,53 @@ public class AircaneDbContext : DbContext
             entity.HasIndex(e => e.Status).HasDatabaseName("IX_GeneratedAdventures_Status");
         });
 
+        // ── AdventureSession ──────────────────────────────────────────────────
+        modelBuilder.Entity<AdventureSession>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.GeneratedAdventureId).IsRequired();
+            entity.Property(e => e.CampaignId).IsRequired();
+            entity.Property(e => e.SessionId).IsRequired(false);
+            entity.Property(e => e.CharacterId).IsRequired(false);
+            entity.Property(e => e.CurrentSceneId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Status).HasConversion<int>();
+            if (!_isInMemory) entity.Property(e => e.OutcomeNotes).HasColumnType("text").IsRequired(false);
+            entity.Property(e => e.StartedAt).IsRequired();
+            entity.Property(e => e.CompletedAt).IsRequired(false);
+            entity.Property(e => e.LastActivityAt).IsRequired();
+
+            // Per-run state is a handful of small lists keyed by content IDs that live inside the
+            // adventure's JSON columns, so it is stored as jsonb rather than as child tables.
+            ConfigureJsonList(entity.Property(e => e.CompletedSceneIds));
+            ConfigureJsonList(entity.Property(e => e.NpcStates));
+            ConfigureJsonList(entity.Property(e => e.RevealedClueIds));
+            ConfigureJsonList(entity.Property(e => e.RevealedSecretIds));
+            ConfigureJsonList(entity.Property(e => e.EncounterOutcomes));
+
+            // Deleting an adventure or campaign removes its run history; deleting a character keeps the run.
+            entity.HasOne<GeneratedAdventure>()
+                .WithMany()
+                .HasForeignKey(e => e.GeneratedAdventureId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<Campaign>()
+                .WithMany()
+                .HasForeignKey(e => e.CampaignId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<Character>()
+                .WithMany()
+                .HasForeignKey(e => e.CharacterId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // "Active run for this campaign" is the hot lookup.
+            entity.HasIndex(e => new { e.CampaignId, e.Status })
+                .HasDatabaseName("IX_AdventureSessions_CampaignId_Status");
+            entity.HasIndex(e => e.GeneratedAdventureId)
+                .HasDatabaseName("IX_AdventureSessions_GeneratedAdventureId");
+        });
+
         // ── GameSystemDefinition ──────────────────────────────────────────────
         modelBuilder.Entity<GameSystemDefinition>(entity =>
         {
@@ -457,5 +509,28 @@ public class AircaneDbContext : DbContext
             entity.HasIndex(e => e.GameSystemDefinitionId)
                 .HasDatabaseName("IX_GameSystemDefinitionVersions_GameSystemDefinitionId");
         });
+    }
+
+    /// <summary>
+    /// Maps a <see cref="List{T}"/> property to a JSON column (jsonb on PostgreSQL, text for the
+    /// in-memory provider). Includes a snapshot comparer so in-place mutations (<c>list.Add</c>) are
+    /// detected by change tracking; a converter alone would only notice a replaced list instance.
+    /// </summary>
+    private void ConfigureJsonList<T>(PropertyBuilder<List<T>> property)
+    {
+        var converter = new ValueConverter<List<T>, string>(
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Deserialize<List<T>>(v, (JsonSerializerOptions?)null) ?? new List<T>());
+
+        var comparer = new ValueComparer<List<T>>(
+            (a, b) => JsonSerializer.Serialize(a, (JsonSerializerOptions?)null)
+                      == JsonSerializer.Serialize(b, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null).GetHashCode(),
+            v => JsonSerializer.Deserialize<List<T>>(
+                     JsonSerializer.Serialize(v, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null)
+                 ?? new List<T>());
+
+        property.HasConversion(converter, comparer).IsRequired();
+        if (!_isInMemory) property.HasColumnType("jsonb");
     }
 }

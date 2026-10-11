@@ -24,6 +24,77 @@ namespace Aircane.Infrastructure.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Aircane.Domain.Entities.AdventureSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CampaignId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CharacterId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CompletedSceneIds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("CurrentSceneId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("EncounterOutcomes")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("GeneratedAdventureId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("LastActivityAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("NpcStates")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("OutcomeNotes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RevealedClueIds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("RevealedSecretIds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CharacterId");
+
+                    b.HasIndex("GeneratedAdventureId")
+                        .HasDatabaseName("IX_AdventureSessions_GeneratedAdventureId");
+
+                    b.HasIndex("CampaignId", "Status")
+                        .HasDatabaseName("IX_AdventureSessions_CampaignId_Status");
+
+                    b.ToTable("AdventureSessions");
+                });
+
             modelBuilder.Entity("Aircane.Domain.Entities.AiActionProposal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -883,6 +954,26 @@ namespace Aircane.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("WatchedFolders");
+                });
+
+            modelBuilder.Entity("Aircane.Domain.Entities.AdventureSession", b =>
+                {
+                    b.HasOne("Aircane.Domain.Entities.Campaign", null)
+                        .WithMany()
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Aircane.Domain.Entities.Character", null)
+                        .WithMany()
+                        .HasForeignKey("CharacterId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Aircane.Domain.Entities.GeneratedAdventure", null)
+                        .WithMany()
+                        .HasForeignKey("GeneratedAdventureId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Aircane.Domain.Entities.Campaign", b =>

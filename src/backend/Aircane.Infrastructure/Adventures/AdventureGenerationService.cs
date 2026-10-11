@@ -435,6 +435,7 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
             - "description": full narrative description
             - "sceneType": matching the outline
             - "connectsTo": array of scene IDs this scene leads to
+            - "objectives": array of 1-3 short, player-facing goals for the scene (e.g. "Find the missing tome")
             - "readAloudText": text for the DM to read to players (optional)
             - "dmNotes": DM-only notes for running the scene (optional)
 

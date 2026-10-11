@@ -34,7 +34,15 @@ public sealed class PlayerActionService : IPlayerActionService
     private readonly IAiContextAdapter _aiContextAdapter;
     private readonly AircaneDbContext _db;
     private readonly ILogger<PlayerActionService> _logger;
+    private readonly IAdventureSessionService? _adventureSessions;
+    private readonly IAiRoleConfigurationService? _roleService;
+    private readonly IAiAuthorityService? _authorityService;
 
+    /// <summary>
+    /// The solo-adventure collaborators are optional trailing parameters so the service still works
+    /// (without adventure support) where they are not registered. When <paramref name="adventureSessionService"/>
+    /// is supplied but a role/authority service is not, adventure actions fail closed.
+    /// </summary>
     public PlayerActionService(
         ICampaignService campaignService,
         ICampaignStateService campaignStateService,
@@ -45,8 +53,14 @@ public sealed class PlayerActionService : IPlayerActionService
         ISystemRegistry systemRegistry,
         IAiContextAdapter aiContextAdapter,
         AircaneDbContext db,
-        ILogger<PlayerActionService> logger)
+        ILogger<PlayerActionService> logger,
+        IAdventureSessionService? adventureSessionService = null,
+        IAiRoleConfigurationService? roleService = null,
+        IAiAuthorityService? authorityService = null)
     {
+        _adventureSessions = adventureSessionService;
+        _roleService = roleService;
+        _authorityService = authorityService;
         _campaignService = campaignService;
         _campaignStateService = campaignStateService;
         _ragContextBuilder = ragContextBuilder;
@@ -97,8 +111,13 @@ public sealed class PlayerActionService : IPlayerActionService
         // reference HP, conditions, and whose turn it is when narrating.
         var combatContext = await BuildCombatContextAsync(request.CampaignId, state, cancellationToken);
 
-        // 4. Build AI prompt with state + combat + context + player action
-        var messages = BuildPromptMessages(request, campaign, state, ragResult, combatContext);
+        // 3c. If the campaign is running a solo adventure, load its context (current scene,
+        // objectives, exits, NPCs, what the player already knows). The revealed clues and secrets in
+        // that block double as the "what the player already knows" context for the AI.
+        var adventureContext = await BuildAdventureContextAsync(request.CampaignId, cancellationToken);
+
+        // 4. Build AI prompt with state + adventure + combat + context + player action
+        var messages = BuildPromptMessages(request, campaign, state, ragResult, combatContext, adventureContext?.Text);
 
         // 5. Call AI provider for structured output
         var aiOutput = await _aiProvider.StructuredChatCompletionAsync(messages, cancellationToken);
@@ -117,7 +136,11 @@ public sealed class PlayerActionService : IPlayerActionService
         var actionResults = new List<ProposedActionResult>();
         foreach (var action in aiOutput.ProposedActions)
         {
-            var result = await _stateCommandExecutor.ExecuteAsync(action, commandContext, cancellationToken);
+            // Adventure actions mutate the adventure run, not the campaign state snapshot, so they
+            // are applied through IAdventureSessionService rather than the state command executor.
+            var result = IsAdventureAction(action.Type)
+                ? await ApplyAdventureActionAsync(action, campaign, adventureContext?.SessionId, cancellationToken)
+                : await _stateCommandExecutor.ExecuteAsync(action, commandContext, cancellationToken);
             actionResults.Add(new ProposedActionResult(
                 ActionType: action.Type,
                 Label: action.Label,
@@ -194,6 +217,123 @@ public sealed class PlayerActionService : IPlayerActionService
     }
 
     /// <summary>
+    /// Loads the in-progress adventure run's prompt context, or null when the campaign is not
+    /// running an adventure. Non-fatal: adventure context is best-effort and must never break the
+    /// AI DM loop (the AI simply plays without it).
+    /// </summary>
+    private async Task<AdventureContext?> BuildAdventureContextAsync(
+        Guid campaignId,
+        CancellationToken cancellationToken)
+    {
+        if (_adventureSessions is null)
+            return null;
+
+        try
+        {
+            return await _adventureSessions.BuildActiveAdventureContextAsync(campaignId, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Could not load adventure context for campaign {CampaignId}; continuing without it.", campaignId);
+            return null;
+        }
+    }
+
+    /// <summary>True for the action types that operate on the active adventure run.</summary>
+    internal static bool IsAdventureAction(AiActionType type) => type is
+        AiActionType.AdvanceScene or
+        AiActionType.RevealClue or
+        AiActionType.RevealSecret or
+        AiActionType.UpdateNpc or
+        AiActionType.CompleteAdventure;
+
+    /// <summary>
+    /// Applies an AI-proposed adventure action to the campaign's active adventure run.
+    /// <para>
+    /// Role and authority are enforced as for any other AI action, but because the proposal queue
+    /// cannot replay adventure actions, an action the campaign's authority would queue for approval
+    /// is refused instead (<see cref="StateCommandOutcome.PermissionDenied"/>) with a message
+    /// saying why. Adventure rules (a reachable scene, a known clue ID, a run still in progress)
+    /// are validated by <see cref="IAdventureSessionService"/>; a violation is reported as
+    /// <see cref="StateCommandOutcome.ValidationFailed"/> and never aborts the rest of the response.
+    /// </para>
+    /// </summary>
+    private async Task<StateCommandResult> ApplyAdventureActionAsync(
+        Application.Abstractions.AiProposedAction action,
+        Application.DTOs.Campaigns.CampaignDto campaign,
+        Guid? adventureSessionId,
+        CancellationToken cancellationToken)
+    {
+        if (_adventureSessions is null || adventureSessionId is null)
+            return StateCommandResult.ValidationFailed("No adventure is in progress for this campaign.");
+
+        if (_roleService is null || _authorityService is null)
+            return StateCommandResult.PermissionDenied("Adventure actions are unavailable: AI role/authority services are not configured.");
+
+        if (!_roleService.IsActionPermitted(campaign.AiRole, action.Type))
+        {
+            return StateCommandResult.PermissionDenied(
+                $"AI role '{campaign.AiRole}' does not have permission for action '{action.Type}'.");
+        }
+
+        if (!_authorityService.CanAutoApply(campaign.AiAuthority, action.Type))
+        {
+            return StateCommandResult.PermissionDenied(
+                $"AI authority '{campaign.AiAuthority}' does not allow '{action.Type}' to be applied automatically. " +
+                "Set the campaign's AI authority to Full Session Control for hands-off solo play, or advance manually.");
+        }
+
+        var id = adventureSessionId.Value;
+        try
+        {
+            switch (action.Type)
+            {
+                case AiActionType.AdvanceScene:
+                    if (string.IsNullOrWhiteSpace(action.SceneId))
+                        return StateCommandResult.ValidationFailed("AdvanceScene requires a sceneId.");
+                    await _adventureSessions.AdvanceSceneAsync(id, action.SceneId, action.Narration, cancellationToken);
+                    break;
+
+                case AiActionType.RevealClue:
+                    if (string.IsNullOrWhiteSpace(action.ClueId))
+                        return StateCommandResult.ValidationFailed("RevealClue requires a clueId.");
+                    await _adventureSessions.RevealClueAsync(id, action.ClueId, cancellationToken);
+                    break;
+
+                case AiActionType.RevealSecret:
+                    if (string.IsNullOrWhiteSpace(action.SecretId))
+                        return StateCommandResult.ValidationFailed("RevealSecret requires a secretId.");
+                    await _adventureSessions.RevealSecretAsync(id, action.SecretId, cancellationToken);
+                    break;
+
+                case AiActionType.UpdateNpc:
+                    if (string.IsNullOrWhiteSpace(action.NpcId))
+                        return StateCommandResult.ValidationFailed("UpdateNpc requires an npcId.");
+                    await _adventureSessions.UpdateNpcStateAsync(
+                        id, action.NpcId, action.HasBeenMet, action.IsAlive,
+                        action.RevealedInfoId, action.Notes, cancellationToken);
+                    break;
+
+                case AiActionType.CompleteAdventure:
+                    if (string.IsNullOrWhiteSpace(action.OutcomeNotes))
+                        return StateCommandResult.ValidationFailed("CompleteAdventure requires outcomeNotes.");
+                    await _adventureSessions.CompleteAdventureAsync(id, action.OutcomeNotes, cancellationToken);
+                    break;
+            }
+
+            return StateCommandResult.Applied();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException)
+        {
+            _logger.LogWarning(ex,
+                "Adventure action {ActionType} rejected for adventure session {AdventureSessionId}: {Reason}",
+                action.Type, id, ex.Message);
+            return StateCommandResult.ValidationFailed(ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Reads the <c>encounter</c> key from the serialized campaign state and deserializes it into
     /// an <see cref="EncounterState"/>. Returns null when absent, null-valued, or malformed.
     /// </summary>
@@ -229,7 +369,8 @@ public sealed class PlayerActionService : IPlayerActionService
         Application.DTOs.Campaigns.CampaignDto campaign,
         Application.DTOs.CampaignState.CampaignStateDto state,
         RagContextResult ragResult,
-        string? combatContext = null)
+        string? combatContext = null,
+        string? adventureContext = null)
     {
         var messages = new List<AiMessage>();
 
@@ -241,6 +382,13 @@ public sealed class PlayerActionService : IPlayerActionService
         if (!string.IsNullOrWhiteSpace(stateContext))
         {
             messages.Add(AiMessage.System(stateContext));
+        }
+
+        // Solo adventure: how to drive the adventure (action schema) + where the player is in it
+        if (!string.IsNullOrWhiteSpace(adventureContext))
+        {
+            messages.Add(AiMessage.System(BuildAdventureInstructions()));
+            messages.Add(AiMessage.System($"ACTIVE ADVENTURE:\n{adventureContext}"));
         }
 
         // Live combat context (initiative, HP, conditions, whose turn it is)
@@ -255,11 +403,35 @@ public sealed class PlayerActionService : IPlayerActionService
             messages.Add(AiMessage.System($"RETRIEVED RULES AND ADVENTURE CONTEXT:\n{ragResult.ContextText}"));
         }
 
-        // Player action as user message
-        var userMessage = $"[Character {request.CharacterId}] Player action: {request.ActionText}";
+        // Player action as user message. Solo adventure play may have no formal character.
+        var userMessage = request.CharacterId == Guid.Empty
+            ? $"Player action: {request.ActionText}"
+            : $"[Character {request.CharacterId}] Player action: {request.ActionText}";
         messages.Add(AiMessage.User(userMessage));
 
         return messages;
+    }
+
+    /// <summary>
+    /// Instructions for running a solo adventure: what the AI DM must do and the exact
+    /// <c>proposedActions</c> shapes that move the adventure forward. IDs in the examples are the
+    /// ones printed in square brackets in the adventure context.
+    /// </summary>
+    public static string BuildAdventureInstructions()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("SOLO ADVENTURE MODE:");
+        sb.AppendLine("You are running a single player through the ACTIVE ADVENTURE below, scene by scene.");
+        sb.AppendLine("- Narrate the outcome of the player's action and steer toward the current scene's objectives.");
+        sb.AppendLine("- Never reveal DM-only text (DM notes, hidden secrets) until the player has earned it.");
+        sb.AppendLine("- Use the IDs in square brackets from the adventure context in proposedActions. Use these action shapes:");
+        sb.AppendLine("  - {\"type\":\"revealClue\",\"clueId\":\"clue-1\"} when the player finds a listed clue.");
+        sb.AppendLine("  - {\"type\":\"revealSecret\",\"secretId\":\"secret-1\"} when the player uncovers a listed secret.");
+        sb.AppendLine("  - {\"type\":\"updateNpc\",\"npcId\":\"npc-example\",\"hasBeenMet\":true,\"isAlive\":false,\"revealedInfoId\":\"short-label\",\"notes\":\"what the player learned\"} - include only the fields that changed.");
+        sb.AppendLine("  - {\"type\":\"advanceScene\",\"sceneId\":\"scene-2\",\"narration\":\"transition narration\"} - only after the scene's objectives are met (or the fail-forward rule applies) AND the player has chosen one of the Available Exits. sceneId must be one of the Available Exits.");
+        sb.AppendLine("  - {\"type\":\"completeAdventure\",\"outcomeNotes\":\"how the adventure ended\"} - when the final scene's objectives are met and the story is resolved.");
+        sb.AppendLine("- Do not advance the scene or complete the adventure early; wait for the player to act.");
+        return sb.ToString();
     }
 
     /// <summary>

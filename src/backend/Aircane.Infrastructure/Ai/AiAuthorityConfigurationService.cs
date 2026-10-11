@@ -43,6 +43,11 @@ public sealed class AiAuthorityConfigurationService : IAiAuthorityService
         AiActionType.AwardTreasure,
         AiActionType.AddQuestFlag,
         AiActionType.UpdateWorldFlag,
+        AiActionType.AdvanceScene,
+        AiActionType.RevealClue,
+        AiActionType.RevealSecret,
+        AiActionType.UpdateNpc,
+        AiActionType.CompleteAdventure,
     };
 
     private static readonly IReadOnlyDictionary<AiAuthority, AiAuthorityConfiguration> Configurations = BuildConfigurations();
@@ -129,6 +134,11 @@ public sealed class AiAuthorityConfigurationService : IAiAuthorityService
                     AiActionType.AwardTreasure,
                     AiActionType.AddQuestFlag,
                     AiActionType.UpdateWorldFlag,
+                    AiActionType.AdvanceScene,
+                    AiActionType.RevealClue,
+                    AiActionType.RevealSecret,
+                    AiActionType.UpdateNpc,
+                    AiActionType.CompleteAdventure,
                 },
             },
 
@@ -162,6 +172,11 @@ public sealed class AiAuthorityConfigurationService : IAiAuthorityService
                     AiActionType.AwardTreasure,
                     AiActionType.AddQuestFlag,
                     AiActionType.UpdateWorldFlag,
+                    AiActionType.AdvanceScene,
+                    AiActionType.RevealClue,
+                    AiActionType.RevealSecret,
+                    AiActionType.UpdateNpc,
+                    AiActionType.CompleteAdventure,
                 },
             },
 
@@ -194,6 +209,11 @@ public sealed class AiAuthorityConfigurationService : IAiAuthorityService
                     AiActionType.AwardTreasure,
                     AiActionType.AddQuestFlag,
                     AiActionType.UpdateWorldFlag,
+                    AiActionType.AdvanceScene,
+                    AiActionType.RevealClue,
+                    AiActionType.RevealSecret,
+                    AiActionType.UpdateNpc,
+                    AiActionType.CompleteAdventure,
                 },
             },
 

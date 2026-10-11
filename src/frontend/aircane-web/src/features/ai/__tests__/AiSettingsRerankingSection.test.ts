@@ -90,7 +90,8 @@ describe('AiSettingsView reranking section', () => {
 
     const warning = wrapper.get('[data-testid="ollama-rerank-latency-warning"]')
     expect(warning.text()).toContain('scores each candidate with a local LLM call')
-    expect(warning.text()).toContain('10–15 seconds')
+    expect(warning.text()).toContain('potentially tens of seconds')
+    expect(warning.text()).toContain('whether the model is already loaded')
     expect(warning.text()).toContain('Use Cohere for faster reranking.')
     expect(warning.classes()).toContain('text-yellow-300')
     expect(api.testRerankingConnection).not.toHaveBeenCalled()

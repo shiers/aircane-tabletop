@@ -724,8 +724,9 @@ function isKeyMasked(value: string): boolean {
             role="note"
             data-testid="ollama-rerank-latency-warning"
           >
-            Ollama reranking scores each candidate with a local LLM call. This adds approximately 10–15
-            seconds to rules lookups depending on your hardware. Use Cohere for faster reranking.
+            Ollama reranking scores each candidate with a local LLM call. This adds potentially tens of
+            seconds to rules lookups depending on your hardware and whether the model is already loaded.
+            Use Cohere for faster reranking.
           </div>
         </div>
 

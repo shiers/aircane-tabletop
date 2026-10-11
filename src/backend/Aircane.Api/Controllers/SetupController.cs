@@ -74,7 +74,7 @@ public sealed class SetupController : ControllerBase
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             // Short timeout: the daemon is local, so it answers fast when up. A missing
             // daemon should fail quickly rather than stalling the wizard's poll.
-            cts.CancelAfter(TimeSpan.FromMilliseconds(750));
+            cts.CancelAfter(TimeSpan.FromMilliseconds(2000));
 
             var response = await client.GetAsync($"{baseUrl}/api/tags", cts.Token);
             return response.IsSuccessStatusCode;

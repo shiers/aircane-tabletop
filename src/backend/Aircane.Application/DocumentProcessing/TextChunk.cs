@@ -9,8 +9,13 @@ namespace Aircane.Application.DocumentProcessing;
 /// <param name="ChunkIndex">
 /// Sequential index of this chunk within the whole document (not just the page).
 /// </param>
+/// <param name="ChunkType">
+/// Optional chunk classification, e.g. <c>"stat-block"</c> for a monster/NPC stat block kept whole.
+/// Null for ordinary text.
+/// </param>
 public record TextChunk(
     string Text,
     int PageNumber,
     string? SectionTitle,
-    int ChunkIndex);
+    int ChunkIndex,
+    string? ChunkType = null);

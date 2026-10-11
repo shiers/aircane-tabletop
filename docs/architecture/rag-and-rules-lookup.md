@@ -13,7 +13,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
  DocumentImportJob ── text extraction (PdfPig) ── OCR if needed (Tesseract)
             │
             ▼
- SlidingWindowTextChunker (1100 chars, 300 overlap, heading-aware, per page)
+ SlidingWindowTextChunker (stat blocks kept whole; prose 1100 chars, 300 overlap, heading-aware; per page)
             │
             ▼
  IEmbeddingProvider ──► DocumentChunks (text + vector(768) + provenance)
@@ -31,6 +31,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
 |---|---|
 | Import pipeline | `src/backend/Aircane.Infrastructure/DocumentProcessing/DocumentImportJob.cs` |
 | Chunker | `src/backend/Aircane.Infrastructure/DocumentProcessing/SlidingWindowTextChunker.cs` |
+| Stat block detection | `src/backend/Aircane.Infrastructure/DocumentProcessing/StatBlockDetector.cs` |
 | Embedding providers | `src/backend/Aircane.Infrastructure/Embeddings/` |
 | Retrieval | `src/backend/Aircane.Infrastructure/Retrieval/RetrievalService.cs` |
 | Keyword term extraction | `src/backend/Aircane.Infrastructure/Retrieval/KeywordQueryParser.cs` |
@@ -63,6 +64,11 @@ This document describes how Aircane turns imported rulebooks into searchable con
 3. **JSON:** marked `Completed` with no text extraction, so JSON documents are not searchable.
 4. **Other extensions:** marked `Failed`.
 5. Each page is chunked by `SlidingWindowTextChunker`:
+   - **Stat blocks first.** The page text is passed through `StatBlockDetector.ExtractStatBlocks`, which splits it into stat-block and prose segments (covering the text with no gaps or overlaps). Each stat block (monster entry, NPC block, creature template) is emitted as **one chunk**, bypassing the window, with `ChunkType = "stat-block"` and the creature name as its `SectionTitle`. A block cut in two loses part of its action list, which is what the AI DM needs mid-combat. Prose segments get the sliding window described below; ordinary prose chunks keep the `page` chunk type.
+   - **Detection is text-based and handles two shapes.** Line-based: a name line followed by a size/type line (`Giant Crocodile` / `Huge beast, unaligned`), a name and size/type joined by a dash, or a name followed by `Creature N` (PF2e). Run-together: PdfPig and OCR text often has no line breaks at all (the imported Monster Manual has none), e.g. `GIANT. CROCODILE Huge beast, unaligned Armor Class 14 ...`. Because a name cannot be told from the preceding prose there, this shape is only accepted when `Armor Class` (or `CREATURE N`) follows the size and type. A size word alone is never enough (`Large coffee table`). Names are tidied: ALL CAPS is title-cased, OCR full stops and page numbers are dropped, and a block whose name was lost to OCR is kept as an unnamed stat block.
+   - **A stat block ends** at the next stat block, a markdown heading, an isolated title-case heading (blank lines either side), or the end of the page. Labels such as `Actions` or `Reactions` do not end it.
+   - **Hard limit: 4000 characters.** A longer block is split at the last action section that fits (`ACTIONS`, `Reactions`, `Legendary Actions`, `Lair Actions`), else at a sentence end, and a warning is logged. Each part is a `stat-block` chunk with the creature name. On the real Monster Manual the longest block is 3,933 characters, so none were split.
+   - **Limits.** Detection works per page: a stat block that continues onto the next page is cut at the page break, and the continuation (no header) is treated as prose. `ChunkType` is only stored for now; nothing filters or boosts on it yet.
    - Chunks are at most 1100 characters, with 300 characters (about 27%) of overlap. Both are constructor parameters (`DefaultMaxChunkSize`, `DefaultOverlapSize`).
    - Smaller chunks are more topically focused, which improves keyword precision and makes each embedding represent a narrower topic.
    - The split point is searched backwards from the end of the window, in this order:
@@ -74,7 +80,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
    - **Section title:** a chunk that starts with a heading gets that heading as its `SectionTitle` (hashes stripped). Any other chunk gets the most recent heading before it. `DocumentImportJob` passes the last title seen into the next page, so a section that continues onto a new page keeps its title. The section title is also searched by keyword retrieval and shown in citations.
    - Headings are only detected where the extracted text has line breaks. PdfPig's text layer often runs lines together, so title-case detection fires mostly on OCR output and text-like sources; built-in bundles with markdown headings benefit most.
    - Every chunk keeps its page number and inherits the document's visibility.
-   - **Re-indexing:** documents imported before this change were chunked at 2000/200 without heading awareness and keep those chunks. Re-import them (or re-OCR / re-index) to benefit. Re-ingest is a manual operator step and is never triggered automatically.
+   - **Re-indexing:** documents imported before these changes were chunked at 2000/200 without heading or stat block awareness and keep those chunks (a Monster Manual imported earlier still has stat blocks cut mid-entry). Re-import them (or re-OCR / re-index) to benefit. Re-ingest is a manual operator step and is never triggered automatically.
 6. Embeddings are generated in one batch.
    - If embedding fails, or the provider's dimension doesn't match the column, chunks are stored **without** vectors. They remain keyword-searchable, and the document is still marked `Completed`.
 7. Progress is pushed to the UI over SignalR (`ImportStatusUpdated`).

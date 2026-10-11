@@ -226,12 +226,14 @@ public sealed class DocumentImportJob : IDocumentImportJob
                     text: tc.Text,
                     pageNumber: tc.PageNumber,
                     sectionTitle: tc.SectionTitle,
-                    chunkType: "page",
+                    chunkType: tc.ChunkType ?? "page",
                     visibility: document.Visibility,
                     metadataJson: metadata));
 
                 nextChunkIndex = tc.ChunkIndex + 1;
-                currentSectionTitle = tc.SectionTitle ?? currentSectionTitle;
+                // A stat block's section title is its creature name, which must not label the prose after it.
+                if (tc.ChunkType is null)
+                    currentSectionTitle = tc.SectionTitle ?? currentSectionTitle;
             }
         }
 

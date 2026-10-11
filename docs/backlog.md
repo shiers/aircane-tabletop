@@ -9,22 +9,41 @@ This document lists planned features and improvements beyond the Aircane Tableto
 The following backlog items were **deliberately left for a human maintainer** rather than
 implemented autonomously, because each is blocked on a decision, carries security risk, or
 needs a toolchain/content that cannot be safely chosen without owner input. They remain in
-the priority lists below with full detail; this section records *why* they were skipped and
-*what unblocks them*.
+the priority lists below with full detail; this section records _why_ they were skipped and
+_what unblocks them_.
 
-| Item | Why not auto-built | What unblocks it |
-|------|--------------------|------------------|
-| **PF2e Remaster real ORC text** | Content/licensing decision. The obvious data sources (Foundry PF2e, Obsidian TTRPG Community) are **not** ORC-licensed — they fall under a private Paizo↔Foundry agreement and Paizo's Community Use Policy, so bundling them as ORC content would be a licensing violation. | Maintainer sources text from a genuine ORC release and drops it into the existing `pf2e_remaster` bundle (no code changes needed). |
-| **Internet Tunnel / Remote Play** | **Decision made — Cloudflare Tunnel. Delivered.** Tunnel bundled as a second Tauri sidecar (checksum-verified at build time), with the security hardening prerequisites — per-IP rate limiting, SPA CSRF/origin checks, and persistent token revocation — implemented first. See "Completed P1 Work" below. | Nothing — delivered. Follow-up (persistent named tunnels via a Cloudflare account) is optional and tracked informally. |
-| **Desktop Wrapper (Tauri/Electron)** | **Decision made — Tauri.** Wrapper implemented: backend runs as a Tauri sidecar, native webview, LAN URL/QR in the tray, Ollama awareness. See "Completed P1 Work" below. | Nothing — delivered. Remaining follow-ups (code signing/notarisation, auto-update, bundled database) are tracked as separate deferred items. |
-| **Application source-code license** | Decision made. **Proprietary** license chosen for the application source code (distinct from the content licenses ORC/CC BY, which are unaffected). | Update the README and add a `LICENSE` file reflecting the proprietary terms. The in-app About panel already points at the README for this. |
-| **PF1e built-in content** | Removed for commercialization — OGL v1.0a adds a Section 15 attribution chain and a content-identification burden that adds legal complexity for a commercial product regardless of the source-code license chosen. D&D 5e SRD (CC BY 4.0) and PF2e Remaster (ORC) are commercial-friendly and retained. | Nothing to unblock — this is a deliberate removal, not deferred work. Users may still import their own PF1e PDFs via the folder-watching Library; only the bundled OGL rules text was removed. |
+| Item                                 | Why not auto-built                                                                                                                                                                                                                                                                                          | What unblocks it                                                                                                                                                                               |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **PF2e Remaster real ORC text**      | Content/licensing decision. The obvious data sources (Foundry PF2e, Obsidian TTRPG Community) are **not** ORC-licensed — they fall under a private Paizo↔Foundry agreement and Paizo's Community Use Policy, so bundling them as ORC content would be a licensing violation.                                | Maintainer sources text from a genuine ORC release and drops it into the existing `pf2e_remaster` bundle (no code changes needed).                                                             |
+| **Internet Tunnel / Remote Play**    | **Decision made — Cloudflare Tunnel. Delivered.** Tunnel bundled as a second Tauri sidecar (checksum-verified at build time), with the security hardening prerequisites — per-IP rate limiting, SPA CSRF/origin checks, and persistent token revocation — implemented first. See "Completed P1 Work" below. | Nothing — delivered. Follow-up (persistent named tunnels via a Cloudflare account) is optional and tracked informally.                                                                         |
+| **Desktop Wrapper (Tauri/Electron)** | **Decision made — Tauri.** Wrapper implemented: backend runs as a Tauri sidecar, native webview, LAN URL/QR in the tray, Ollama awareness. See "Completed P1 Work" below.                                                                                                                                   | Nothing — delivered. Remaining follow-ups (code signing/notarisation, auto-update, bundled database) are tracked as separate deferred items.                                                   |
+| **Application source-code license**  | Decision made. **Proprietary** license chosen for the application source code (distinct from the content licenses ORC/CC BY, which are unaffected).                                                                                                                                                         | Update the README and add a `LICENSE` file reflecting the proprietary terms. The in-app About panel already points at the README for this.                                                     |
+| **PF1e built-in content**            | Removed for commercialization — OGL v1.0a adds a Section 15 attribution chain and a content-identification burden that adds legal complexity for a commercial product regardless of the source-code license chosen. D&D 5e SRD (CC BY 4.0) and PF2e Remaster (ORC) are commercial-friendly and retained.    | Nothing to unblock — this is a deliberate removal, not deferred work. Users may still import their own PF1e PDFs via the folder-watching Library; only the bundled OGL rules text was removed. |
 
 ---
 
 ## Recently Delivered (not yet in a priority bucket)
 
+### RAG Pipeline Optimization (Items 1–11)
+
+> **✅ Delivered and committed to `dev`** across multiple commits (`20c1536`, `222f16f`, `691e573`, `de97e11`, `7ab4735`, `7ab4735`, `9b1083d`, `189ec21`, `89b2d3d`, `765b8cf`, `3c2cde0`). All unit (2,339), integration (118), and frontend (369) tests green.
+
+A full retrieval quality overhaul covering:
+
+- **Caller visibility fix** — `RulesQuestionController` reads actual caller role; unauthenticated/dev treated as Host, unknown role defaults to Player.
+- **Source priority** — `ChunkResultDto` carries `SourceType`; `ApplySourcePriority` orders Homebrew > Rules > Adventure > Solo > Generated > Character > Unknown then by score.
+- **Ruleset normalization** — case/whitespace-insensitive filter; `RulesetNormalizer` expands aliases (2014, 2024, "one dnd", remaster); `GET /api/ai/rules-question/rulesets` endpoint; Rules Lookup uses dropdown.
+- **Scoring formula** — keyword-only = 0.7 × term_fraction; vector-only = 0.6 × cosine; both = min(1, 0.7k + 0.5v).
+- **Retrieval limits** — TopK=10, MinRelevanceScore=0.4 in both `RulesQuestionService` and `PlayerActionService`.
+- **Chunk deduplication** — `RemoveDuplicateChunks` skips chunk when >40% text overlaps earlier chunk (50-char windows).
+- **OCR cleanup** — two regexes in `PdfPigTextExtractor.RecognizePageAsync`: spaced-character collapse (`A c t o r` → `Actor`) and sentence-end split (`.Actor` → `. Actor`); OCR-only, not PDF text layer.
+- **Heading-aware chunking** — `SlidingWindowTextChunker` defaults now 1100 chars / 300 overlap; split order: heading (last 400 chars) → paragraph break (last 300) → newline/period (last 200) → hard cut; heading placed at START of next chunk; `SectionTitle` propagated across page boundaries.
+- **Postgres integration tests** — `PostgresFixture` with `Testcontainers.PostgreSql`; clones fresh DB per test; 20 tests covering keyword/vector/filter/merge/dedup/source-priority against real pgvector.
+- **Cross-encoder reranking** — `IRerankingProvider` abstraction with `NullRerankingProvider` (default), `CohereRerankingProvider` (Cohere Rerank API, `rerank-english-v3.0`), and `OllamaRerankingProvider` (LLM-judge via `/api/generate`, default model `llama3.2:3b`, up to 4 concurrent calls). Candidate pool = 25 when reranking active (vs 10 otherwise); `PostRerankTopN` = 7; `MinRelevanceScore` lowered to 0.15 when reranking active; source-priority boost applied after reranking (Homebrew +0.10, Rules +0.05). Settings UI includes provider select, per-provider fields, test connection, and amber latency warning for Ollama. Verified: Actor feat (PHB p.154) surfaces correctly with both Cohere and Ollama reranking. **Known gap:** complex multi-part questions (e.g. Misty Step + Fireball bonus action rule) may not surface the specific rule chunk — query decomposition (agentic retrieval) is the long-term fix, tracked in P4.
+- **Structured stat block chunker** — `StatBlockDetector` finds monster/NPC stat blocks from text alone and `SlidingWindowTextChunker` emits each as ONE chunk (`ChunkType = "stat-block"`, `SectionTitle` = creature name), bypassing the 1100/300 window so action lists are never split (e.g. Giant Crocodile Bite + Tail). Handles line-based headers (name + size/type line, name — size/type, PF2e `Creature N`) **and** run-together text with no line breaks, as the real Monster Manual extracts (`GIANT. CROCODILE Huge beast, unaligned Armor Class 14 …`, confirmed by `Armor Class`). Blocks end at the next stat block, a heading, or end of page; blocks over 4,000 chars split at `ACTIONS`/`Reactions`/`Legendary Actions`/`Lair Actions` with a logged warning. Verified on the real Monster Manual PDF: 279 stat blocks over 354 pages, longest 3,933 chars. No migration (`DocumentChunk.ChunkType` already existed). **Existing documents keep their old chunks — delete and re-import the Monster Manual (and any other bestiary) to benefit.** **Known gaps:** detection is per page, so a block that continues onto the next page is cut at the page break; `ChunkType` is stored but not yet used to filter or boost in retrieval — both tracked in P4.
+
 ### Source-Specific Character Import (D&D Beyond / VTT / Pathbuilder 2e)
+
 > **✅ Delivered and merged to `dev`** (PR #15, merge commit `89dc148`). Reviewed, build/tests green.
 > Covers the former P2 items **"D&D Beyond / VTT Integration"** and **"Pathbuilder 2e Character Import"**.
 
@@ -55,6 +74,7 @@ backend 2125 unit + 96 integration green, frontend `vue-tsc` + 317 vitest green.
 Beyond URL path depends on an unofficial API that may change — PDF export is the documented fallback.
 
 ### In-App "Report a bug" Feedback Feature
+
 > **✅ Delivered and merged to `dev`** (`9f7c8d8`, with doc follow-up `a95ecfd`). Reviewed, build/tests green.
 
 A "Report a bug" button available throughout the app that auto-captures diagnostic context at
@@ -85,11 +105,13 @@ secrets are in .NET user-secrets for `Aircane.Api` (token verified against the I
 > (see the decision table at the top of this file).
 
 ### Pathfinder 2e Remaster Built-in Content (real ORC text)
+
 > **Not auto-built — content/licensing decision; maintainer action.** See the decision table at the top of this file.
 
 The `pf2e_remaster` built-in bundle currently ships a small placeholder (2 chunks) so the app runs; the seeder handles the partial bundle gracefully. To complete it, source the real PF2e Remaster rules text **from a genuine ORC-licensed release** and drop the Markdown files into `src/backend/Aircane.Workers/Resources/builtin/pf2e_remaster/` (adding entries to its `manifest.json`). No code changes needed — the bundle structure, `LICENSE-ORC.txt`, manifest, and seeder already work. **Licensing caution:** do NOT extract content from the Foundry VTT PF2e system data or the Obsidian TTRPG Community repo — that material is distributed under a private Paizo↔Foundry partnership agreement and Paizo's Community Use Policy, not the ORC License, and cannot be bundled as ORC content here. Use only text that is actually released under ORC. Follow the full ORC requirements (Notice, upstream Paizo product attribution, downstream ORC-Content-vs-Reserved-Material declaration, Product Identity exclusions, and the OGL/ORC split) documented in [`docs/licensing/open-content-compliance.md`](licensing/open-content-compliance.md).
 
 ### Application Source-Code License
+
 > **Decision made — Proprietary.** The application source code is licensed under a **Proprietary** license, kept distinct from the content licenses (ORC/OGL/CC BY), which are unaffected. See the decision table at the top of this file.
 
 The remaining work is documentation: update the README (currently "License TBD") and add a `LICENSE` file reflecting the proprietary terms. The in-app About / Credits panel (`/about`) already points users at the README for the app license. (The compliance surface itself — ORC Notice, CC BY / OGL attributions, ORC-Content-vs-Reserved-Material downstream declaration, and trademark note — is delivered in the About panel.)
@@ -103,7 +125,7 @@ unit + integration suites and the frontend vitest suite green). They are recorde
 in the active list above.
 
 - **Background Job Infrastructure.** In-process `IBackgroundJobQueue` (`ChannelBackgroundJobQueue`) + a `BackgroundJobWorker` hosted service dispatching to `IJobHandler<T>` in fresh DI scopes, an in-memory job-status store, and `GET /api/jobs/{id}`. Document import, folder scan, and re-embed now enqueue and return `202 Accepted`; `ImportStatusUpdated` carries the `jobId`. A `BackgroundJobs:Runner` switch is reserved for a future Hangfire swap.
-- **Advanced Combat Automation (surfacing).** The backend `CombatEngine`/`EncounterState` (initiative, turns, conditions, HP, death saves) is now surfaced end-to-end: a `CombatController` exposes host combat controls, `CombatTracker.vue` renders initiative/HP/conditions (interactive for the host, read-only with rough HP bands for players) driven by the `CombatTurnChanged` SignalR event, and `PlayerActionService` feeds a compact live-combat block into the AI DM prompt (via `IAiContextAdapter.BuildCombatContext`). *Still open (lower priority):* concentration checks and out-of-turn action enforcement.
+- **Advanced Combat Automation (surfacing).** The backend `CombatEngine`/`EncounterState` (initiative, turns, conditions, HP, death saves) is now surfaced end-to-end: a `CombatController` exposes host combat controls, `CombatTracker.vue` renders initiative/HP/conditions (interactive for the host, read-only with rough HP bands for players) driven by the `CombatTurnChanged` SignalR event, and `PlayerActionService` feeds a compact live-combat block into the AI DM prompt (via `IAiContextAdapter.BuildCombatContext`). _Still open (lower priority):_ concentration checks and out-of-turn action enforcement.
 - **Pathfinder 2e Adapter (generation logic).** `Pf2eEncounterValidator` (creature-level XP budget, Trivial/Low/Moderate/Severe/Extreme tiers) selected per campaign via `IEncounterValidatorSelector`; PF2e-aware adventure generation prompts (three-action economy, degrees of success, PF2e tiers/conditions, treasure-by-level); and an `EliteWeakAdjuster` with `ApplyEliteTemplate`/`ApplyWeakTemplate` commands. (The mechanics definition was delivered earlier; the ORC rules text remains a separate maintainer-gated item above.)
 - **Embedding Provider Portability (dimensions + cloud providers).** Configurable embedding dimension with a startup compatibility check that disables vector search (keyword search still works) and logs a clear warning on a provider/column mismatch; `OpenAiEmbeddingProvider` (`text-embedding-3-small`, 1536) and `AzureOpenAiEmbeddingProvider` behind the existing `IEmbeddingProvider` abstraction. Provenance recording + mismatch guard + re-embed endpoints were delivered previously. Migration path documented in `docs/setup/ai-configuration.md`.
 - **Library Import UX follow-ups.** Content-based duplicate detection (`SourceDocument.ContentHash` SHA-256 + `ExactDuplicate` flag), a `GameSystemAlias` table with seeded common aliases + canonicalizer alias lookup + management API, and configurable per-folder `WatchedFolder.ExcludePatterns` (glob) driving the likely-not-rules signal. (The review-before-import flow, quick import, filename suggestions, and canonicalization were delivered previously.)
@@ -116,37 +138,44 @@ in the active list above.
 ## Priority 2 - Significant Enhancements
 
 ### Map and Battlemap Support
+
 Add grid-based or theater-of-the-mind map rendering with token placement, fog of war, and distance measurement. Integrate with the AI DM for spatial awareness during encounters.
 
 ### AWS Cloud Deployment
+
 Production-ready deployment on AWS: ECS Fargate or App Runner for the backend, RDS PostgreSQL with pgvector, S3 for uploaded documents (cloud source mode), CloudFront + S3 for the frontend, Cognito for user accounts, Bedrock for AI/embeddings, and Secrets Manager for credentials.
 
 ### File Upload Source Mode
+
 Implement the `Upload` path of the existing `IDocumentSource` abstraction so cloud-hosted instances can accept file uploads directly rather than requiring local folder paths.
 
 ### User Accounts and Persistent Identity
+
 Replace short-lived session tokens with full user accounts (local credentials or OAuth/Cognito). Enables cross-session identity, campaign membership, and character ownership without re-joining.
 
 ### SQLite Option for Lightweight Installs
+
 Allow single-user or desktop installations to run without Docker/PostgreSQL by using SQLite with a compatible vector extension.
 
-> **Delivered and moved out of P2:** *D&D Beyond / VTT Integration* and *Pathbuilder 2e Character
-> Import* shipped together as the source-specific character import adapters — see "Recently
+> **Delivered and moved out of P2:** _D&D Beyond / VTT Integration_ and _Pathbuilder 2e Character
+> Import_ shipped together as the source-specific character import adapters — see "Recently
 > Delivered" above (PR #15). The one standing caveat is that the D&D Beyond URL path relies on an
 > unofficial API that may change.
 
 ### D&D Beyond Printable-Sheet Value Localization (OCR geometry — blocks real DDB PDF extraction)
+
 The OCR infrastructure for DDB PDF character import shipped (first-class default-on OCR, desktop-bundled
 Tesseract, caption-signature detection, region OCR with per-region PSM) and the pipeline runs end-to-end:
 a real DDB 2024 printable sheet is detected, 15 regions are OCR'd, ruleset auto-detects as 2024, a review
 draft is persisted, and nothing crashes. **But it does not yet extract the actual values.** Verified live
 against a real DDB export: the caption-anchored value regions in `DndBeyondSheetLayout` land on the
 caption words or empty space, not the value glyphs — e.g. the "ARMOR" region OCRs the caption word
-"ARMOR" at *rising* confidence as DPI increases, and the ability boxes return noise (`ee`/`ae`). An
+"ARMOR" at _rising_ confidence as DPI increases, and the ability boxes return noise (`ee`/`ae`). An
 exhaustive per-region offset sweep (Dy 0.6–3.0 × multiple widths) and DPI escalation (300/450/600)
 recovered no real values, so this is a value-localization/geometry problem, not PSM/DPI tuning (the PSM
 wiring is correct and already shipped — crops now return text instead of nothing). Needs an investigation
 to choose a strategy, not incremental tuning. Candidate approaches:
+
 - **Re-derive the DDB sheet value geometry** from the real layout (where each value glyph sits relative
   to its caption), likely per sheet version (2014 vs 2024 differ).
 - **Whole-page OCR + spatial parsing** instead of fixed caption-anchored crops (OCR the page, then
@@ -157,30 +186,33 @@ to choose a strategy, not incremental tuning. Candidate approaches:
   OCR needed), and the **character-service JSON API** path exists (now that the import-draft persistence
   400 is fixed). Likely product direction: guide DDB users toward a fillable export / JSON, with
   rasterized-printable OCR as a best-effort fallback.
-This is why the DDB *printable-PDF* import specifically does not yet populate fields; the broader
-character-import feature (JSON sources, form-fillable PDFs) is unaffected.
+  This is why the DDB _printable-PDF_ import specifically does not yet populate fields; the broader
+  character-import feature (JSON sources, form-fillable PDFs) is unaffected.
 
 ---
 
 ## Priority 3 - Quality of Life
 
 ### Unify PDF Character Import onto the Source-Adapter Review Rail
+
 The PDF character import now lives as a tab inside the single **Import Character** modal (alongside
 Upload File and D&D Beyond URL), but it still runs on a **separate flow underneath**: it posts to
 `/api/characters/import/pdf` and, when fields need attention, redirects to the full-page
-`character-field-review` route — an *unmapped-fields* review distinct from the inline, FormDescriptor-
+`character-field-review` route — an _unmapped-fields_ review distinct from the inline, FormDescriptor-
 driven `ImportReviewPanel` every other source uses. Two follow-ups to converge it:
+
 - **Fold the PDF path behind the same source rail** so extracted PDF fields produce a flat field
   dictionary that funnels through `ApplyMapping`/`CanonicalCharacter` and the inline `ImportReviewPanel`,
   retiring the second review UI (one review experience for all sources, less duplicated test surface).
 - **Drop the hardcoded `gameSystem=D&D 5e` / `ruleset=2014`** that the PDF upload currently sends in its
   multipart form. A non-5e PDF is mislabeled today; the system/ruleset should be detected or chosen the
   same way the JSON/source paths handle it (PF2e auto-set, 2014/2024 confirmable for 5e, user-selected
-  for unknown). *Deferred deliberately* from the button-consolidation change (Option A) because merging
+  for unknown). _Deferred deliberately_ from the button-consolidation change (Option A) because merging
   the two review models touches the backend PDF endpoint, the review components, and their tests, and the
   existing PDF flow works and is tested.
 
 ### In-App Help / How-To Menu
+
 Add a Help menu item that surfaces user-facing how-tos and guidance in-app (rather than only in
 `docs/`). First content to include: **character import instructions per source** (Pathbuilder 2e,
 D&D Beyond URL + saved file, Foundry VTT 5e/PF2e, Roll20, Generic VTT, and PDF via the unified
@@ -189,12 +221,15 @@ D&D Beyond URL + saved file, Foundry VTT 5e/PF2e, Roll20, Generic VTT, and PDF v
 and AI provider setup. Surface it in the app shell (and the Tauri tray where it fits).
 
 ### Streaming Narration (All Providers)
+
 Ensure token-by-token streaming works consistently across all AI providers and UI modes.
 
 ### Mobile-Optimized UI
+
 Responsive redesign targeting phone and tablet screens for player-side usage.
 
 ### Native Player Companion App (iOS / Android)
+
 A lightweight native app for players connecting to an Aircane session from a phone or
 tablet. The host always runs the desktop app; this is purely the player-side view.
 Planned features: push notifications for turn prompts and roll requests, offline character
@@ -203,6 +238,7 @@ background session persistence. Built against the existing SignalR and REST API 
 backend changes required.
 
 **Technology decision: Flutter.**
+
 - Single codebase for both iOS and Android.
 - Dart is close enough to TypeScript that the learning curve is shallow.
 - Flutter compiles to native ARM — smooth animations and haptics without a JS bridge.
@@ -218,33 +254,71 @@ Planned for after the main app (desktop wrapper + internet tunnel, both now deli
 stabilises and real player feedback is available.
 
 ### Automatic Folder Watching
+
 Add a filesystem watcher that detects new or changed files in registered folders and triggers re-indexing without manual scans.
 
 ### Advanced PDF Layout Parsing
+
 Handle multi-column layouts, tables, sidebars, and complex formatting for more accurate text extraction from rulebooks.
 
 ### Multi-Turn AI Memory
+
 Persistent AI memory across sessions beyond what is stored in campaign state - long-term NPC relationship tracking, world knowledge graphs, and player preference learning.
 
 ### Session Export and Replay
+
 Export full session logs, event history, and summaries in a portable format for archival or sharing.
 
 ---
 
 ## Priority 4 - Exploratory / Long-Term
 
-### Reranking in RAG Pipeline
-Add a reranking step after initial vector retrieval to improve context relevance for AI prompts.
+### Query Decomposition (Agentic Retrieval)
+
+Complex multi-part questions (e.g. "If a Level 3 Wizard casts Misty Step as a bonus action, can they
+cast Fireball with their main action?") fail to surface the specific rule chunk because keyword/vector
+scoring spreads across all concepts in the question rather than focusing on the key constraint.
+Diagnosed via the Misty Step/Fireball test: the correct chunk (PHB p.184, "Bonus Action" spellcasting
+restriction — "You can't cast another spell during the same turn, except for a cantrip with a casting
+time of 1 action") is retrievable via a targeted diagnostic query but missed by the natural-language
+question. Fix: decompose complex questions into sub-queries before retrieval, retrieve separately, then
+combine results. This is the agentic RAG approach — exposing `retrieve_rules()`, `retrieve_scene()`, and
+`get_character_state()` as tool calls the AI DM can invoke inside `AiRuntimeService`/`PlayerActionService`,
+keeping agentic latency out of simple rule-question queries.
+
+### Stat Block Retrieval Follow-ups
+
+Follow-ups to the stat block chunker: (1) **Cross-page stat blocks** — chunking is per page, so a block that
+runs onto the next page is cut there and its continuation (no header) is treated as prose; carry an open stat
+block across the page boundary in `DocumentImportJob`. (2) **Use `ChunkType`** — `stat-block` chunks are stored
+but retrieval ignores the type; boost them (or filter to them) for creature questions such as "what are the
+stats of a giant crocodile", and consider showing the creature name in citations. (3) **Name quality** — names
+come from OCR text, so some are noisy (`Co RELLON LARETHIAN ELF CLERIC OF`, `Yug0loths`) or lost entirely;
+a cleanup or lookup against the book's own monster index could fix them. (4) **Re-import tooling** — there is
+no "re-chunk this document" endpoint, so applying a chunking change means deleting and re-adding the document
+(which loses manual tags); a re-chunk-in-place job alongside `reembed` and `reocr` would avoid that.
+
+### Vector Column Dimension Fix (OpenAI 1536-dim Embeddings)
+
+The pgvector column is currently hardwired to `vector(768)` (matching `nomic-embed-text` and
+`text-embedding-3-small` at 768 dims). OpenAI's `text-embedding-3-small` produces 1536-dim vectors
+which require a column migration and full re-embed to use. The startup compatibility check already
+blocks mismatched providers gracefully. Unblocks full OpenAI embedding quality for RAG retrieval.
+Migration path: add `EmbeddingV2 vector(1536)` column alongside existing, re-embed into it, swap
+search path, drop old column — or manual `ALTER TABLE` + re-embed via the existing reindex endpoints.
 
 ### Deterministic Adventure Outline Templates
+
 Reduce token cost and improve consistency in adventure generation by combining LLM calls with structured outline templates.
 
 ### Plugin / Extension System
+
 Allow community-contributed rulesets, character sheet layouts, and AI prompt templates.
 
 ### Multi-Language Support
+
 Localize the UI and support non-English source documents.
 
 ---
 
-*Last updated: 2026-10-04 — source-specific character import adapters (D&D Beyond URL+file, Foundry VTT 5e/PF2e, Roll20, Pathbuilder 2e, Generic VTT) delivered and merged to `dev` via PR #15; the P2 items "D&D Beyond / VTT Integration" and "Pathbuilder 2e Character Import" moved to Recently Delivered. Earlier (2026-10-04): in-app "Report a bug" feedback feature delivered and merged to `dev` (moved from In Progress to Recently Delivered). Earlier (2026-10-01): added the feedback feature as an In Progress item. Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter.*
+_Last updated: 2026-10-11 — structured stat block chunker delivered (RAG item 11; follow-ups added to P4). Earlier (2026-10-11): RAG pipeline optimization delivered (items 1–10: visibility fix, source priority, ruleset normalization, scoring, retrieval limits, dedup, OCR cleanup, heading-aware chunking, Postgres integration tests, cross-encoder reranking with Cohere and Ollama LLM-judge providers); "Reranking in RAG Pipeline" removed from P4 (delivered); query decomposition (agentic retrieval) and vector column dimension fix added to P4. Earlier (2026-10-04): source-specific character import adapters (D&D Beyond URL+file, Foundry VTT 5e/PF2e, Roll20, Pathbuilder 2e, Generic VTT) delivered and merged to `dev` via PR #15; the P2 items "D&D Beyond / VTT Integration" and "Pathbuilder 2e Character Import" moved to Recently Delivered. Earlier (2026-10-04): in-app "Report a bug" feedback feature delivered and merged to `dev` (moved from In Progress to Recently Delivered). Earlier (2026-10-01): added the feedback feature as an In Progress item. Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter._

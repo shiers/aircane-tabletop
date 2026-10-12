@@ -67,6 +67,7 @@ async function mountDetail(adventures: CampaignAdventure[]) {
     routes: [
       { path: '/campaigns', name: 'campaigns', component: Stub },
       { path: `/campaigns/:campaignId`, name: 'campaign-detail', component: CampaignDetail, props: true },
+      { path: '/adventures', name: 'adventures', component: Stub },
       { path: '/adventures/generate', name: 'adventure-generate', component: AdventureGenerateView },
       { path: '/adventures/:adventureId/review', name: 'adventure-review', component: AdventureReviewView, props: true },
       { path: '/adventures/solo/:sessionId', name: 'adventure-solo', component: Stub },
@@ -247,7 +248,7 @@ describe('Adventure Forge and review screen with a campaign', () => {
     expect(router.currentRoute.value.fullPath).toBe(`/campaigns/${CAMPAIGN_ID}`)
   })
 
-  it('Back on the review screen returns to the Forge for an adventure without a campaign', async () => {
+  it('Back on the review screen returns to the Adventure Forge list for an adventure without a campaign', async () => {
     const { wrapper, router } = await mountDetail([])
     vi.mocked(genApi.getAdventureDraft).mockResolvedValue({
       id: 'adv-1', title: 'T', status: 'Draft', campaignId: null, createdAt: '', updatedAt: '',
@@ -258,6 +259,6 @@ describe('Adventure Forge and review screen with a campaign', () => {
     await wrapper.findAll('button').find((b) => b.text().includes('Back'))!.trigger('click')
     await flushPromises()
 
-    expect(router.currentRoute.value.path).toBe('/adventures/generate')
+    expect(router.currentRoute.value.path).toBe('/adventures')
   })
 })

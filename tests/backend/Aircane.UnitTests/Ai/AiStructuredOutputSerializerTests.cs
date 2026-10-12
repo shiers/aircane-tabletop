@@ -151,3 +151,62 @@ public class AiStructuredOutputSerializerTests
         Assert.Contains(result.Errors, e => e.Contains("Clue ID is required"));
     }
 }
+
+/// <summary>Models that wrap, pad, or mistype their JSON must still produce a usable response.</summary>
+public class AiStructuredOutputSerializerResilienceTests
+{
+    private const string Valid = """{ "narration": "You step inside.", "proposedActions": [ { "type": "revealClue", "clueId": "clue-1" } ] }""";
+
+    private static void AssertParsed(string input)
+    {
+        var output = AiStructuredOutputSerializer.Deserialize(input)!;
+        Assert.Equal("You step inside.", output.Narration);
+        Assert.Equal("clue-1", Assert.Single(output.ProposedActions).ClueId);
+    }
+
+    [Fact]
+    public void MarkdownJsonFence_IsStripped() => AssertParsed("```json\n" + Valid + "\n```");
+
+    [Fact]
+    public void BareMarkdownFence_IsStripped() => AssertParsed("```\n" + Valid + "\n```");
+
+    [Fact]
+    public void ProseBeforeAndAfter_IsIgnored() => AssertParsed("Sure! Here is the response:\n" + Valid + "\nLet me know if you want changes.");
+
+    [Fact]
+    public void ProseAroundAFencedBlock_IsIgnored() => AssertParsed("Here you go:\n```json\n" + Valid + "\n```\nEnjoy!");
+
+    [Fact]
+    public void BracesInsideStringsAndProse_DoNotConfuseExtraction()
+        => AssertParsed("I'll use {curly} words first. " + """{ "narration": "You step inside.", "privateDmNote": "a } stray { brace \" here", "proposedActions": [ { "type": "revealClue", "clueId": "clue-1" } ] }""" + " trailing {");
+
+    [Fact]
+    public void Narration_ReturnedAsObject_BecomesItsJsonText()
+    {
+        var output = AiStructuredOutputSerializer.Deserialize("""{ "narration": { "scene": "A dark hall", "mood": "tense" } }""")!;
+
+        Assert.Equal("""{"scene":"A dark hall","mood":"tense"}""", output.Narration);
+    }
+
+    [Fact]
+    public void TextFieldsReturnedAsObjectsOrArrays_AreCoerced()
+    {
+        var output = AiStructuredOutputSerializer.Deserialize("""
+            { "narration": "x", "privateDmNote": ["a","b"],
+              "proposedActions": [ { "type": "updateNpc", "npcId": "npc-a", "notes": { "trust": "high" } },
+                                   { "type": "startEncounter", "combatPayloadJson": { "combatants": [] } } ] }
+            """)!;
+
+        Assert.Equal("""["a","b"]""", output.PrivateDmNote);
+        Assert.Equal("""{"trust":"high"}""", output.ProposedActions[0].Notes);
+        Assert.Equal("""{"combatants":[]}""", output.ProposedActions[1].CombatPayloadJson);
+    }
+
+    [Fact]
+    public void NumbersAndBooleansInTextFields_AreCoerced()
+        => Assert.Equal("42", AiStructuredOutputSerializer.Deserialize("""{ "narration": 42 }""")!.Narration);
+
+    [Fact]
+    public void ProseWithNoJsonAtAll_StillThrows()
+        => Assert.ThrowsAny<JsonException>(() => AiStructuredOutputSerializer.Deserialize("I could not do that."));
+}

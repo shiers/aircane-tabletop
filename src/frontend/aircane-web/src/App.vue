@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import AppLayout from '@/shared/components/AppLayout.vue'
 import OllamaBanner from '@/shared/components/OllamaBanner.vue'
 import SetupWizard from '@/features/setup/SetupWizard.vue'
+import { useAdventureGenerationStore } from '@/features/adventure-generation/store'
 import GenerationToast from '@/features/adventure-generation/components/GenerationToast.vue'
 import { useSetupWizard } from '@/features/setup/composables/useSetupWizard'
 import { isDesktop, listen, TauriEvents } from '@/shared/tauri/bridge'
@@ -18,7 +19,13 @@ const { openFeedback } = useFeedbackModal()
 const wizardVisible = ref(false)
 const { checkShouldShow } = useSetupWizard()
 
+// Adventure generation runs on the server. Listen for its progress events for the whole life of the
+// app (not per page), so the toast updates wherever the user has navigated to.
+const generation = useAdventureGenerationStore()
+
 onMounted(async () => {
+  void generation.initialize()
+
   // Decide whether to show the setup wizard. Fails safe to "don't show".
   wizardVisible.value = await checkShouldShow()
 
@@ -53,6 +60,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  void generation.disconnect()
   unlisteners.forEach((fn) => fn())
 })
 </script>

@@ -15,7 +15,7 @@ import type { GenerateAdventureRequest } from '../api'
 
 const hub = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => void>(),
-  connection: { on: vi.fn(), onreconnected: vi.fn(), start: vi.fn(), invoke: vi.fn(), stop: vi.fn() },
+  connection: { on: vi.fn(), onreconnected: vi.fn(), onclose: vi.fn(), start: vi.fn(), invoke: vi.fn(), stop: vi.fn() },
 }))
 
 vi.mock('@microsoft/signalr', () => ({

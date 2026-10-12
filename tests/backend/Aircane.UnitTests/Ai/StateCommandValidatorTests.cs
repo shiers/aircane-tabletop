@@ -27,8 +27,9 @@ public class StateCommandValidatorTests
     }
 
     [Fact]
-    public void RequestRoll_MissingCharacterId_ReturnsError()
+    public void RequestRoll_MissingCharacterId_IsAllowed()
     {
+        // Players may use an external character sheet, so no linked character is fine.
         var validator = new RequestRollValidator();
         var action = new AiProposedAction
         {
@@ -37,13 +38,11 @@ public class StateCommandValidatorTests
             Formula = "1d20+5",
         };
 
-        var error = validator.Validate(action);
-        Assert.NotNull(error);
-        Assert.Contains("CharacterId", error);
+        Assert.Null(validator.Validate(action));
     }
 
     [Fact]
-    public void RequestRoll_EmptyGuidCharacterId_ReturnsError()
+    public void RequestRoll_EmptyGuidCharacterId_IsAllowed()
     {
         var validator = new RequestRollValidator();
         var action = new AiProposedAction
@@ -54,9 +53,7 @@ public class StateCommandValidatorTests
             Formula = "1d20+5",
         };
 
-        var error = validator.Validate(action);
-        Assert.NotNull(error);
-        Assert.Contains("CharacterId", error);
+        Assert.Null(validator.Validate(action));
     }
 
     [Fact]

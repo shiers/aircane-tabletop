@@ -321,6 +321,50 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
     }
 
     [Fact]
+    public async Task PlayerActionService_NoCharacter_PromptTellsTheAiNotToUseStatsAndToWaitForTheResult()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I sneak past"));
+
+        var system = string.Join("\n", _aiProvider.LastMessages.Where(m => m.Role == "system").Select(m => m.Content));
+        Assert.Contains("NO CHARACTER ATTACHED", system);
+        Assert.Contains("Roll Dexterity (Stealth)", system);
+        Assert.Contains("Do NOT apply modifiers", system);
+        Assert.Contains("wait for the player's next message", system);
+    }
+
+    [Fact]
+    public async Task PlayerActionService_WithCharacter_PromptHasNoNoCharacterSection()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(
+            new PlayerActionRequest(session.Id, campaign.Id, Guid.NewGuid(), "I sneak past"));
+
+        var system = string.Join("\n", _aiProvider.LastMessages.Where(m => m.Role == "system").Select(m => m.Content));
+        Assert.DoesNotContain("NO CHARACTER ATTACHED", system);
+    }
+
+    [Fact]
+    public async Task PlayerActionService_RequestRollWithoutCharacter_IsAppliedNotRejected()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+        _aiProvider.NextOutput = new AiStructuredOutput
+        {
+            Narration = "The guard turns. Roll Dexterity (Stealth) against DC 14.",
+            ProposedActions = [new AiProposedAction { Type = AiActionType.RequestRoll, Label = "Dexterity (Stealth)", Formula = "1d20", Dc = 14 }],
+        };
+
+        var response = await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I sneak past"));
+
+        Assert.Equal("The guard turns. Roll Dexterity (Stealth) against DC 14.", response.Narration);
+        var roll = Assert.Single(response.ProposedActions);
+        Assert.Equal(StateCommandOutcome.Applied, roll.Outcome);
+        Assert.Null(roll.ErrorMessage);
+    }
+
+    [Fact]
     public async Task PlayerActionService_WithCharacter_StillTagsTheUserMessage()
     {
         var (campaign, session) = await SeedCampaignAsync();

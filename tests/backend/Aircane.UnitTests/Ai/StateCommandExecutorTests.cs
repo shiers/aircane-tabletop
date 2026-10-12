@@ -89,7 +89,7 @@ public class StateCommandExecutorTests : IDisposable
     // ── Validation Tests ──────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ExecuteAsync_RequestRoll_MissingCharacterId_ReturnsValidationFailed()
+    public async Task ExecuteAsync_RequestRoll_MissingCharacterId_IsAllowed()
     {
         var (campaign, session) = await SeedCampaignAndSessionAsync();
         var context = CreateContext(campaign, session);
@@ -103,9 +103,9 @@ public class StateCommandExecutorTests : IDisposable
 
         var result = await _sut.ExecuteAsync(command, context);
 
-        Assert.False(result.Success);
-        Assert.Equal(StateCommandOutcome.ValidationFailed, result.Outcome);
-        Assert.Contains("CharacterId", result.ErrorMessage);
+        // Players may keep their character in another tool, so a roll needs no linked character.
+        Assert.True(result.Success);
+        Assert.Equal(StateCommandOutcome.Applied, result.Outcome);
     }
 
     [Fact]

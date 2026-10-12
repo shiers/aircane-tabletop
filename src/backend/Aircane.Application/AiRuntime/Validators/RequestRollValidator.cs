@@ -11,8 +11,9 @@ public sealed class RequestRollValidator : IStateCommandValidator
 
     public string? Validate(AiProposedAction action)
     {
-        if (action.CharacterId is null || action.CharacterId == Guid.Empty)
-            return "RequestRoll requires a valid CharacterId.";
+        // CharacterId is optional: players may track their character outside Aircane (pen and paper,
+        // D&D Beyond, Pathbuilder...). Without one the roll is simply asked for in the narration and
+        // the player reports the result in their next action.
 
         if (string.IsNullOrWhiteSpace(action.Label))
             return "RequestRoll requires a Label describing the roll.";

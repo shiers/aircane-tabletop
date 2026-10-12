@@ -384,6 +384,12 @@ public sealed class PlayerActionService : IPlayerActionService
             messages.Add(AiMessage.System(stateContext));
         }
 
+        // No character attached: the player runs their character elsewhere, so do not use stats.
+        if (request.CharacterId == Guid.Empty)
+        {
+            messages.Add(AiMessage.System(BuildNoCharacterInstructions()));
+        }
+
         // Solo adventure: how to drive the adventure (action schema) + where the player is in it
         if (!string.IsNullOrWhiteSpace(adventureContext))
         {
@@ -410,6 +416,22 @@ public sealed class PlayerActionService : IPlayerActionService
         messages.Add(AiMessage.User(userMessage));
 
         return messages;
+    }
+
+    /// <summary>
+    /// Added when the session has no linked character. The player keeps their character in another
+    /// tool, so the AI must ask for rolls in words and wait for the player to report the result.
+    /// </summary>
+    public static string BuildNoCharacterInstructions()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("NO CHARACTER ATTACHED:");
+        sb.AppendLine("The player has no character in this app; they play it with their own tools and report results to you.");
+        sb.AppendLine("- When a roll is needed, say exactly what to roll (e.g. \"Roll Dexterity (Stealth)\") and the DC if there is one.");
+        sb.AppendLine("- You may include a RequestRoll proposed action (use characterId null) so the request is recorded.");
+        sb.AppendLine("- Do NOT apply modifiers, quote the character's stats, or assume proficiencies, HP or equipment.");
+        sb.AppendLine("- Stop after asking for the roll. Do not narrate its outcome: wait for the player's next message (e.g. \"I rolled a 14\") and then resolve it.");
+        return sb.ToString();
     }
 
     /// <summary>

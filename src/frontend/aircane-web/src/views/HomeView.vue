@@ -32,8 +32,8 @@ const features = [
   },
   {
     icon: 'dice',
-    title: 'Dice Roller',
-    description: 'Full expression parser — d20, NdM, advantage, disadvantage, modifiers.',
+    title: 'Join Session',
+    description: 'Host or join a play session, with a full dice expression parser built in.',
     to: '/sessions',
     gradient: 'from-amber-600/20 to-orange-600/20',
     iconColor: 'text-amber-400',

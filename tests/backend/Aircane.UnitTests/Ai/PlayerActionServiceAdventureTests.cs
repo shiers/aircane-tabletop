@@ -310,6 +310,38 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
     }
 
     [Fact]
+    public async Task PlayerActionService_ActiveAdventure_PromptEnforcesSkillChecks()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I climb the wall"));
+
+        var system = SystemPrompt();
+        Assert.Contains("MANDATORY ROLL TRIGGERS", system);
+        foreach (var trigger in new[] { "climbing, jumping, swimming", "hiding, sneaking", "persuasion, deception, intimidation",
+                     "detecting traps", "identifying magic", "Any combat action" })
+            Assert.Contains(trigger, system);
+        Assert.Contains("NEVER auto-succeed", system);
+        Assert.Contains("NARRATE THEN ROLL", system);
+        Assert.Contains("Wait for the player to report the result", system);
+        Assert.Contains("Roll Athletics (DC 12)", system);                  // the correct example
+        Assert.Contains("Easy task: DC 8", system);
+        Assert.Contains("Nearly impossible: DC 24", system);
+        Assert.Contains("frost-covered wall in darkness = DC 14", system);
+        Assert.Contains("Do not default to the lowest DC", system);
+    }
+
+    [Fact]
+    public async Task PlayerActionService_NoAdventure_PromptDoesNotCarryTheAdventureSkillCheckRules()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session));
+
+        Assert.DoesNotContain("MANDATORY ROLL TRIGGERS", SystemPrompt());
+    }
+
+    [Fact]
     public async Task PlayerActionService_NoActiveAdventure_PromptHasNoAdventureSection()
     {
         var (campaign, session) = await SeedCampaignAsync();

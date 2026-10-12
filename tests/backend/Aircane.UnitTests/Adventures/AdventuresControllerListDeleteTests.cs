@@ -26,10 +26,9 @@ public sealed class AdventuresControllerListDeleteTests : IDisposable
         // Create controller with minimal dependencies (only dbContext and logger needed for list/delete)
         _controller = new AdventuresController(
             validator: null!,
-            generationService: null!,
+            jobQueue: null!,
             retrievalService: null!,
             adventureIndexingService: null!,
-            partyAnalysisService: null!,
             dbContext: _db,
             logger: NullLogger<AdventuresController>.Instance);
     }

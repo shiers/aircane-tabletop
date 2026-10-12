@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useAdventureGenerationStore } from './store'
 import {
-  generateAdventure,
   type GenerateAdventureRequest,
-  type GenerateAdventureResponse,
   type AdventureMode,
 } from './api'
 import ModeToggle from './components/ModeToggle.vue'
@@ -22,9 +21,11 @@ const explorationRatio = ref(33)
 const roleplayRatio = ref(33)
 const setting = ref('')
 
-const loading = ref(false)
+const store = useAdventureGenerationStore()
+// True while the request is being posted or a generation job is running (form locked either way).
+const submitting = ref(false)
+const loading = computed(() => submitting.value || store.isGenerating)
 const error = ref<string | null>(null)
-const result = ref<GenerateAdventureResponse | null>(null)
 
 const toneOptions = ['dark', 'lighthearted', 'epic', 'horror', 'comedic', 'mysterious', 'heroic']
 const lengthOptions = ['one-shot', 'short', 'medium', 'long']
@@ -52,9 +53,9 @@ function adjustRoleplay() {
 watch([combatRatio, explorationRatio], adjustRoleplay)
 
 async function submitForm() {
-  loading.value = true
+  if (loading.value) return
+  submitting.value = true
   error.value = null
-  result.value = null
 
   const request: GenerateAdventureRequest = {
     mode: mode.value,
@@ -73,7 +74,7 @@ async function submitForm() {
   }
 
   try {
-    result.value = await generateAdventure(request)
+    await store.start(request)
   } catch (e: any) {
     const data = e?.response?.data
     if (data?.errors) {
@@ -83,7 +84,7 @@ async function submitForm() {
       error.value = data?.detail ?? e?.message ?? 'Failed to start adventure generation.'
     }
   } finally {
-    loading.value = false
+    submitting.value = false
   }
 }
 </script>
@@ -105,14 +106,18 @@ async function submitForm() {
         </div>
       </div>
 
-      <!-- Success result -->
+      <!-- Generation in progress (also shown when returning to this page mid-generation) -->
       <output
-        v-if="result"
-        class="block rounded-md border border-green-800 bg-green-950 px-4 py-3 text-green-300"
+        v-if="store.isGenerating"
+        class="block rounded-md border border-aircane-700 bg-surface-850 px-4 py-3 text-gray-200"
+        data-testid="forge-progress"
       >
-        <p class="font-medium">Adventure generation started!</p>
-        <p class="mt-1 text-sm">Job ID: {{ result.jobId }}</p>
-        <p class="mt-1 text-sm">{{ result.message }}</p>
+        <p class="font-medium">⚔ Generating your adventure...</p>
+        <p class="mt-1 text-sm text-gray-300" data-testid="forge-progress-message">{{ store.message }}</p>
+        <div class="mt-2 h-2 overflow-hidden rounded bg-gray-800">
+          <div class="h-full bg-aircane-500 transition-all duration-500" :style="{ width: store.percentComplete + '%' }" />
+        </div>
+        <p class="mt-1 text-right text-xs text-gray-400">{{ store.percentComplete }}%</p>
       </output>
 
       <!-- Error banner -->
@@ -127,7 +132,10 @@ async function submitForm() {
 
       <form
         @submit.prevent="submitForm"
-        class="forge-panel space-y-6 rounded-md bg-cover bg-left-top p-6"
+        class="forge-panel space-y-6 rounded-md bg-cover bg-left-top p-6 transition-opacity"
+        :class="{ 'opacity-50': loading }"
+        :aria-busy="loading"
+        data-testid="forge-form"
         v-bg-asset="{ url: '/assets/adventure-forge/adventure-forge-panel-background.png', fallback: '#0d0d2a', position: 'left top' }"
       >
         <!-- Mode selector -->

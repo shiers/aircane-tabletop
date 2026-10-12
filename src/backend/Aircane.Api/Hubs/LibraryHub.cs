@@ -21,6 +21,21 @@ public sealed class LibraryHub : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, "library");
     }
 
+    /// <summary>Group that receives adventure-generation progress events.</summary>
+    public const string AdventureGenerationGroup = "adventure-generation";
+
+    /// <summary>
+    /// Called by clients to subscribe to adventure-generation progress events.
+    /// </summary>
+    public Task JoinAdventureGenerationGroup()
+        => Groups.AddToGroupAsync(Context.ConnectionId, AdventureGenerationGroup);
+
+    /// <summary>
+    /// Called by clients to stop receiving adventure-generation progress events.
+    /// </summary>
+    public Task LeaveAdventureGenerationGroup()
+        => Groups.RemoveFromGroupAsync(Context.ConnectionId, AdventureGenerationGroup);
+
     /// <summary>
     /// Called by clients to unsubscribe from library import events.
     /// Removes the caller from the shared "library" group.

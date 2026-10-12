@@ -18,7 +18,8 @@ public interface IAdventureGenerationService
     Task<GeneratedAdventureDto> GenerateAsync(
         GenerateAdventureRequest request,
         PartyAnalysisResult? partyAnalysis,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        Action<string, int>? onProgress = null);
 
     /// <summary>
     /// Regenerates only the pitch stage for an existing adventure.

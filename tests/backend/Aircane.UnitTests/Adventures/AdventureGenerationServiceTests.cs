@@ -68,6 +68,18 @@ public sealed class AdventureGenerationServiceTests : IDisposable
     // ── Full Pipeline Tests ───────────────────────────────────────────────────
 
     [Fact]
+    public async Task GenerateAsync_reports_each_stage_in_order_with_its_percentage()
+    {
+        var reported = new List<(string Stage, int Percent)>();
+
+        await _service.GenerateAsync(CreateRequest(), CreatePartyAnalysis(), default, (s, p) => reported.Add((s, p)));
+
+        Assert.Equal(
+            [("pitch", 20), ("outline", 35), ("scenes", 55), ("npcs", 70), ("encounters", 82), ("clues", 92)],
+            reported);
+    }
+
+    [Fact]
     public async Task GenerateAsync_runs_all_stages_and_returns_complete_adventure()
     {
         var request = CreateRequest();

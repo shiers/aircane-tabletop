@@ -1,6 +1,7 @@
 using Aircane.Api.Authorization;
 using Aircane.Api.Extensions;
 using Aircane.Application.Abstractions;
+using Aircane.Application.Abstractions.BackgroundJobs;
 using Aircane.Application.DTOs.Adventures;
 using Aircane.Domain.Entities;
 using Aircane.Infrastructure.Persistence;
@@ -21,27 +22,24 @@ namespace Aircane.Api.Controllers;
 public sealed class AdventuresController : ControllerBase
 {
     private readonly IValidator<GenerateAdventureRequest> _validator;
-    private readonly IAdventureGenerationService _generationService;
     private readonly IAdventureRetrievalService _retrievalService;
     private readonly IAdventureIndexingService _adventureIndexingService;
-    private readonly IPartyAnalysisService _partyAnalysisService;
+    private readonly IBackgroundJobQueue _jobQueue;
     private readonly AircaneDbContext _dbContext;
     private readonly ILogger<AdventuresController> _logger;
 
     public AdventuresController(
         IValidator<GenerateAdventureRequest> validator,
-        IAdventureGenerationService generationService,
         IAdventureRetrievalService retrievalService,
         IAdventureIndexingService adventureIndexingService,
-        IPartyAnalysisService partyAnalysisService,
+        IBackgroundJobQueue jobQueue,
         AircaneDbContext dbContext,
         ILogger<AdventuresController> logger)
     {
         _validator = validator;
-        _generationService = generationService;
         _retrievalService = retrievalService;
         _adventureIndexingService = adventureIndexingService;
-        _partyAnalysisService = partyAnalysisService;
+        _jobQueue = jobQueue;
         _dbContext = dbContext;
         _logger = logger;
     }
@@ -149,14 +147,16 @@ public sealed class AdventuresController : ControllerBase
     }
 
     /// <summary>
-    /// Starts an adventure generation pipeline. Runs the full staged generation
-    /// and returns the generated adventure draft.
+    /// Queues an adventure generation job and returns immediately. Progress and the result are
+    /// pushed over SignalR (<c>AdventureGenerationProgress</c> / <c>Completed</c> / <c>Failed</c>);
+    /// the finished adventure is then fetched with <c>GET /api/adventures/{id}</c>.
     /// </summary>
     [HttpPost("generate")]
-    [ProducesResponseType(typeof(GeneratedAdventureDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(GenerateAdventureResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GenerateAdventure(
         [FromBody] GenerateAdventureRequest request,
+        [FromQuery] Guid? campaignId,
         CancellationToken cancellationToken)
     {
         var validationResult = await _validator.ValidateAsync(request, cancellationToken);
@@ -169,25 +169,11 @@ public sealed class AdventuresController : ControllerBase
             "Adventure generation requested. Mode={Mode}, Ruleset={Ruleset}, PartySize={PartySize}, Level={Level}",
             request.Mode, request.Ruleset, request.PartySize, request.AverageLevel);
 
-        // Run party analysis if character IDs are provided
-        PartyAnalysisResult? partyAnalysis = null;
-        if (request.CharacterIds is { Count: > 0 })
-        {
-            try
-            {
-                partyAnalysis = await _partyAnalysisService.AnalyzePartyAsync(
-                    request.CharacterIds, cancellationToken);
-            }
-            catch (ArgumentException ex)
-            {
-                _logger.LogWarning(ex, "Party analysis failed, proceeding without it");
-            }
-        }
+        var job = new AdventureGenerationJobMessage(request, campaignId);
+        await _jobQueue.EnqueueAsync(job, cancellationToken);
 
-        // Run the full generation pipeline
-        var result = await _generationService.GenerateAsync(request, partyAnalysis, cancellationToken);
-
-        return Ok(result);
+        return Accepted(new GenerateAdventureResponse(
+            job.JobId, "Queued", "Adventure generation started."));
     }
 
     /// <summary>

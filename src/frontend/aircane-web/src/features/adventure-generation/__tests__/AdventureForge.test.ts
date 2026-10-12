@@ -66,6 +66,8 @@ async function setup(startAt = '/adventures/generate') {
       { path: '/adventures/generate', name: 'adventure-generate', component: AdventureGenerateView },
       { path: '/adventures/:adventureId/review', name: 'adventure-review', component: Stub, props: true },
       { path: '/library', name: 'library', component: Stub },
+      { path: '/adventures', name: 'adventures', component: Stub },
+      { path: '/campaigns/:campaignId', name: 'campaign-detail', component: Stub, props: true },
     ],
   })
   await router.push(startAt)
@@ -128,7 +130,7 @@ describe('Adventure generation (async, SignalR progress)', () => {
     expect(wrapper.find('[data-testid="toast-percent"]').text()).toBe('55%')
   })
 
-  it('AdventureForge_ToastNavigatesToReview_OnCompleted', async () => {
+  it('AdventureForge_Toast_LinksToUnassignedList_WhenNoCampaign', async () => {
     const { wrapper, router, store } = await setup('/library')
     await store.start(REQUEST)
 
@@ -142,7 +144,7 @@ describe('Adventure generation (async, SignalR progress)', () => {
 
     await link.trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/adventures/adv-1/review')
+    expect(router.currentRoute.value.fullPath).toBe('/adventures')
     expect(toast(wrapper).exists()).toBe(false)
   })
 

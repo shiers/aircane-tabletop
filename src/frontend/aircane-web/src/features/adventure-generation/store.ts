@@ -45,6 +45,8 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
   const error = ref<string | null>(null)
   /** Whether the toast is showing. Dismissing hides it without forgetting the result. */
   const toastVisible = ref(false)
+  /** The campaign the current job is generating for; null when it will land in the unassigned list. */
+  const jobCampaignId = ref<string | null>(null)
 
   const isGenerating = computed(() => status.value === 'generating')
 
@@ -69,6 +71,7 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
 
   function adopt(id: string): void {
     jobId.value = id
+    jobCampaignId.value = null // unknown for a job we did not start
     status.value = 'generating'
     percentComplete.value = 0
     stage.value = ''
@@ -196,6 +199,7 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
     }
 
     status.value = 'generating'
+    jobCampaignId.value = lastCampaignId
     stage.value = ''
     percentComplete.value = 0
     message.value = 'Starting...'
@@ -248,6 +252,7 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
     adventureTitle,
     error,
     toastVisible,
+    campaignId: jobCampaignId,
     isGenerating,
     initialize,
     start,

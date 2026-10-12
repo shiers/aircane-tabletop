@@ -84,6 +84,11 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/adventures',
+      name: 'adventures',
+      component: () => import('@/features/adventure-generation/AdventuresView.vue'),
+    },
+    {
       path: '/adventures/generate',
       name: 'adventure-generate',
       component: () => import('@/features/adventure-generation/AdventureGenerateView.vue'),

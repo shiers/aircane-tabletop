@@ -26,4 +26,19 @@ public sealed record AdventureListItemDto
 
     /// <summary>When the adventure was last updated.</summary>
     public required DateTime UpdatedAt { get; init; }
+
+    /// <summary>The campaign this adventure belongs to; null when unassigned.</summary>
+    public Guid? CampaignId { get; init; }
+
+    /// <summary>"Solo" or "Group"; null if the stored generation request could not be read.</summary>
+    public string? Mode { get; init; }
+
+    /// <summary>"one-shot", "short", ...; null if the stored generation request could not be read.</summary>
+    public string? Length { get; init; }
+
+    /// <summary>Average party level; null if the stored generation request could not be read.</summary>
+    public int? AverageLevel { get; init; }
 }
+
+/// <summary>Body of <c>PATCH /api/adventures/{id}/assign</c>.</summary>
+public sealed record AssignAdventureRequest(Guid CampaignId);

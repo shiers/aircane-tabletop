@@ -45,14 +45,16 @@ public sealed class AdventuresController : ControllerBase
     }
 
     /// <summary>
-    /// Lists all adventures with optional status filter.
-    /// Returns an empty array when no adventures exist.
+    /// Lists adventures with optional filters. <c>status</c> narrows by status; <c>unassigned=true</c>
+    /// returns only adventures that belong to no campaign, newest first (otherwise the order is
+    /// most recently updated first). Returns an empty array when nothing matches.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<AdventureListItemDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> ListAdventures(
         [FromQuery] GeneratedAdventureStatus? status,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default,
+        [FromQuery] bool unassigned = false)
     {
         var query = _dbContext.GeneratedAdventures.AsNoTracking().AsQueryable();
 
@@ -61,21 +63,90 @@ public sealed class AdventuresController : ControllerBase
             query = query.Where(a => a.Status == status.Value);
         }
 
-        var adventures = await query
-            .OrderByDescending(a => a.UpdatedAt)
-            .Select(a => new AdventureListItemDto
+        if (unassigned)
+        {
+            query = query.Where(a => a.CampaignId == null);
+        }
+
+        var ordered = unassigned
+            ? query.OrderByDescending(a => a.CreatedAt)
+            : query.OrderByDescending(a => a.UpdatedAt);
+
+        var rows = await ordered
+            .Select(a => new
             {
-                Id = a.Id,
-                Title = a.Title,
-                Status = a.Status.ToString(),
-                Ruleset = a.Ruleset,
-                GameSystem = a.GameSystem,
-                CreatedAt = a.CreatedAt,
-                UpdatedAt = a.UpdatedAt,
+                a.Id, a.Title, a.Status, a.Ruleset, a.GameSystem, a.CampaignId,
+                a.RequestJson, a.CreatedAt, a.UpdatedAt,
             })
             .ToListAsync(cancellationToken);
 
-        return Ok(adventures);
+        return Ok(rows.Select(r => ToListItem(
+            r.Id, r.Title, r.Status, r.Ruleset, r.GameSystem, r.CampaignId, r.RequestJson, r.CreatedAt, r.UpdatedAt)).ToList());
+    }
+
+    /// <summary>
+    /// Assigns an adventure to a campaign (moving it off the unassigned list). Returns the updated
+    /// adventure; 404 if the adventure or the campaign does not exist.
+    /// </summary>
+    [HttpPatch("{id:guid}/assign")]
+    [ProducesResponseType(typeof(AdventureListItemDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AssignCampaign(
+        Guid id,
+        [FromBody] AssignAdventureRequest request,
+        CancellationToken cancellationToken)
+    {
+        var adventure = await _dbContext.GeneratedAdventures.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+        if (adventure is null)
+            return NotFound(new ProblemDetails { Title = "Adventure not found", Status = StatusCodes.Status404NotFound });
+
+        if (!await _dbContext.Campaigns.AnyAsync(c => c.Id == request.CampaignId, cancellationToken))
+            return NotFound(new ProblemDetails { Title = "Campaign not found", Status = StatusCodes.Status404NotFound });
+
+        adventure.CampaignId = request.CampaignId;
+        adventure.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Adventure {AdventureId} assigned to campaign {CampaignId}", id, request.CampaignId);
+
+        return Ok(ToListItem(
+            adventure.Id, adventure.Title, adventure.Status, adventure.Ruleset, adventure.GameSystem,
+            adventure.CampaignId, adventure.RequestJson, adventure.CreatedAt, adventure.UpdatedAt));
+    }
+
+    /// <summary>
+    /// Builds a list item. Mode / length / level live in the stored generation request rather than
+    /// their own columns; an unreadable request just leaves them null.
+    /// </summary>
+    private static AdventureListItemDto ToListItem(
+        Guid id, string title, GeneratedAdventureStatus status, string ruleset, string gameSystem,
+        Guid? campaignId, string requestJson, DateTime createdAt, DateTime updatedAt)
+    {
+        GenerateAdventureRequest? request = null;
+        try
+        {
+            request = System.Text.Json.JsonSerializer.Deserialize<GenerateAdventureRequest>(
+                requestJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // leave the details null
+        }
+
+        return new AdventureListItemDto
+        {
+            Id = id,
+            Title = title,
+            Status = status.ToString(),
+            Ruleset = ruleset,
+            GameSystem = gameSystem,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt,
+            CampaignId = campaignId,
+            Mode = request?.Mode,
+            Length = request?.Length,
+            AverageLevel = request?.AverageLevel,
+        };
     }
 
     /// <summary>

@@ -59,6 +59,8 @@ async function mountApp() {
       { path: '/adventures/generate', name: 'adventure-generate', component: AdventureGenerateView },
       { path: '/adventures/:adventureId/review', name: 'adventure-review', component: Stub, props: true },
       { path: '/library', name: 'library', component: Stub },
+      { path: '/adventures', name: 'adventures', component: Stub },
+      { path: '/campaigns/:campaignId', name: 'campaign-detail', component: Stub, props: true },
       { path: '/campaigns', name: 'campaigns', component: Stub },
     ],
   })

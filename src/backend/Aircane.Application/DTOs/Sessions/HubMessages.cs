@@ -207,3 +207,51 @@ public sealed record ImportStatusUpdatedNotification(
     string Status,
     int? PercentComplete,
     string? ErrorMessage);
+
+// ── Solo adventure events ────────────────────────────────────────────────────
+// For these notifications SessionId is the ADVENTURE session id (the run), not the play session
+// whose SignalR group the event is delivered to. Clients filter on it to ignore other runs.
+
+/// <summary>
+/// Broadcast when an adventure run moves to a new scene (AI-driven or host override).
+/// </summary>
+public sealed record AdventureSceneAdvancedNotification(
+    Guid SessionId,
+    string PreviousSceneId,
+    string NewSceneId,
+    string? Narration);
+
+/// <summary>
+/// Broadcast when the player discovers a clue (handout).
+/// </summary>
+public sealed record AdventureClueRevealedNotification(
+    Guid SessionId,
+    string ClueId,
+    string ClueName,
+    string Description);
+
+/// <summary>
+/// Broadcast when the player discovers a secret.
+/// </summary>
+public sealed record AdventureSecretRevealedNotification(
+    Guid SessionId,
+    string SecretId,
+    string SecretName,
+    string Description);
+
+/// <summary>
+/// Broadcast when an NPC's state changes (met, killed, new info revealed).
+/// </summary>
+public sealed record AdventureNpcUpdatedNotification(
+    Guid SessionId,
+    string NpcId,
+    string NpcName,
+    bool HasBeenMet,
+    bool IsAlive);
+
+/// <summary>
+/// Broadcast when the adventure run is completed.
+/// </summary>
+public sealed record AdventureCompletedNotification(
+    Guid SessionId,
+    string OutcomeNotes);

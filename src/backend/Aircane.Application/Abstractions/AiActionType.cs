@@ -60,4 +60,23 @@ public enum AiActionType
 
     /// <summary>Ask the player or DM a clarifying question before proceeding.</summary>
     AskClarifyingQuestion,
+
+    // ── Solo adventure execution ──────────────────────────────────────────────
+    // Applied to the campaign's active AdventureSession (not the campaign state snapshot).
+    // Appended after the existing values so persisted numeric values are unaffected.
+
+    /// <summary>Move the active adventure run to a connected scene.</summary>
+    AdvanceScene,
+
+    /// <summary>Record that the player discovered an adventure clue (handout).</summary>
+    RevealClue,
+
+    /// <summary>Record that the player discovered an adventure secret.</summary>
+    RevealSecret,
+
+    /// <summary>Update an adventure NPC's state (met, alive, info revealed, notes).</summary>
+    UpdateNpc,
+
+    /// <summary>End the active adventure run successfully.</summary>
+    CompleteAdventure,
 }

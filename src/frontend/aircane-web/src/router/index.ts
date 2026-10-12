@@ -83,6 +83,12 @@ const router = createRouter({
       component: () => import('@/features/adventure-generation/AdventureGenerateView.vue'),
     },
     {
+      path: '/adventures/solo/:sessionId',
+      name: 'adventure-solo',
+      component: () => import('@/features/adventures/AdventureSoloSession.vue'),
+      props: true,
+    },
+    {
       path: '/adventures/:adventureId/review',
       name: 'adventure-review',
       component: () => import('@/features/adventure-generation/AdventureReviewView.vue'),

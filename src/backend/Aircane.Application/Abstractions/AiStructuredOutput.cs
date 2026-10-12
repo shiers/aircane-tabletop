@@ -145,4 +145,40 @@ public sealed record AiProposedAction
     /// RollInitiative (an <c>initiative</c> map of combatantId -&gt; value). Null for other actions.
     /// </summary>
     public string? CombatPayloadJson { get; init; }
+
+    // ── Solo adventure actions (AdvanceScene, RevealClue, RevealSecret, UpdateNpc, CompleteAdventure) ──
+
+    /// <summary>
+    /// Target scene ID (e.g. <c>scene-3</c>) for AdvanceScene. A string, unlike
+    /// <see cref="TargetSceneId"/> (a GUID used by MoveScene), because generated scenes are
+    /// numbered <c>scene-N</c>.
+    /// </summary>
+    public string? SceneId { get; init; }
+
+    /// <summary>Transition narration for AdvanceScene. Null for other action types.</summary>
+    public string? Narration { get; init; }
+
+    /// <summary>Clue (handout) ID, e.g. <c>clue-2</c>, for RevealClue.</summary>
+    public string? ClueId { get; init; }
+
+    /// <summary>Secret ID, e.g. <c>secret-1</c>, for RevealSecret.</summary>
+    public string? SecretId { get; init; }
+
+    /// <summary>NPC ID, e.g. <c>npc-guard-captain</c>, for UpdateNpc.</summary>
+    public string? NpcId { get; init; }
+
+    /// <summary>For UpdateNpc: whether the player has now met the NPC. Null leaves it unchanged.</summary>
+    public bool? HasBeenMet { get; init; }
+
+    /// <summary>For UpdateNpc: whether the NPC is alive. Null leaves it unchanged.</summary>
+    public bool? IsAlive { get; init; }
+
+    /// <summary>For UpdateNpc: an info/dialogue hook that has now been revealed.</summary>
+    public string? RevealedInfoId { get; init; }
+
+    /// <summary>For UpdateNpc: notes about the NPC surfaced to the player.</summary>
+    public string? Notes { get; init; }
+
+    /// <summary>For CompleteAdventure: free-text outcome of the adventure.</summary>
+    public string? OutcomeNotes { get; init; }
 }

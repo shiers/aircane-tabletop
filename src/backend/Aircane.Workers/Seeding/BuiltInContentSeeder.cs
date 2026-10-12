@@ -165,7 +165,7 @@ public sealed class BuiltInContentSeeder
                     text: tc.Text,
                     pageNumber: tc.PageNumber,
                     sectionTitle: tc.SectionTitle,
-                    chunkType: manifestFile.ChunkType,
+                    chunkType: tc.ChunkType ?? manifestFile.ChunkType,
                     visibility: ContentVisibility.Public,
                     metadataJson: "{}");
 

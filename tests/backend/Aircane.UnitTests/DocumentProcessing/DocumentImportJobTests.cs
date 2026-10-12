@@ -155,6 +155,35 @@ public class DocumentImportJobTests
     }
 
     [Fact]
+    public async Task ProcessDocumentAsync_StatBlock_StoredAsOneStatBlockChunk_ProseKeepsPageType()
+    {
+        using var db = CreateDb();
+        var document = AddDocument(db, "bestiary.pdf");
+        var pageText = StatBlockFixtures.Prose("lead", 200) + "\n" + StatBlockFixtures.GiantCrocodileLines;
+        var pages = new[]
+        {
+            new PageText(1, "## Marsh Creatures\nThe marsh is dangerous.", 40),
+            new PageText(2, pageText, pageText.Length),
+            new PageText(3, "The tracks lead north.", 22),
+        };
+        var job = CreateJob(db, new StubPdfExtractor(isOcrRequired: false, pages: pages));
+        await job.ProcessDocumentAsync(document.Id);
+
+        var chunks = await db.DocumentChunks
+            .Where(c => c.SourceDocumentId == document.Id)
+            .OrderBy(c => c.ChunkIndex)
+            .ToListAsync();
+
+        var stat = Assert.Single(chunks, c => c.ChunkType == "stat-block");
+        Assert.Equal("Giant Crocodile", stat.SectionTitle);
+        Assert.Equal(2, stat.PageNumber);
+        Assert.Contains("Tail.", stat.Text);
+        Assert.All(chunks.Where(c => c.ChunkType != "stat-block"), c => Assert.Equal("page", c.ChunkType));
+        // The creature name must not become the section title of the prose that follows on page 3.
+        Assert.Equal("Marsh Creatures", chunks[^1].SectionTitle);
+    }
+
+    [Fact]
     public async Task ProcessDocumentAsync_PdfWithText_ChunksHaveCorrectChunkType()
     {
         using var db = CreateDb();

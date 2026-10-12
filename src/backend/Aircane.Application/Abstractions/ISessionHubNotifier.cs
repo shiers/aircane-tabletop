@@ -53,4 +53,22 @@ public interface ISessionHubNotifier
 
     /// <summary>Broadcasts a document import status update to the host.</summary>
     Task NotifyImportStatusUpdatedAsync(Guid sessionId, ImportStatusUpdatedNotification notification, CancellationToken ct = default);
+
+    /// <summary>
+    /// Broadcasts that a solo adventure run moved to a new scene.
+    /// <paramref name="sessionId"/> is the play session whose group receives the event.
+    /// </summary>
+    Task NotifyAdventureSceneAdvancedAsync(Guid sessionId, AdventureSceneAdvancedNotification notification, CancellationToken ct = default);
+
+    /// <summary>Broadcasts that a solo adventure run revealed a clue.</summary>
+    Task NotifyAdventureClueRevealedAsync(Guid sessionId, AdventureClueRevealedNotification notification, CancellationToken ct = default);
+
+    /// <summary>Broadcasts that a solo adventure run revealed a secret.</summary>
+    Task NotifyAdventureSecretRevealedAsync(Guid sessionId, AdventureSecretRevealedNotification notification, CancellationToken ct = default);
+
+    /// <summary>Broadcasts that an NPC's state changed in a solo adventure run.</summary>
+    Task NotifyAdventureNpcUpdatedAsync(Guid sessionId, AdventureNpcUpdatedNotification notification, CancellationToken ct = default);
+
+    /// <summary>Broadcasts that a solo adventure run was completed.</summary>
+    Task NotifyAdventureCompletedAsync(Guid sessionId, AdventureCompletedNotification notification, CancellationToken ct = default);
 }

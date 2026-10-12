@@ -82,6 +82,29 @@ describe('AiSettingsView reranking section', () => {
     expect(wrapper.find('#rerank-cohere-key').exists()).toBe(false)
   })
 
+  it('shows a latency warning whenever Ollama is selected, without testing the connection', async () => {
+    const wrapper = await mountView({ ...baseConfig, reranking: { ...baseConfig.reranking, provider: 'None' } })
+    expect(wrapper.find('[data-testid="ollama-rerank-latency-warning"]').exists()).toBe(false)
+
+    await wrapper.get('#reranking-provider').setValue('Ollama')
+
+    const warning = wrapper.get('[data-testid="ollama-rerank-latency-warning"]')
+    expect(warning.text()).toContain('scores each candidate with a local LLM call')
+    expect(warning.text()).toContain('potentially tens of seconds')
+    expect(warning.text()).toContain('whether the model is already loaded')
+    expect(warning.text()).toContain('Use Cohere for faster reranking.')
+    expect(warning.classes()).toContain('text-yellow-300')
+    expect(api.testRerankingConnection).not.toHaveBeenCalled()
+  })
+
+  it('does not show the Ollama latency warning for Cohere or None', async () => {
+    const wrapper = await mountView() // Cohere
+
+    expect(wrapper.find('[data-testid="ollama-rerank-latency-warning"]').exists()).toBe(false)
+    await wrapper.get('#reranking-provider').setValue('None')
+    expect(wrapper.find('[data-testid="ollama-rerank-latency-warning"]').exists()).toBe(false)
+  })
+
   it('does not resend a masked key when saving', async () => {
     const wrapper = await mountView()
 

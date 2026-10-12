@@ -172,6 +172,51 @@ public sealed class AiProposedActionValidator : AbstractValidator<AiProposedActi
                 .When(x => x.TargetSceneId is not null);
         });
 
+        // Solo adventure actions: the target IDs are required. Whether they exist in the adventure
+        // is checked when the action is applied (AdventureSessionService).
+        When(x => x.Type == AiActionType.AdvanceScene, () =>
+        {
+            RuleFor(x => x.SceneId)
+                .NotEmpty().WithMessage("Scene ID is required for AdvanceScene actions.")
+                .MaximumLength(100).WithMessage("Scene ID must not exceed 100 characters.");
+
+            RuleFor(x => x.Narration)
+                .MaximumLength(10_000).WithMessage("Transition narration must not exceed 10,000 characters.")
+                .When(x => x.Narration is not null);
+        });
+
+        When(x => x.Type == AiActionType.RevealClue, () =>
+        {
+            RuleFor(x => x.ClueId)
+                .NotEmpty().WithMessage("Clue ID is required for RevealClue actions.")
+                .MaximumLength(100).WithMessage("Clue ID must not exceed 100 characters.");
+        });
+
+        When(x => x.Type == AiActionType.RevealSecret, () =>
+        {
+            RuleFor(x => x.SecretId)
+                .NotEmpty().WithMessage("Secret ID is required for RevealSecret actions.")
+                .MaximumLength(100).WithMessage("Secret ID must not exceed 100 characters.");
+        });
+
+        When(x => x.Type == AiActionType.UpdateNpc, () =>
+        {
+            RuleFor(x => x.NpcId)
+                .NotEmpty().WithMessage("NPC ID is required for UpdateNpc actions.")
+                .MaximumLength(100).WithMessage("NPC ID must not exceed 100 characters.");
+
+            RuleFor(x => x.Notes)
+                .MaximumLength(2_000).WithMessage("NPC notes must not exceed 2,000 characters.")
+                .When(x => x.Notes is not null);
+        });
+
+        When(x => x.Type == AiActionType.CompleteAdventure, () =>
+        {
+            RuleFor(x => x.OutcomeNotes)
+                .NotEmpty().WithMessage("Outcome notes are required for CompleteAdventure actions.")
+                .MaximumLength(5_000).WithMessage("Outcome notes must not exceed 5,000 characters.");
+        });
+
         // AddQuestFlag / UpdateWorldFlag: flag name is required
         When(x => x.Type is AiActionType.AddQuestFlag or AiActionType.UpdateWorldFlag, () =>
         {

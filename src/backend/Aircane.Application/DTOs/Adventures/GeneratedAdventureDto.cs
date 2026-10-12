@@ -105,6 +105,12 @@ public sealed record GeneratedScene
     /// <summary>IDs of scenes that can be reached from this scene.</summary>
     public required IReadOnlyList<string> ConnectsTo { get; init; }
 
+    /// <summary>
+    /// Short, player-facing goals for this scene. Used by solo adventure execution to decide when a
+    /// scene is complete. Empty for adventures generated before objectives were introduced.
+    /// </summary>
+    public IReadOnlyList<string> Objectives { get; init; } = [];
+
     /// <summary>Read-aloud text for the DM to present to players.</summary>
     public string? ReadAloudText { get; init; }
 

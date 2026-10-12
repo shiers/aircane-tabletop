@@ -48,6 +48,8 @@ export interface GeneratedScene {
   description: string
   sceneType: string
   connectsTo: string[]
+  /** Player-facing goals; empty for adventures generated before objectives existed. */
+  objectives?: string[]
   readAloudText?: string | null
   dmNotes?: string | null
 }
@@ -137,6 +139,8 @@ export async function generateAdventure(
   const response = await apiClient.post<GenerateAdventureResponse>(
     '/api/adventures/generate',
     request,
+    // Generation runs seven sequential AI stages; the shared 30s default is far too short.
+    { timeout: 120_000 },
   )
   return response.data
 }

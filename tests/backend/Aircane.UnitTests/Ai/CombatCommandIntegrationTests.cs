@@ -295,6 +295,11 @@ public class CombatCommandIntegrationTests : IDisposable
         public Task NotifySceneChangedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.SceneChangedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
         public Task NotifyHandoutRevealedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.HandoutRevealedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
         public Task NotifyImportStatusUpdatedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.ImportStatusUpdatedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAdventureSceneAdvancedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AdventureSceneAdvancedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAdventureClueRevealedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AdventureClueRevealedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAdventureSecretRevealedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AdventureSecretRevealedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAdventureNpcUpdatedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AdventureNpcUpdatedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAdventureCompletedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AdventureCompletedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     // ── Death saves ────────────────────────────────────────────────────────────

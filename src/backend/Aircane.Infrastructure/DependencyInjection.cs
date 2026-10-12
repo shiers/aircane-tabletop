@@ -158,6 +158,9 @@ public static class DependencyInjection
         // Adventure retrieval - loading and deserializing generated adventures
         services.AddScoped<IAdventureRetrievalService, AdventureRetrievalService>();
 
+        // Adventure execution - runs a player through a generated adventure scene by scene
+        services.AddScoped<IAdventureSessionService, AdventureSessionService>();
+
         // Adventure indexing - converts generated adventures into searchable chunks
         services.AddScoped<IAdventureIndexingService, AdventureIndexingService>();
 

@@ -580,3 +580,43 @@ public class AiStructuredOutputValidatorTests
         result.ShouldNotHaveAnyValidationErrors();
     }
 }
+
+/// <summary>
+/// Validator rules for the solo-adventure action types (required target IDs and length limits).
+/// </summary>
+public class AiStructuredOutputValidatorAdventureActionTests
+{
+    private readonly AiProposedActionValidator _validator = new();
+
+    [Fact]
+    public void AdvanceScene_WithSceneId_Passes()
+        => _validator.TestValidate(new AiProposedAction { Type = AiActionType.AdvanceScene, SceneId = "scene-2" })
+            .ShouldNotHaveAnyValidationErrors();
+
+    [Theory]
+    [InlineData(AiActionType.AdvanceScene, "Scene ID is required")]
+    [InlineData(AiActionType.RevealClue, "Clue ID is required")]
+    [InlineData(AiActionType.RevealSecret, "Secret ID is required")]
+    [InlineData(AiActionType.UpdateNpc, "NPC ID is required")]
+    [InlineData(AiActionType.CompleteAdventure, "Outcome notes are required")]
+    public void AdventureAction_MissingRequiredField_Fails(AiActionType type, string expectedMessage)
+    {
+        var result = _validator.TestValidate(new AiProposedAction { Type = type });
+
+        Assert.Contains(result.Errors, e => e.ErrorMessage.Contains(expectedMessage));
+    }
+
+    [Fact]
+    public void UpdateNpc_WithOnlyOptionalFieldsOmitted_Passes()
+        => _validator.TestValidate(new AiProposedAction { Type = AiActionType.UpdateNpc, NpcId = "npc-archivist", IsAlive = false })
+            .ShouldNotHaveAnyValidationErrors();
+
+    [Fact]
+    public void CompleteAdventure_OutcomeNotesTooLong_Fails()
+        => _validator.TestValidate(new AiProposedAction
+            {
+                Type = AiActionType.CompleteAdventure,
+                OutcomeNotes = new string('x', 5_001),
+            })
+            .ShouldHaveValidationErrorFor(x => x.OutcomeNotes);
+}

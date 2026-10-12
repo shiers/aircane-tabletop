@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using Aircane.Application.Abstractions;
 using Aircane.Application.DocumentProcessing;
 
@@ -19,8 +20,18 @@ namespace Aircane.Infrastructure.DocumentProcessing;
 /// splits overlap by <see cref="OverlapSize"/> characters.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>Stat blocks.</b> Before windowing, the text is passed through <see cref="StatBlockDetector"/>. Each
+/// stat block (monster entry, NPC block, creature template) becomes a single chunk with
+/// <see cref="StatBlockChunkType"/> as its chunk type and the creature name as its section title,
+/// bypassing the window, because a block cut in two loses part of its action list. A block over
+/// <see cref="StatBlockDetector.MaxStatBlockChars"/> is split at action boundaries and a warning is
+/// logged. Prose between stat blocks is windowed as usual.
+/// </para>
+/// <para>
 /// Each chunk's <see cref="TextChunk.SectionTitle"/> is the heading it starts with or, failing
 /// that, the most recent heading before it (falling back to the caller-supplied title).
+/// </para>
 /// <para>
 /// Documents imported before the 1100/300 defaults were introduced were chunked with 2000/200 and
 /// no heading awareness. They keep their old chunks until they are re-imported or re-indexed;
@@ -59,8 +70,17 @@ public sealed partial class SlidingWindowTextChunker : ITextChunker
     /// <summary>Number of characters to overlap between consecutive chunks.</summary>
     public int OverlapSize { get; }
 
-    public SlidingWindowTextChunker(int maxChunkSize = DefaultMaxChunkSize, int overlapSize = DefaultOverlapSize)
+    /// <summary>The chunk type given to stat block chunks.</summary>
+    public const string StatBlockChunkType = "stat-block";
+
+    private readonly ILogger<SlidingWindowTextChunker>? _logger;
+
+    public SlidingWindowTextChunker(
+        int maxChunkSize = DefaultMaxChunkSize,
+        int overlapSize = DefaultOverlapSize,
+        ILogger<SlidingWindowTextChunker>? logger = null)
     {
+        _logger = logger;
         if (maxChunkSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxChunkSize), "Must be greater than zero.");
         if (overlapSize < 0)
@@ -84,6 +104,51 @@ public sealed partial class SlidingWindowTextChunker : ITextChunker
 
         // Normalize line endings so every boundary search only deals with '\n'.
         text = text.Replace("\r\n", "\n");
+
+        var segments = StatBlockDetector.ExtractStatBlocks(text);
+
+        // No stat blocks: exactly the prose behaviour.
+        if (segments.All(s => s.Kind == SegmentKind.Prose))
+            return ChunkProse(text, pageNumber, startingChunkIndex, sectionTitle);
+
+        var result = new List<TextChunk>();
+        var index = startingChunkIndex;
+        var proseTitle = sectionTitle; // stat block names never become the carried-forward section title
+
+        foreach (var segment in segments)
+        {
+            if (segment.Kind == SegmentKind.Prose)
+            {
+                var prose = ChunkProse(segment.Text, pageNumber, index, proseTitle);
+                result.AddRange(prose);
+                index += prose.Count;
+                if (prose.Count > 0)
+                    proseTitle = prose[^1].SectionTitle ?? proseTitle;
+                continue;
+            }
+
+            var parts = StatBlockDetector.SplitAtActionBoundaries(segment.Text.Trim());
+            if (parts.Count > 1)
+            {
+                _logger?.LogWarning(
+                    "Stat block '{Creature}' on page {Page} is {Length} chars, over the {Limit}-char limit; " +
+                    "split into {Parts} parts at action boundaries.",
+                    segment.CreatureName, pageNumber, segment.Text.Trim().Length,
+                    StatBlockDetector.MaxStatBlockChars, parts.Count);
+            }
+
+            foreach (var part in parts)
+                result.Add(new TextChunk(part, pageNumber, segment.CreatureName, index++, StatBlockChunkType));
+        }
+
+        return result.AsReadOnly();
+    }
+
+    /// <summary>The heading-aware sliding window over text that contains no stat blocks.</summary>
+    private IReadOnlyList<TextChunk> ChunkProse(string text, int pageNumber, int startingChunkIndex, string? sectionTitle)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return Array.Empty<TextChunk>();
 
         var headings = FindHeadings(text);
         var chunks = new List<TextChunk>();
@@ -263,7 +328,7 @@ public sealed partial class SlidingWindowTextChunker : ITextChunker
     /// connector words such as "of" may stay lower-case), with no trailing sentence punctuation,
     /// followed by a blank line or a line starting with a lower-case letter.
     /// </summary>
-    private static bool IsTitleCaseHeading(string line, string text, int lineEnd)
+    internal static bool IsTitleCaseHeading(string line, string text, int lineEnd)
     {
         var trimmed = line.Trim();
         if (trimmed.Length is < TitleCaseMinLength or > TitleCaseMaxLength)

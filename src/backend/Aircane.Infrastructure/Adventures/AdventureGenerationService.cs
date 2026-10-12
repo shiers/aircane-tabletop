@@ -440,6 +440,10 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
             - "dmNotes": DM-only notes for running the scene (optional)
 
             Ensure scenes connect logically and form a playable adventure graph.
+
+            Every text field ("description", "readAloudText", "dmNotes", and each entry of "objectives") must be a plain string value, not an object or nested JSON.
+            dmNotes must be a plain string value, not an object or nested JSON.
+            Example: "dmNotes": "The players arrive at the castle gates."
             """;
     }
 

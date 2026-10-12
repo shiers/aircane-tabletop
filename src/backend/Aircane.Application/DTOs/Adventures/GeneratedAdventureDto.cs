@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Aircane.Application.DTOs.Adventures;
 
 /// <summary>
@@ -79,6 +81,7 @@ public sealed record SceneSummary
     public required string Title { get; init; }
 
     /// <summary>Brief description of what happens in this scene.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Description { get; init; }
 
     /// <summary>Scene type (e.g., "combat", "exploration", "roleplay", "puzzle").</summary>
@@ -97,6 +100,7 @@ public sealed record GeneratedScene
     public required string Title { get; init; }
 
     /// <summary>Full narrative description of the scene.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Description { get; init; }
 
     /// <summary>Scene type (combat, exploration, roleplay, puzzle, etc.).</summary>
@@ -109,12 +113,15 @@ public sealed record GeneratedScene
     /// Short, player-facing goals for this scene. Used by solo adventure execution to decide when a
     /// scene is complete. Empty for adventures generated before objectives were introduced.
     /// </summary>
+    [JsonConverter(typeof(StringListOrObjectConverter))]
     public IReadOnlyList<string> Objectives { get; init; } = [];
 
     /// <summary>Read-aloud text for the DM to present to players.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? ReadAloudText { get; init; }
 
     /// <summary>DM-only notes for running this scene.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? DmNotes { get; init; }
 }
 
@@ -130,15 +137,18 @@ public sealed record GeneratedNpc
     public required string Role { get; init; }
 
     /// <summary>Brief personality description.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Personality { get; init; }
 
     /// <summary>Brief stat summary (e.g., "CR 2 Bandit Captain" or "Commoner").</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string StatsSummary { get; init; }
 
     /// <summary>Which scene(s) this NPC appears in.</summary>
     public required IReadOnlyList<string> SceneIds { get; init; }
 
     /// <summary>Optional faction affiliation.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? Faction { get; init; }
 }
 
@@ -160,9 +170,11 @@ public sealed record GeneratedEncounter
     public required string Difficulty { get; init; }
 
     /// <summary>Suggested tactics for the enemies.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Tactics { get; init; }
 
     /// <summary>Environmental features or terrain notes.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? Environment { get; init; }
 }
 
@@ -205,6 +217,7 @@ public sealed record TreasureItem
     public required string Name { get; init; }
 
     /// <summary>Brief description.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Description { get; init; }
 
     /// <summary>Which scene this item is found in.</summary>
@@ -238,12 +251,14 @@ public sealed record AdventureSecret
     public required string Title { get; init; }
 
     /// <summary>The secret content (DM-only until revealed).</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Content { get; init; }
 
     /// <summary>Scene where this secret can be discovered.</summary>
     public required string SceneId { get; init; }
 
     /// <summary>How the secret can be discovered (skill check, investigation, etc.).</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string DiscoveryMethod { get; init; }
 }
 
@@ -256,6 +271,7 @@ public sealed record AdventureHandout
     public required string Title { get; init; }
 
     /// <summary>Handout content text.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Content { get; init; }
 
     /// <summary>Scene where this handout is found.</summary>
@@ -268,9 +284,11 @@ public sealed record AdventureHandout
 public sealed record FailForwardPath
 {
     /// <summary>The situation where players might get stuck.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Trigger { get; init; }
 
     /// <summary>What happens to move the story forward anyway.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Resolution { get; init; }
 
     /// <summary>Scene this applies to.</summary>

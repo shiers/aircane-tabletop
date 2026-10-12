@@ -39,7 +39,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         GenerateAdventureRequest request,
         PartyAnalysisResult? partyAnalysis,
         CancellationToken cancellationToken = default,
-        Action<string, int>? onProgress = null)
+        Action<string, int>? onProgress = null,
+        Guid? campaignId = null)
     {
         _logger.LogInformation(
             "Starting adventure generation pipeline. Mode={Mode}, Ruleset={Ruleset}, PartySize={PartySize}",
@@ -88,6 +89,7 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
             Id = Guid.NewGuid(),
             Title = pitch.Title,
             Status = GeneratedAdventureStatus.Draft,
+            CampaignId = campaignId,
             RequestJson = JsonSerializer.Serialize(request, JsonOptions),
             PartyAnalysisJson = partyAnalysis != null ? JsonSerializer.Serialize(partyAnalysis, JsonOptions) : null,
             PitchJson = JsonSerializer.Serialize(pitch, JsonOptions),

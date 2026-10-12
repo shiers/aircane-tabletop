@@ -68,6 +68,24 @@ public sealed class AdventureGenerationServiceTests : IDisposable
     // ── Full Pipeline Tests ───────────────────────────────────────────────────
 
     [Fact]
+    public async Task GenerateAsync_with_campaign_saves_the_adventure_against_that_campaign()
+    {
+        var campaignId = Guid.NewGuid();
+
+        var result = await _service.GenerateAsync(CreateRequest(), null, default, null, campaignId);
+
+        Assert.Equal(campaignId, (await _db.GeneratedAdventures.SingleAsync(a => a.Id == result.Id)).CampaignId);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_without_campaign_leaves_it_unassigned()
+    {
+        var result = await _service.GenerateAsync(CreateRequest(), null);
+
+        Assert.Null((await _db.GeneratedAdventures.SingleAsync(a => a.Id == result.Id)).CampaignId);
+    }
+
+    [Fact]
     public async Task GenerateAsync_reports_each_stage_in_order_with_its_percentage()
     {
         var reported = new List<(string Stage, int Percent)>();

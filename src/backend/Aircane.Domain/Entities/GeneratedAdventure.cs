@@ -44,6 +44,12 @@ public class GeneratedAdventure
     /// <summary>Clues/secrets stage output JSON.</summary>
     public string? CluesJson { get; set; }
 
+    /// <summary>
+    /// The campaign this adventure was generated for. Null for adventures generated without one
+    /// (and for those created before campaigns were linked); cleared if the campaign is deleted.
+    /// </summary>
+    public Guid? CampaignId { get; set; }
+
     /// <summary>Ruleset used for generation.</summary>
     public string Ruleset { get; set; } = string.Empty;
 

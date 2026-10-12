@@ -149,7 +149,11 @@ async function handleDelete(campaign: CampaignDto): Promise<void> {
                       <ThumbnailPlaceholder :label="campaign.name" />
                     </template>
                   </AircaneImg>
-                  <span>{{ campaign.name }}</span>
+                  <router-link
+                    :to="{ name: 'campaign-detail', params: { campaignId: campaign.id } }"
+                    class="hover:text-aircane-300 hover:underline"
+                    data-testid="campaign-link"
+                  >{{ campaign.name }}</router-link>
                 </div>
               </td>
 

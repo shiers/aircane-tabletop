@@ -79,6 +79,55 @@ public sealed class AdventuresController : ControllerBase
     }
 
     /// <summary>
+    /// Lists the adventures generated for a campaign, newest first.
+    /// </summary>
+    [HttpGet("/api/campaigns/{campaignId:guid}/adventures")]
+    [ProducesResponseType(typeof(IReadOnlyList<CampaignAdventureListItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListCampaignAdventures(Guid campaignId, CancellationToken cancellationToken)
+    {
+        if (!await _dbContext.Campaigns.AnyAsync(c => c.Id == campaignId, cancellationToken))
+            return NotFound();
+
+        var rows = await _dbContext.GeneratedAdventures
+            .AsNoTracking()
+            .Where(a => a.CampaignId == campaignId)
+            .OrderByDescending(a => a.CreatedAt)
+            .Select(a => new { a.Id, a.Title, a.Status, a.GameSystem, a.Ruleset, a.RequestJson, a.CreatedAt })
+            .ToListAsync(cancellationToken);
+
+        // Mode / length / level live in the stored generation request, not in their own columns.
+        var items = rows.Select(r =>
+        {
+            GenerateAdventureRequest? request = null;
+            try
+            {
+                request = System.Text.Json.JsonSerializer.Deserialize<GenerateAdventureRequest>(
+                    r.RequestJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Unreadable request: still list the adventure, just without those details.
+            }
+
+            return new CampaignAdventureListItemDto
+            {
+                Id = r.Id,
+                Title = r.Title,
+                Status = r.Status.ToString(),
+                GameSystem = r.GameSystem,
+                Ruleset = r.Ruleset,
+                Mode = request?.Mode,
+                Length = request?.Length,
+                AverageLevel = request?.AverageLevel,
+                CreatedAt = r.CreatedAt,
+            };
+        }).ToList();
+
+        return Ok(items);
+    }
+
+    /// <summary>
     /// Deletes a generated adventure and its indexed chunks.
     /// </summary>
     [HttpDelete("{id:guid}")]
@@ -168,6 +217,9 @@ public sealed class AdventuresController : ControllerBase
         _logger.LogInformation(
             "Adventure generation requested. Mode={Mode}, Ruleset={Ruleset}, PartySize={PartySize}, Level={Level}",
             request.Mode, request.Ruleset, request.PartySize, request.AverageLevel);
+
+        if (campaignId.HasValue && !await _dbContext.Campaigns.AnyAsync(c => c.Id == campaignId, cancellationToken))
+            return NotFound(new ProblemDetails { Title = "Campaign not found", Status = StatusCodes.Status404NotFound });
 
         var job = new AdventureGenerationJobMessage(request, campaignId);
         await _jobQueue.EnqueueAsync(job, cancellationToken);

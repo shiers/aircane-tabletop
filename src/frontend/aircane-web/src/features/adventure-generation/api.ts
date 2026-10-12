@@ -120,6 +120,8 @@ export interface AdventureDraft {
   id: string
   title: string
   status: string
+  /** The campaign this adventure belongs to, if any. */
+  campaignId?: string | null
   pitch?: AdventurePitch | null
   outline?: AdventureOutline | null
   scenes?: GeneratedScene[] | null
@@ -135,10 +137,12 @@ export interface AdventureDraft {
 
 export async function generateAdventure(
   request: GenerateAdventureRequest,
+  campaignId?: string | null,
 ): Promise<GenerateAdventureResponse> {
   const response = await apiClient.post<GenerateAdventureResponse>(
     '/api/adventures/generate',
     request,
+    { params: campaignId ? { campaignId } : undefined },
   )
   return response.data
 }
@@ -146,6 +150,29 @@ export async function generateAdventure(
 export async function getAdventureDraft(adventureId: string): Promise<AdventureDraft> {
   const response = await apiClient.get<AdventureDraft>(`/api/adventures/${adventureId}/draft`)
   return response.data
+}
+
+/** One adventure card on a campaign's page. */
+export interface CampaignAdventure {
+  id: string
+  title: string
+  status: 'Draft' | 'Approved' | 'Active' | 'Rejected'
+  gameSystem: string
+  ruleset: string
+  mode: string | null
+  length: string | null
+  averageLevel: number | null
+  createdAt: string
+}
+
+/** The adventures generated for a campaign, newest first. */
+export async function listCampaignAdventures(campaignId: string): Promise<CampaignAdventure[]> {
+  const response = await apiClient.get<CampaignAdventure[]>(`/api/campaigns/${campaignId}/adventures`)
+  return response.data
+}
+
+export async function deleteAdventure(adventureId: string): Promise<void> {
+  await apiClient.delete(`/api/adventures/${adventureId}`)
 }
 
 export async function approveAdventure(adventureId: string): Promise<void> {

@@ -52,7 +52,7 @@ public sealed class AdventureGenerationJobHandler : IJobHandler<AdventureGenerat
             }
 
             var adventure = await _generation.GenerateAsync(
-                job.Request, partyAnalysis, ct, (stage, _) => Report(job.JobId, stage, ct));
+                job.Request, partyAnalysis, ct, (stage, _) => Report(job.JobId, stage, ct), job.CampaignId);
 
             Report(job.JobId, AdventureGenerationStages.Complete, ct);
             await _notifier.NotifyCompletedAsync(new AdventureGenerationCompletedNotification(

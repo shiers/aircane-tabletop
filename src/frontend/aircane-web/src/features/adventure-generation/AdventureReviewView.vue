@@ -76,8 +76,13 @@ async function handleApprove() {
   }
 }
 
+// Back goes to the campaign this adventure belongs to, otherwise to the generation form.
 function goBack() {
-  router.push({ name: 'adventure-generate' })
+  if (draft.value?.campaignId) {
+    router.push({ name: 'campaign-detail', params: { campaignId: draft.value.campaignId } })
+  } else {
+    router.push({ name: 'adventure-generate' })
+  }
 }
 
 function getDifficultyColor(difficulty: string): string {

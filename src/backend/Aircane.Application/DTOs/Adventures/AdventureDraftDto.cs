@@ -15,6 +15,9 @@ public sealed record AdventureDraftDto
     /// <summary>Current status of the generation pipeline.</summary>
     public required string Status { get; init; }
 
+    /// <summary>The campaign this adventure belongs to, if any (used for navigating back).</summary>
+    public Guid? CampaignId { get; init; }
+
     /// <summary>Adventure pitch: title, hook, and summary.</summary>
     public AdventurePitch? Pitch { get; init; }
 

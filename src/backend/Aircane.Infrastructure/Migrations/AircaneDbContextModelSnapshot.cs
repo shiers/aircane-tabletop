@@ -575,6 +575,9 @@ namespace Aircane.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("CampaignId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("CluesJson")
                         .HasColumnType("text");
 
@@ -628,6 +631,9 @@ namespace Aircane.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CampaignId")
+                        .HasDatabaseName("IX_GeneratedAdventures_CampaignId");
 
                     b.HasIndex("Status")
                         .HasDatabaseName("IX_GeneratedAdventures_Status");
@@ -1023,6 +1029,14 @@ namespace Aircane.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("GameSystemDefinition");
+                });
+
+            modelBuilder.Entity("Aircane.Domain.Entities.GeneratedAdventure", b =>
+                {
+                    b.HasOne("Aircane.Domain.Entities.Campaign", null)
+                        .WithMany()
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Aircane.Domain.Entities.SourceDocument", b =>

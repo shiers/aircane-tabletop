@@ -29,8 +29,87 @@ internal static class AiStructuredOutputSerializer
     /// <exception cref="JsonException">The text is not valid JSON or does not match the shape.</exception>
     public static AiStructuredOutput? Deserialize(string json)
     {
-        var node = JsonNode.Parse(json);
+        var node = JsonNode.Parse(ExtractJson(json));
         return Normalize(node)?.Deserialize<AiStructuredOutput>(Options);
+    }
+
+    /// <summary>
+    /// Models sometimes wrap the JSON in a markdown fence or add prose around it despite being told
+    /// not to. Returns the JSON text to parse: the input if it already parses, otherwise the
+    /// unfenced text, otherwise the first complete JSON object found inside the text. If nothing
+    /// parses the (unfenced) input is returned so the caller reports the real JSON error.
+    /// </summary>
+    internal static string ExtractJson(string text)
+    {
+        var trimmed = text.Trim();
+        if (IsValidJson(trimmed))
+            return trimmed;
+
+        var unfenced = StripFence(trimmed);
+        if (unfenced != trimmed && IsValidJson(unfenced))
+            return unfenced;
+
+        for (var start = unfenced.IndexOf('{'); start >= 0; start = unfenced.IndexOf('{', start + 1))
+        {
+            var end = FindObjectEnd(unfenced, start);
+            if (end < 0)
+                continue;
+
+            var candidate = unfenced[start..(end + 1)];
+            if (IsValidJson(candidate))
+                return candidate;
+        }
+
+        return unfenced;
+    }
+
+    private static string StripFence(string text)
+    {
+        // ```json\n{...}\n```  (also tolerates prose before/after the fenced block)
+        var open = text.IndexOf("```", StringComparison.Ordinal);
+        if (open < 0)
+            return text;
+
+        var bodyStart = text.IndexOf('\n', open);
+        if (bodyStart < 0)
+            return text;
+
+        var close = text.IndexOf("```", bodyStart, StringComparison.Ordinal);
+        return (close < 0 ? text[(bodyStart + 1)..] : text[(bodyStart + 1)..close]).Trim();
+    }
+
+    /// <summary>Index of the brace closing the object that opens at <paramref name="start"/>, or -1.</summary>
+    private static int FindObjectEnd(string text, int start)
+    {
+        var depth = 0;
+        var inString = false;
+        for (var i = start; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (inString)
+            {
+                if (c == '\\') i++;
+                else if (c == '"') inString = false;
+            }
+            else if (c == '"') inString = true;
+            else if (c == '{') depth++;
+            else if (c == '}' && --depth == 0) return i;
+        }
+
+        return -1;
+    }
+
+    private static bool IsValidJson(string text)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(text);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Rewrites every object key to snake_case (a no-op for keys that already are).</summary>

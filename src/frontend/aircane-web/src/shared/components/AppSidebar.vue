@@ -19,12 +19,12 @@ const route = useRoute()
 const navItems: { label: string; to: string; icon: string; iconName?: string }[] = [
   { label: 'Dashboard', to: '/', icon: 'dashboard' },
   { label: 'Campaigns', to: '/campaigns', icon: 'campaigns', iconName: 'icon-campaign' },
+  { label: 'Adventure Forge', to: '/adventures', icon: 'adventure', iconName: 'icon-adventure' },
+  { label: 'Join Session', to: '/sessions', icon: 'dice', iconName: 'icon-dice' },
   { label: 'Library', to: '/library', icon: 'library', iconName: 'icon-library' },
   { label: 'Characters', to: '/characters', icon: 'characters', iconName: 'icon-character' },
   { label: 'Rules Lookup', to: '/rules-lookup', icon: 'rules', iconName: 'icon-rules' },
   { label: 'AI DM', to: '/settings/ai', icon: 'ai', iconName: 'icon-ai' },
-  { label: 'Adventure Forge', to: '/adventures', icon: 'adventure', iconName: 'icon-adventure' },
-  { label: 'Join Session', to: '/sessions', icon: 'dice', iconName: 'icon-dice' },
   { label: 'About & Credits', to: '/about', icon: 'about', iconName: 'icon-about' },
 ]
 

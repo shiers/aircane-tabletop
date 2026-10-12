@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using Aircane.Application.DTOs.Adventures;
+
 namespace Aircane.Application.Abstractions;
 
 /// <summary>
@@ -14,11 +17,13 @@ public sealed record AiStructuredOutput
     /// Public narration text shown to all session participants (or only the DM,
     /// depending on the AI role and visibility settings).
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Narration { get; init; }
 
     /// <summary>
     /// Optional private note visible only to the DM/host. Null when not applicable.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? PrivateDmNote { get; init; }
 
     /// <summary>
@@ -46,6 +51,7 @@ public sealed record AiRulesCitation
     public required Guid ChunkId { get; init; }
 
     /// <summary>A short human-readable summary of the cited content.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public required string Summary { get; init; }
 }
 
@@ -68,12 +74,14 @@ public sealed record AiProposedAction
     /// Human-readable label for the action (e.g. "Dexterity (Stealth) check").
     /// Used for display in the approval queue.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? Label { get; init; }
 
     /// <summary>
     /// Dice formula for roll requests (e.g. "1d20+5").
     /// Null for non-roll actions.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? Formula { get; init; }
 
     /// <summary>
@@ -85,12 +93,14 @@ public sealed record AiProposedAction
     /// Visibility of the action result: "public" or "private".
     /// Defaults to "public" when not specified.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? Visibility { get; init; }
 
     /// <summary>
     /// The AI's reasoning for proposing this action. Shown in the approval queue
     /// and preserved in the audit log.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? Reason { get; init; }
 
     /// <summary>
@@ -103,6 +113,7 @@ public sealed record AiProposedAction
     /// Condition name for ApplyCondition / RemoveCondition actions
     /// (e.g. "Poisoned", "Prone"). Null for other action types.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? ConditionName { get; init; }
 
     /// <summary>
@@ -118,11 +129,13 @@ public sealed record AiProposedAction
     /// <summary>
     /// Flag name for AddQuestFlag / UpdateWorldFlag actions. Null for other action types.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? FlagName { get; init; }
 
     /// <summary>
     /// Flag value for AddQuestFlag / UpdateWorldFlag actions. Null for other action types.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? FlagValue { get; init; }
 
     /// <summary>
@@ -144,6 +157,7 @@ public sealed record AiProposedAction
     /// Structured combat payload as JSON for StartEncounter (a <c>combatants</c> array) and
     /// RollInitiative (an <c>initiative</c> map of combatantId -&gt; value). Null for other actions.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? CombatPayloadJson { get; init; }
 
     // ── Solo adventure actions (AdvanceScene, RevealClue, RevealSecret, UpdateNpc, CompleteAdventure) ──
@@ -153,18 +167,23 @@ public sealed record AiProposedAction
     /// <see cref="TargetSceneId"/> (a GUID used by MoveScene), because generated scenes are
     /// numbered <c>scene-N</c>.
     /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? SceneId { get; init; }
 
     /// <summary>Transition narration for AdvanceScene. Null for other action types.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? Narration { get; init; }
 
     /// <summary>Clue (handout) ID, e.g. <c>clue-2</c>, for RevealClue.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? ClueId { get; init; }
 
     /// <summary>Secret ID, e.g. <c>secret-1</c>, for RevealSecret.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? SecretId { get; init; }
 
     /// <summary>NPC ID, e.g. <c>npc-guard-captain</c>, for UpdateNpc.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? NpcId { get; init; }
 
     /// <summary>For UpdateNpc: whether the player has now met the NPC. Null leaves it unchanged.</summary>
@@ -174,11 +193,14 @@ public sealed record AiProposedAction
     public bool? IsAlive { get; init; }
 
     /// <summary>For UpdateNpc: an info/dialogue hook that has now been revealed.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? RevealedInfoId { get; init; }
 
     /// <summary>For UpdateNpc: notes about the NPC surfaced to the player.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? Notes { get; init; }
 
     /// <summary>For CompleteAdventure: free-text outcome of the adventure.</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
     public string? OutcomeNotes { get; init; }
 }

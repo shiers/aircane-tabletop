@@ -455,11 +455,14 @@ public sealed class PlayerActionService : IPlayerActionService
         sb.AppendLine("- Cite rules sources when making rulings.");
         sb.AppendLine();
         sb.AppendLine("OUTPUT FORMAT:");
-        sb.AppendLine("Respond with a JSON object containing:");
-        sb.AppendLine("- narration: string (public narration text)");
-        sb.AppendLine("- privateDmNote: string|null (private note for the DM)");
-        sb.AppendLine("- rulesCitations: array of {sourceDocumentId, chunkId, summary}");
-        sb.AppendLine("- proposedActions: array of structured actions (RequestRoll, ApplyDamage, ApplyHealing, ApplyCondition, RemoveCondition, RevealContent, MoveScene, etc.)");
+        sb.AppendLine("Respond with ONE valid JSON object and nothing else: no markdown code fences, no text before or after it.");
+        sb.AppendLine("Fields (use exactly these names, camelCase):");
+        sb.AppendLine("- narration: string, required (public narration text; always a plain string, never an object)");
+        sb.AppendLine("- privateDmNote: string or null (private note for the DM; a plain string)");
+        sb.AppendLine("- rulesCitations: array of {sourceDocumentId (GUID), chunkId (GUID), summary (string)}; use [] when none");
+        sb.AppendLine("- proposedActions: array of action objects; use [] when none. Each has a \"type\" (RequestRoll, ApplyDamage, ApplyHealing, ApplyCondition, RemoveCondition, RevealContent, MoveScene, etc.) plus the fields that type needs; all text fields are plain strings.");
+        sb.AppendLine("Example of a valid response:");
+        sb.AppendLine("{\"narration\":\"You push the door open. Dust drifts down from the rafters.\",\"privateDmNote\":null,\"rulesCitations\":[],\"proposedActions\":[]}");
 
         return sb.ToString();
     }

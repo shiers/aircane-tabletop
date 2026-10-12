@@ -563,8 +563,13 @@ internal sealed class FakeRagContextBuilder : IRagContextBuilder
         TotalChunksRetrieved: 0,
         ChunksIncluded: 0);
 
+    public RagContextRequest? LastRequest { get; private set; }
+
     public Task<RagContextResult> BuildContextAsync(RagContextRequest request, CancellationToken cancellationToken = default)
-        => Task.FromResult(NextResult);
+    {
+        LastRequest = request;
+        return Task.FromResult(NextResult);
+    }
 }
 
 /// <summary>

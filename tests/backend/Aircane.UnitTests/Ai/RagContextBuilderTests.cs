@@ -967,6 +967,66 @@ public class RagContextBuilderTests
         Assert.Equal(["High"], Titles(result));
     }
 
+    // ── Adventure sessions skip reranking ─────────────────────────────────────
+
+    [Fact]
+    public async Task RagContextBuilder_AdventureSession_SkipsReranking()
+    {
+        // The reranker would put B first; with reranking skipped it must not even be called.
+        var reranker = RerankerScoring((0, 0.1f), (1, 0.9f));
+        _fakeRetrieval.SetResults([Titled("A", 0, SourceType.Rules), Titled("B", 1, SourceType.Rules)]);
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", MinRelevanceScore: 0, SkipReranking: true));
+
+        Assert.Equal(0, reranker.CallCount);
+        Assert.Equal(["A", "B"], Titles(result));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_AdventureSession_UsesStandardCandidatePool()
+    {
+        _fakeRetrieval.SetResults([Titled("A", 0, SourceType.Rules), Titled("B", 1, SourceType.Rules)]);
+
+        // Even if a wider rerank pool is requested, skipping reranking keeps the standard TopK.
+        await BuilderWith(RerankerScoring((0, 0.5f))).BuildContextAsync(
+            new RagContextRequest(Query: "q", TopK: 10, RerankCandidateTopK: 25, MinRelevanceScore: 0, SkipReranking: true));
+        Assert.Equal(10, _fakeRetrieval.LastSearchRequest!.TopK);
+
+        await BuilderWith(RerankerScoring((0, 0.5f))).BuildContextAsync(
+            new RagContextRequest(Query: "q", TopK: 10, RerankCandidateTopK: 10, MinRelevanceScore: 0, SkipReranking: true));
+        Assert.Equal(10, _fakeRetrieval.LastSearchRequest!.TopK);
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_AdventureSession_UsesStandardMinScore()
+    {
+        // 0.2 is below the standard 0.4 floor but above the 0.15 floor used while reranking.
+        _fakeRetrieval.SetResults([Titled("Low", 0, SourceType.Rules, score: 0.2), Titled("High", 1, SourceType.Rules, score: 0.9)]);
+        var request = new RagContextRequest(Query: "q", MinRelevanceScore: 0.4, RerankCandidateTopK: 25);
+
+        var skipped = await BuilderWith(RerankerScoring((0, 0.5f), (1, 0.4f)))
+            .BuildContextAsync(request with { SkipReranking = true });
+        Assert.Equal(["High"], Titles(skipped));
+
+        var reranked = await BuilderWith(RerankerScoring((0, 0.5f), (1, 0.4f))).BuildContextAsync(request);
+        Assert.Contains("Low", Titles(reranked));
+    }
+
+    [Fact]
+    public async Task RagContextBuilder_NoAdventureSession_ReranksNormally()
+    {
+        var reranker = RerankerScoring((0, 0.1f), (1, 0.9f));
+        _fakeRetrieval.SetResults([Titled("A", 0, SourceType.Rules), Titled("B", 1, SourceType.Rules)]);
+
+        var result = await BuilderWith(reranker).BuildContextAsync(
+            new RagContextRequest(Query: "q", TopK: 10, RerankCandidateTopK: 25, MinRelevanceScore: 0));
+
+        Assert.Equal(1, reranker.CallCount);
+        Assert.Equal(["B", "A"], Titles(result));
+        Assert.Equal(25, _fakeRetrieval.LastSearchRequest!.TopK);
+    }
+
     private sealed class FakeRerankingProvider(string providerId) : IRerankingProvider
     {
         public string ProviderId => providerId;

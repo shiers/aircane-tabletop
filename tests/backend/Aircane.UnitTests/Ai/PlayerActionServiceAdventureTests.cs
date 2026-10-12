@@ -28,6 +28,7 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
     private readonly AircaneDbContext _db;
     private readonly FakeCampaignServiceForPlayerAction _campaignService = new();
     private readonly CapturingAiProvider _aiProvider = new();
+    private readonly FakeRagContextBuilder _rag = new();
     private readonly CampaignStateService _stateService;
     private readonly AdventureSessionService _realAdventureService;
     private readonly SpyAdventureSessionService _spy = new();
@@ -54,7 +55,7 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         var roleService = new AiRoleConfigurationService();
         var authorityService = new AiAuthorityConfigurationService();
         var executor = new StateCommandExecutor(
-            new IStateCommandValidator[] { new MoveSceneValidator(), new RevealContentValidator() },
+            new IStateCommandValidator[] { new MoveSceneValidator(), new RevealContentValidator(), new RequestRollValidator() },
             roleService, authorityService, _stateService,
             new AiProposalService(_db, _stateService, NullLogger<AiProposalService>.Instance),
             NullLogger<StateCommandExecutor>.Instance);
@@ -62,7 +63,7 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         return new PlayerActionService(
             _campaignService,
             _stateService,
-            new FakeRagContextBuilder(),
+            _rag,
             _aiProvider,
             new AiOutputParser(new AiStructuredOutputValidator()),
             executor,
@@ -364,6 +365,244 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         Assert.Null(roll.ErrorMessage);
     }
 
+    // ── Retrieval during an adventure ─────────────────────────────────────────
+
+    private async Task<(Campaign Campaign, Session Session, Guid RunId)> SeedRunAsync()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+        var adventure = AdventureSessionTestData.CreateAdventure();
+        _db.GeneratedAdventures.Add(adventure);
+        await _db.SaveChangesAsync();
+        var run = await _realAdventureService.StartAdventureSessionAsync(adventure.Id, campaign.Id, null);
+        return (campaign, session, run.Id);
+    }
+
+    [Fact]
+    public async Task PlayerActionService_ActiveAdventure_RetrievesWithoutRerankingAtStandardSettings()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session));
+
+        var rag = _rag.LastRequest!;
+        Assert.True(rag.SkipReranking);
+        Assert.Equal(10, rag.TopK);
+        Assert.Equal(10, rag.RerankCandidateTopK);
+        Assert.Equal(0.4, rag.MinRelevanceScore);
+        Assert.Null(rag.PostRerankTopN);
+    }
+
+    [Fact]
+    public async Task PlayerActionService_NoAdventure_StillAsksForReranking()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session));
+
+        var rag = _rag.LastRequest!;
+        Assert.False(rag.SkipReranking);
+        Assert.Equal(25, rag.RerankCandidateTopK);
+        Assert.Equal(7, rag.PostRerankTopN);
+    }
+
+    // ── RequestRoll label ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PlayerActionService_RequestRoll_WithoutLabel_IsRejected()
+    {
+        var (campaign, session, runId) = await SeedRunAsync();
+        _aiProvider.NextOutput = Output(new AiProposedAction { Type = AiActionType.RequestRoll, Formula = "1d20", Dc = 14 });
+
+        var response = await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session));
+
+        var result = Assert.Single(response.ProposedActions);
+        Assert.Equal(StateCommandOutcome.ValidationFailed, result.Outcome);
+        Assert.Contains("Label", result.ErrorMessage);
+        Assert.Null((await Run(runId)).PendingRollLabel);   // nothing to remember without a label
+    }
+
+    [Fact]
+    public async Task PlayerActionService_RequestRoll_WithLabel_IsAccepted()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+        _aiProvider.NextOutput = Output(new AiProposedAction { Type = AiActionType.RequestRoll, Label = "Dexterity (Stealth) check", Formula = "1d20" });
+
+        var response = await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session));
+
+        Assert.Equal(StateCommandOutcome.Applied, Assert.Single(response.ProposedActions).Outcome);
+    }
+
+    [Fact]
+    public async Task PlayerActionService_SystemPrompt_SaysRequestRollNeedsALabel()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session));
+
+        var system = string.Join("\n", _aiProvider.LastMessages.Where(m => m.Role == "system").Select(m => m.Content));
+        Assert.Contains("RequestRoll MUST include a 'label' field", system);
+        Assert.Contains("Dexterity (Stealth) check", system);
+        Assert.Contains("will be rejected", system);
+    }
+
+    // ── Pending roll between turns ────────────────────────────────────────────
+
+    private Task<AdventureSession> Run(Guid runId) => _db.AdventureSessions.AsNoTracking().SingleAsync(s => s.Id == runId);
+
+    private string SystemPrompt() =>
+        string.Join("\n", _aiProvider.LastMessages.Where(m => m.Role == "system").Select(m => m.Content));
+
+    private static AiStructuredOutput AsksForStealthRoll() => Output(new AiProposedAction
+    {
+        Type = AiActionType.RequestRoll, Label = "Dexterity (Stealth)", Formula = "1d20", Dc = 14,
+    });
+
+    [Fact]
+    public async Task AdventureSession_StoresPendingRoll_WhenAiRequestsRoll()
+    {
+        var (campaign, session, runId) = await SeedRunAsync();
+        _aiProvider.NextOutput = AsksForStealthRoll();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I sneak past"));
+
+        var run = await Run(runId);
+        Assert.Equal("Dexterity (Stealth)", run.PendingRollLabel);
+        Assert.Equal(14, run.PendingRollDC);
+    }
+
+    [Fact]
+    public async Task AdventureSession_PendingRollWithoutDc_OmitsTheDcFromTheContext()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = Output(new AiProposedAction { Type = AiActionType.RequestRoll, Label = "Perception", Formula = "1d20" });
+        await sut.ProcessActionAsync(Request(campaign, session));
+
+        _aiProvider.NextOutput = Output();
+        await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 9"));
+
+        var block = PendingBlock(SystemPrompt());
+        Assert.Contains("asked to roll Perception.", block);
+        Assert.DoesNotContain("DC", block);
+    }
+
+    private static string PendingBlock(string prompt)
+    {
+        var start = prompt.IndexOf("PENDING ROLL", StringComparison.Ordinal);
+        return start < 0 ? "" : prompt[start..prompt.IndexOf("Current Adventure", start, StringComparison.Ordinal)];
+    }
+
+    [Fact]
+    public async Task AdventureSession_IncludesPendingRoll_InNextTurnContext()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = AsksForStealthRoll();
+        await sut.ProcessActionAsync(Request(campaign, session, "I sneak past"));
+        Assert.DoesNotContain("PENDING ROLL", SystemPrompt());   // not in the turn that asked for it
+
+        _aiProvider.NextOutput = Output();
+        await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 14"));
+
+        var prompt = SystemPrompt();
+        Assert.Contains("PENDING ROLL: The player was previously asked to roll Dexterity (Stealth), DC 14.", prompt);
+        Assert.True(prompt.IndexOf("PENDING ROLL", StringComparison.Ordinal) < prompt.IndexOf("Current Adventure", StringComparison.Ordinal),
+            "the pending roll should come first in the adventure context");
+    }
+
+    [Fact]
+    public async Task AdventureSession_AssumesPendingRoll_WhenPlayerReportsNumber()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = AsksForStealthRoll();
+        await sut.ProcessActionAsync(Request(campaign, session, "I sneak past"));
+
+        _aiProvider.NextOutput = Output();
+        await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 14"));
+
+        var prompt = SystemPrompt();
+        Assert.Contains("do NOT ask them to clarify what the roll was for", prompt);
+        Assert.Contains("Assume it is this pending roll", prompt);
+        Assert.Contains("Narrate the outcome of the roll before continuing the scene", prompt);
+        Assert.Equal("Player action: I rolled a 14", _aiProvider.LastMessages.Last(m => m.Role == "user").Content);
+    }
+
+    [Fact]
+    public async Task AdventureSession_ClearsPendingRoll_AfterNextAction()
+    {
+        var (campaign, session, runId) = await SeedRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = AsksForStealthRoll();
+        await sut.ProcessActionAsync(Request(campaign, session, "I sneak past"));
+
+        _aiProvider.NextOutput = Output();
+        await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 14"));
+
+        var run = await Run(runId);
+        Assert.Null(run.PendingRollLabel);
+        Assert.Null(run.PendingRollDC);
+
+        await sut.ProcessActionAsync(Request(campaign, session, "I look around"));
+        Assert.DoesNotContain("PENDING ROLL", SystemPrompt());   // and it does not come back
+    }
+
+    [Fact]
+    public async Task AdventureSession_ClearsPendingRoll_EvenIfPlayerSaysUnrelated()
+    {
+        var (campaign, session, runId) = await SeedRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = AsksForStealthRoll();
+        await sut.ProcessActionAsync(Request(campaign, session, "I sneak past"));
+
+        _aiProvider.NextOutput = Output();
+        await sut.ProcessActionAsync(Request(campaign, session, "Actually, what time is it?"));
+
+        Assert.Null((await Run(runId)).PendingRollLabel);
+        await sut.ProcessActionAsync(Request(campaign, session, "I open the door"));
+        Assert.DoesNotContain("PENDING ROLL", SystemPrompt());
+    }
+
+    [Fact]
+    public async Task AdventureSession_ANewRollRequest_ReplacesThePendingOne()
+    {
+        var (campaign, session, runId) = await SeedRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = AsksForStealthRoll();
+        await sut.ProcessActionAsync(Request(campaign, session, "I sneak past"));
+
+        _aiProvider.NextOutput = Output(new AiProposedAction { Type = AiActionType.RequestRoll, Label = "Athletics", Formula = "1d20", Dc = 12 });
+        await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 14"));
+
+        var run = await Run(runId);
+        Assert.Equal("Athletics", run.PendingRollLabel);
+        Assert.Equal(12, run.PendingRollDC);
+    }
+
+    [Fact]
+    public async Task AdventureSession_NoAdventureRunning_NeverTouchesPendingRolls()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+        _aiProvider.NextOutput = AsksForStealthRoll();
+
+        var response = await CreateSut(_spy).ProcessActionAsync(Request(campaign, session));
+
+        Assert.Empty(_spy.PendingRollUpdates);
+        Assert.Equal(StateCommandOutcome.Applied, Assert.Single(response.ProposedActions).Outcome);
+    }
+
+    [Fact]
+    public async Task AdventureSession_SpyReceivesTheRollThatWasAsked()
+    {
+        var (campaign, session) = await SeedWithSpyRunAsync();
+        _aiProvider.NextOutput = AsksForStealthRoll();
+
+        await CreateSut(_spy).ProcessActionAsync(Request(campaign, session));
+
+        var update = Assert.Single(_spy.PendingRollUpdates);
+        Assert.Equal((_spy.RunId, "Dexterity (Stealth)", 14), (update.RunId, update.Label, update.Dc));
+    }
+
     [Fact]
     public async Task PlayerActionService_WithCharacter_StillTagsTheUserMessage()
     {
@@ -431,6 +670,14 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         public Task UpdateNpcStateAsync(Guid sessionId, string npcId, bool? hasBeenMet, bool? isAlive, string? revealedInfoId, string? playerNotes, CancellationToken ct = default)
         {
             Calls.Add(("UpdateNpc", sessionId, npcId, playerNotes));
+            return Task.CompletedTask;
+        }
+
+        public List<(Guid RunId, string? Label, int? Dc)> PendingRollUpdates { get; } = [];
+
+        public Task UpdatePendingRollAsync(Guid sessionId, string? label, int? dc, CancellationToken ct = default)
+        {
+            PendingRollUpdates.Add((sessionId, label, dc));
             return Task.CompletedTask;
         }
 

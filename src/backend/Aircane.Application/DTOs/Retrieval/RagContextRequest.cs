@@ -48,4 +48,11 @@ public sealed record RagContextRequest(
     /// After reranking, keep only this many chunks (before deduplication). Null keeps them all.
     /// Ignored when reranking is not performed.
     /// </summary>
-    int? PostRerankTopN = null);
+    int? PostRerankTopN = null,
+
+    /// <summary>
+    /// When true, reranking is bypassed even if a reranking provider is configured: the standard
+    /// pool (<see cref="TopK"/>) and <see cref="MinRelevanceScore"/> apply, and no reranker is called.
+    /// Used for interactive play, where the rerank latency is not acceptable.
+    /// </summary>
+    bool SkipReranking = false);

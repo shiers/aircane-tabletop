@@ -3,7 +3,7 @@
  * GenerationToast - small bottom-right notification for the in-flight adventure generation.
  * Mounted once in App.vue so it persists across navigation and never blocks the UI.
  */
-import { watch, onUnmounted } from 'vue'
+import { computed, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAdventureGenerationStore } from '../store'
 
@@ -47,6 +47,14 @@ watch(
 )
 
 onUnmounted(stopTimer)
+
+// An adventure generated for a campaign is found on that campaign's page; otherwise it is waiting in
+// the unassigned list.
+const viewTarget = computed(() =>
+  store.campaignId
+    ? { name: 'campaign-detail', params: { campaignId: store.campaignId } }
+    : { name: 'adventures' },
+)
 
 function viewAdventure(): void {
   stopTimer()
@@ -93,7 +101,7 @@ function viewAdventure(): void {
       <p class="mt-1 truncate text-sm text-gray-300">{{ store.adventureTitle }}</p>
       <router-link
         v-if="store.adventureId"
-        :to="{ name: 'adventure-review', params: { adventureId: store.adventureId } }"
+        :to="viewTarget"
         class="mt-2 inline-block text-sm text-aircane-300 underline hover:text-white"
         data-testid="toast-view-link"
         @click="viewAdventure"

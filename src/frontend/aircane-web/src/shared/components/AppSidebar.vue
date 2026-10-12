@@ -23,7 +23,7 @@ const navItems: { label: string; to: string; icon: string; iconName?: string }[]
   { label: 'Characters', to: '/characters', icon: 'characters', iconName: 'icon-character' },
   { label: 'Rules Lookup', to: '/rules-lookup', icon: 'rules', iconName: 'icon-rules' },
   { label: 'AI DM', to: '/settings/ai', icon: 'ai', iconName: 'icon-ai' },
-  { label: 'Adventure Forge', to: '/adventures/generate', icon: 'adventure', iconName: 'icon-adventure' },
+  { label: 'Adventure Forge', to: '/adventures', icon: 'adventure', iconName: 'icon-adventure' },
   { label: 'Dice Roller', to: '/sessions', icon: 'dice', iconName: 'icon-dice' },
   { label: 'About & Credits', to: '/about', icon: 'about', iconName: 'icon-about' },
 ]

@@ -171,6 +171,18 @@ export async function listCampaignAdventures(campaignId: string): Promise<Campai
   return response.data
 }
 
+/** Adventures that belong to no campaign yet, newest first. */
+export async function listUnassignedAdventures(): Promise<CampaignAdventure[]> {
+  const response = await apiClient.get<CampaignAdventure[]>('/api/adventures', { params: { unassigned: true } })
+  return response.data
+}
+
+/** Move an adventure into a campaign. */
+export async function assignAdventureToCampaign(adventureId: string, campaignId: string): Promise<CampaignAdventure> {
+  const response = await apiClient.patch<CampaignAdventure>(`/api/adventures/${adventureId}/assign`, { campaignId })
+  return response.data
+}
+
 export async function deleteAdventure(adventureId: string): Promise<void> {
   await apiClient.delete(`/api/adventures/${adventureId}`)
 }

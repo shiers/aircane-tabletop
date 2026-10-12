@@ -324,6 +324,21 @@ public sealed class AdventureSessionService : IAdventureSessionService
     }
 
     /// <inheritdoc />
+    public async Task UpdatePendingRollAsync(Guid sessionId, string? label, int? dc, CancellationToken ct = default)
+    {
+        var session = await LoadTrackedAsync(sessionId, ct);
+        var newLabel = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
+        var newDc = newLabel is null ? null : dc;
+
+        if (session.PendingRollLabel == newLabel && session.PendingRollDC == newDc)
+            return;
+
+        session.PendingRollLabel = newLabel;
+        session.PendingRollDC = newDc;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
     public async Task CompleteAdventureAsync(Guid sessionId, string outcomeNotes, CancellationToken ct = default)
     {
         var session = await LoadTrackedAsync(sessionId, ct);
@@ -394,6 +409,18 @@ public sealed class AdventureSessionService : IAdventureSessionService
         var title = adventure.Pitch?.Title ?? "Untitled adventure";
 
         var sb = new StringBuilder();
+
+        // First and unmissable: the player's next message answers this.
+        if (!string.IsNullOrWhiteSpace(session.PendingRollLabel))
+        {
+            var dc = session.PendingRollDC is { } d ? $", DC {d}" : string.Empty;
+            sb.AppendLine(
+                $"PENDING ROLL: The player was previously asked to roll {session.PendingRollLabel}{dc}. " +
+                "Their current message is the result of that roll - do NOT ask them to clarify what the roll was for. " +
+                "Assume it is this pending roll. Narrate the outcome of the roll before continuing the scene.");
+            sb.AppendLine();
+        }
+
         sb.AppendLine($"Current Adventure: {title}");
 
         if (scene is null)

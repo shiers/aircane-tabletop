@@ -55,7 +55,7 @@ public sealed class RagContextBuilder : IRagContextBuilder
         var maxVisibility = GetMaxVisibility(request.RequesterRole);
 
         // With reranking active, retrieve a wider candidate pool for the reranker to choose from.
-        var rerankingActive = IsRerankingActive;
+        var rerankingActive = IsRerankingActive && !request.SkipReranking;
         var topK = rerankingActive ? request.RerankCandidateTopK ?? request.TopK : request.TopK;
 
         // Retrieve relevant chunks using the combined search
@@ -106,7 +106,7 @@ public sealed class RagContextBuilder : IRagContextBuilder
         // Optionally rerank against the full question (cross-encoder), before dedup so the
         // best-scoring copy of a duplicated passage is the one kept.
         prioritizedChunks = await RerankAsync(
-            request.Query, prioritizedChunks, request.PostRerankTopN, cancellationToken);
+            request.Query, prioritizedChunks, request.PostRerankTopN, rerankingActive, cancellationToken);
 
         // Drop near-duplicate chunks so overlapping text doesn't waste the character budget
         var distinctChunks = RemoveDuplicateChunks(prioritizedChunks);
@@ -164,9 +164,10 @@ public sealed class RagContextBuilder : IRagContextBuilder
         string query,
         IReadOnlyList<ChunkResultDto> chunks,
         int? postRerankTopN,
+        bool enabled,
         CancellationToken cancellationToken)
     {
-        if (chunks.Count <= 1 || !IsRerankingActive)
+        if (chunks.Count <= 1 || !enabled)
             return chunks;
 
         var candidates = chunks

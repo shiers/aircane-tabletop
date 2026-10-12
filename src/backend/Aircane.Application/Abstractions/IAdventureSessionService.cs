@@ -72,6 +72,13 @@ public interface IAdventureSessionService
         string? playerNotes,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Records the roll the AI just asked the player for, or clears it when <paramref name="label"/> is
+    /// null. Called after every player action: the previous pending roll is consumed by that action,
+    /// and a new one is set only if the AI asked for another roll.
+    /// </summary>
+    Task UpdatePendingRollAsync(Guid sessionId, string? label, int? dc, CancellationToken ct = default);
+
     /// <summary>Ends the run successfully.</summary>
     Task CompleteAdventureAsync(Guid sessionId, string outcomeNotes, CancellationToken ct = default);
 

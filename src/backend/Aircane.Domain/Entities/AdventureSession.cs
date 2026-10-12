@@ -48,6 +48,15 @@ public class AdventureSession
     /// <summary>When the run last changed. Used to order and resume runs.</summary>
     public DateTimeOffset LastActivityAt { get; set; }
 
+    /// <summary>
+    /// What the AI last asked the player to roll (e.g. "Dexterity (Stealth)"), until the next player
+    /// action is processed. Lets the AI treat "I rolled a 14" as the answer without asking again.
+    /// </summary>
+    public string? PendingRollLabel { get; set; }
+
+    /// <summary>The difficulty class of the pending roll, when the AI gave one.</summary>
+    public int? PendingRollDC { get; set; }
+
     /// <summary>One entry per NPC in the adventure.</summary>
     public List<AdventureNpcState> NpcStates { get; set; } = [];
 

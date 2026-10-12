@@ -92,7 +92,13 @@ public sealed class PlayerActionService : IPlayerActionService
         // 2. Load current campaign state (scene, party, world flags)
         var state = await _campaignStateService.LoadStateAsync(request.CampaignId, cancellationToken);
 
-        // 3. Build RAG context (rules + adventure context)
+        // 3. If the campaign is running a solo adventure, load its context (current scene, objectives,
+        // exits, NPCs, what the player already knows, any pending roll). It is injected straight into
+        // the prompt, which also decides how retrieval runs below.
+        var adventureContext = await BuildAdventureContextAsync(request.CampaignId, cancellationToken);
+        var inAdventure = adventureContext is not null;
+
+        // 3a. Build RAG context (rules + adventure context)
         var ragRequest = new RagContextRequest(
             Query: request.ActionText,
             GameSystem: campaign.GameSystem,
@@ -102,19 +108,18 @@ public sealed class PlayerActionService : IPlayerActionService
             MaxContextChars: 8000,
             MinRelevanceScore: 0.4,
             // With reranking active: retrieve 25 candidates, keep the best 7 after reranking.
-            RerankCandidateTopK: 25,
-            PostRerankTopN: 7);
+            // During an adventure run reranking is skipped: the adventure context is already in the
+            // prompt, so the extra seconds of rerank latency buy little in interactive play. The
+            // standard pool and the standard score floor apply instead.
+            RerankCandidateTopK: inAdventure ? 10 : 25,
+            PostRerankTopN: inAdventure ? null : 7,
+            SkipReranking: inAdventure);
 
         var ragResult = await _ragContextBuilder.BuildContextAsync(ragRequest, cancellationToken);
 
         // 3b. Build the live combat context block, if an encounter is active. This lets the AI DM
         // reference HP, conditions, and whose turn it is when narrating.
         var combatContext = await BuildCombatContextAsync(request.CampaignId, state, cancellationToken);
-
-        // 3c. If the campaign is running a solo adventure, load its context (current scene,
-        // objectives, exits, NPCs, what the player already knows). The revealed clues and secrets in
-        // that block double as the "what the player already knows" context for the AI.
-        var adventureContext = await BuildAdventureContextAsync(request.CampaignId, cancellationToken);
 
         // 4. Build AI prompt with state + adventure + combat + context + player action
         var messages = BuildPromptMessages(request, campaign, state, ragResult, combatContext, adventureContext?.Text);
@@ -148,6 +153,10 @@ public sealed class PlayerActionService : IPlayerActionService
                 ErrorMessage: result.ErrorMessage,
                 ProposalId: result.ProposalId));
         }
+
+        // 6b. Remember a roll the AI asked for so the player's next message ("I rolled a 14") is read
+        // as its result. Every action consumes the previous pending roll, so this also clears it.
+        await UpdatePendingRollAsync(adventureContext, aiOutput.ProposedActions, cancellationToken);
 
         // 7. Map citations, enriching built-in sources with license metadata (Phase 10.6).
         var licenseByDocId = await CitationLicenseEnricher.BuildLicenseMapAsync(
@@ -237,6 +246,33 @@ public sealed class PlayerActionService : IPlayerActionService
             _logger.LogWarning(ex,
                 "Could not load adventure context for campaign {CampaignId}; continuing without it.", campaignId);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Sets the run's pending roll from the last labelled RequestRoll in this response, or clears it
+    /// when there was none. Best effort: failing to record it must not fail the player's turn.
+    /// </summary>
+    private async Task UpdatePendingRollAsync(
+        AdventureContext? adventureContext,
+        IReadOnlyList<Application.Abstractions.AiProposedAction> actions,
+        CancellationToken cancellationToken)
+    {
+        if (_adventureSessions is null || adventureContext is null)
+            return;
+
+        var roll = actions.LastOrDefault(a =>
+            a.Type == AiActionType.RequestRoll && !string.IsNullOrWhiteSpace(a.Label));
+
+        try
+        {
+            await _adventureSessions.UpdatePendingRollAsync(
+                adventureContext.SessionId, roll?.Label, roll?.Dc, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Could not update the pending roll for adventure session {AdventureSessionId}", adventureContext.SessionId);
         }
     }
 
@@ -471,6 +507,7 @@ public sealed class PlayerActionService : IPlayerActionService
         sb.AppendLine("- Respond to the player's action with engaging narration.");
         sb.AppendLine("- Use the retrieved rules and adventure context to ground your response.");
         sb.AppendLine("- If the action requires a dice roll, include a RequestRoll proposed action.");
+        sb.AppendLine("- RequestRoll MUST include a 'label' field describing exactly what is being rolled, e.g. \"label\": \"Dexterity (Stealth) check\". A RequestRoll without a label will be rejected. Always include the skill or ability name and the check type in the label. It also needs a 'formula' such as \"1d20\".");
         sb.AppendLine("- If the action results in damage, healing, or condition changes, include the appropriate proposed actions.");
         sb.AppendLine("- Keep narration concise but immersive.");
         sb.AppendLine("- Do not reveal hidden information unless the player's action warrants it.");

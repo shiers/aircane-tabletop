@@ -405,6 +405,8 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.StartedAt).IsRequired();
             entity.Property(e => e.CompletedAt).IsRequired(false);
             entity.Property(e => e.LastActivityAt).IsRequired();
+            entity.Property(e => e.PendingRollLabel).HasMaxLength(200).IsRequired(false);
+            entity.Property(e => e.PendingRollDC).IsRequired(false);
 
             // Per-run state is a handful of small lists keyed by content IDs that live inside the
             // adventure's JSON columns, so it is stored as jsonb rather than as child tables.

@@ -135,6 +135,29 @@ public class AdventureSessionPostgresTests : IClassFixture<PostgresFixture>, IAs
     }
 
     [Fact]
+    public async Task PendingRoll_PersistsAndClears()
+    {
+        var service = CreateService(_db);
+        var run = await service.StartAdventureSessionAsync(_adventure.Id, _campaign.Id, null);
+
+        await service.UpdatePendingRollAsync(run.Id, "Dexterity (Stealth)", 14);
+        await using (var fresh = NewContext())
+        {
+            var saved = await fresh.AdventureSessions.AsNoTracking().SingleAsync(s => s.Id == run.Id);
+            Assert.Equal("Dexterity (Stealth)", saved.PendingRollLabel);
+            Assert.Equal(14, saved.PendingRollDC);
+        }
+
+        await service.UpdatePendingRollAsync(run.Id, null, null);
+        await using (var fresh = NewContext())
+        {
+            var saved = await fresh.AdventureSessions.AsNoTracking().SingleAsync(s => s.Id == run.Id);
+            Assert.Null(saved.PendingRollLabel);
+            Assert.Null(saved.PendingRollDC);
+        }
+    }
+
+    [Fact]
     public async Task ActiveRunLookup_FindsOnlyTheInProgressRun()
     {
         var service = CreateService(_db);

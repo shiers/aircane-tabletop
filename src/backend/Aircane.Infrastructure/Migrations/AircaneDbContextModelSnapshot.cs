@@ -65,6 +65,13 @@ namespace Aircane.Infrastructure.Migrations
                     b.Property<string>("OutcomeNotes")
                         .HasColumnType("text");
 
+                    b.Property<int?>("PendingRollDC")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PendingRollLabel")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("RevealedClueIds")
                         .IsRequired()
                         .HasColumnType("jsonb");

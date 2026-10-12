@@ -20,7 +20,7 @@ test.describe('Home Page', () => {
     await expect(page.getByRole('heading', { name: 'Document Library' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Campaign Management' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Character Sheets' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Dice Roller' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Join Session' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'AI DM Runtime' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Adventure Generation' })).toBeVisible()
   })

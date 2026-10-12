@@ -15,7 +15,7 @@ test.describe('App Navigation', () => {
     await expect(nav.getByText('Rules Lookup')).toBeVisible()
     await expect(nav.getByText('AI DM')).toBeVisible()
     await expect(nav.getByText('Adventure Forge')).toBeVisible()
-    await expect(nav.getByText('Dice Roller')).toBeVisible()
+    await expect(nav.getByText('Join Session')).toBeVisible()
   })
 
   test('clicking Library navigates to /library', async ({ page }) => {

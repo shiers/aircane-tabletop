@@ -4,6 +4,7 @@ import * as signalR from '@microsoft/signalr'
 import { generateAdventure, type GenerateAdventureRequest } from './api'
 
 const HUB_URL = '/hubs/library'
+const RECONNECT_DELAY_MS = 5_000
 
 export type GenerationStatus = 'idle' | 'generating' | 'completed' | 'failed'
 
@@ -48,17 +49,36 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
   const isGenerating = computed(() => status.value === 'generating')
 
   let connection: signalR.HubConnection | null = null
+  let stopped = false
   let lastRequest: GenerateAdventureRequest | null = null
   let lastCampaignId: string | null = null
 
   // ── SignalR ────────────────────────────────────────────────────────────────
 
-  function matches(event: { jobId: string }): boolean {
-    return jobId.value !== null && event.jobId === jobId.value
+  /**
+   * Whether this event is about the job we care about. While a job is in flight only its own events
+   * count. Otherwise (nothing tracked: after a reload / hot-reload, or from another tab) the event is
+   * adopted, so a finished adventure is never silently missed.
+   */
+  function accepts(event: { jobId: string }): boolean {
+    if (status.value === 'generating' && jobId.value !== null) return event.jobId === jobId.value
+    if (jobId.value === event.jobId) return true
+    adopt(event.jobId)
+    return true
+  }
+
+  function adopt(id: string): void {
+    jobId.value = id
+    status.value = 'generating'
+    percentComplete.value = 0
+    stage.value = ''
+    message.value = 'Generating...'
+    error.value = null
   }
 
   function onProgress(e: ProgressEvent): void {
-    if (!matches(e) || status.value !== 'generating') return
+    if (!accepts(e) || status.value !== 'generating') return
+    toastVisible.value = true
     // Never let the bar move backwards if events arrive out of order.
     percentComplete.value = Math.max(percentComplete.value, e.percentComplete)
     stage.value = e.stage
@@ -66,7 +86,7 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
   }
 
   function onCompleted(e: CompletedEvent): void {
-    if (!matches(e)) return
+    if (!accepts(e)) return
     status.value = 'completed'
     percentComplete.value = 100
     message.value = 'Adventure ready!'
@@ -76,7 +96,7 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
   }
 
   function onFailed(e: FailedEvent): void {
-    if (!matches(e)) return
+    if (!accepts(e)) return
     status.value = 'failed'
     error.value = e.error
     toastVisible.value = true
@@ -107,9 +127,46 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
       }
     })
 
+    // Reconnect attempts exhausted (e.g. the backend restarted): forget the dead connection so the
+    // next start() or retry builds a fresh one, and keep trying in the background.
+    conn.onclose(() => {
+      if (connection === conn) connection = null
+      scheduleReconnect()
+    })
+
     await conn.start()
     await join(conn)
     connection = conn
+  }
+
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+  function scheduleReconnect(): void {
+    if (reconnectTimer || stopped) return
+    reconnectTimer = setTimeout(async () => {
+      reconnectTimer = null
+      try {
+        await ensureConnected()
+      } catch {
+        connection = null
+        scheduleReconnect()
+      }
+    }, RECONNECT_DELAY_MS)
+  }
+
+  /**
+   * Start listening for generation events for the lifetime of the app. Called once from App.vue, so
+   * the listeners belong to the app and not to any page: navigating around never affects them.
+   * Failure is not fatal (the backend may not be up yet); it keeps retrying, and start() also retries.
+   */
+  async function initialize(): Promise<void> {
+    stopped = false
+    try {
+      await ensureConnected()
+    } catch {
+      connection = null
+      scheduleReconnect()
+    }
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -168,6 +225,9 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
   }
 
   async function disconnect(): Promise<void> {
+    stopped = true
+    if (reconnectTimer) clearTimeout(reconnectTimer)
+    reconnectTimer = null
     const conn = connection
     connection = null
     if (!conn) return
@@ -189,6 +249,7 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
     error,
     toastVisible,
     isGenerating,
+    initialize,
     start,
     retry,
     dismissToast,

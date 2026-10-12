@@ -38,33 +38,40 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
     public async Task<GeneratedAdventureDto> GenerateAsync(
         GenerateAdventureRequest request,
         PartyAnalysisResult? partyAnalysis,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string, int>? onProgress = null)
     {
         _logger.LogInformation(
             "Starting adventure generation pipeline. Mode={Mode}, Ruleset={Ruleset}, PartySize={PartySize}",
             request.Mode, request.Ruleset, request.PartySize);
 
         // Stage 3: Pitch
+        Progress(onProgress, AdventureGenerationStages.Pitch);
         var pitch = await RegeneratePitchAsync(request, partyAnalysis, cancellationToken);
         _logger.LogInformation("Pitch generated: {Title}", pitch.Title);
 
         // Stage 4: Outline
+        Progress(onProgress, AdventureGenerationStages.Outline);
         var outline = await RegenerateOutlineAsync(request, partyAnalysis, pitch, cancellationToken);
         _logger.LogInformation("Outline generated with {Count} scenes", outline.SceneSummaries.Count);
 
         // Stage 5: Scenes
+        Progress(onProgress, AdventureGenerationStages.Scenes);
         var scenes = await RegenerateScenesAsync(request, partyAnalysis, pitch, outline, cancellationToken);
         _logger.LogInformation("Scenes generated: {Count}", scenes.Count);
 
         // Stage 6: NPCs
+        Progress(onProgress, AdventureGenerationStages.Npcs);
         var npcs = await RegenerateNpcsAsync(request, partyAnalysis, pitch, scenes, cancellationToken);
         _logger.LogInformation("NPCs generated: {Count}", npcs.Count);
 
         // Stage 7: Encounters
+        Progress(onProgress, AdventureGenerationStages.Encounters);
         var encounters = await RegenerateEncountersAsync(request, partyAnalysis, pitch, scenes, cancellationToken);
         _logger.LogInformation("Encounters generated: {Count}", encounters.Count);
 
         // Stage 8: Clues
+        Progress(onProgress, AdventureGenerationStages.Clues);
         var clues = await RegenerateCluesAsync(request, partyAnalysis, pitch, scenes, npcs, cancellationToken);
         _logger.LogInformation("Clues generated: {Secrets} secrets, {Handouts} handouts, {FailForward} fail-forward paths",
             clues.Secrets.Count, clues.Handouts.Count, clues.FailForwardPaths.Count);
@@ -222,6 +229,10 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         var response = await CallAiAsync(systemPrompt, userPrompt, cancellationToken);
         return ParseJsonResponse<AdventureClues>(response, "clues");
     }
+
+    /// <summary>Reports that a stage is starting (stage name and the bar position for it).</summary>
+    private static void Progress(Action<string, int>? onProgress, string stage)
+        => onProgress?.Invoke(stage, AdventureGenerationStages.PercentFor(stage));
 
     // ── AI Call Helper ─────────────────────────────────────────────────────────
 

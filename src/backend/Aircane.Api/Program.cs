@@ -24,6 +24,7 @@ builder.Services.AddSignalR();
 
 // Register LibraryHubNotifier so Infrastructure jobs can send hub events
 builder.Services.AddScoped<ILibraryHubNotifier, LibraryHubNotifier>();
+builder.Services.AddScoped<IAdventureGenerationNotifier, AdventureGenerationNotifier>();
 
 // Register SessionHubNotifier so application/infrastructure services can broadcast session events
 builder.Services.AddScoped<ISessionHubNotifier, SessionHubNotifier>();

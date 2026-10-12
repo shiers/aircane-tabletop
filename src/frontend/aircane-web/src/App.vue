@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import AppLayout from '@/shared/components/AppLayout.vue'
 import OllamaBanner from '@/shared/components/OllamaBanner.vue'
 import SetupWizard from '@/features/setup/SetupWizard.vue'
+import GenerationToast from '@/features/adventure-generation/components/GenerationToast.vue'
 import { useSetupWizard } from '@/features/setup/composables/useSetupWizard'
 import { isDesktop, listen, TauriEvents } from '@/shared/tauri/bridge'
 import { useFeedbackModal } from '@/features/feedback/useFeedbackModal'
@@ -61,6 +62,9 @@ onUnmounted(() => {
     <OllamaBanner />
     <RouterView />
   </AppLayout>
+
+  <!-- Adventure generation progress: app-level so it survives navigation and never blocks the UI. -->
+  <GenerationToast />
 
   <!-- First-launch setup wizard overlays everything (fixed, full-screen). -->
   <SetupWizard v-if="wizardVisible" @complete="wizardVisible = false" />

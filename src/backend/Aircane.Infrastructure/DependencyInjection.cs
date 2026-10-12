@@ -230,6 +230,7 @@ public static class DependencyInjection
         services.AddScoped<IJobHandler<FolderScanJobMessage>, FolderScanJobHandler>();
         services.AddScoped<IJobHandler<ReembedJobMessage>, ReembedJobHandler>();
         services.AddScoped<IJobHandler<ReocrJobMessage>, ReocrJobHandler>();
+        services.AddScoped<IJobHandler<AdventureGenerationJobMessage>, AdventureGenerationJobHandler>();
     }
 
     private static void RegisterOcrEngine(

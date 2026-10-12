@@ -45,3 +45,12 @@ public sealed record ReocrJobMessage(Guid? TargetDocumentId) : IBackgroundJob
     public string JobType => TargetDocumentId is null ? "ReocrAll" : "Reocr";
     public Guid? DocumentId => TargetDocumentId;
 }
+
+public sealed record AdventureGenerationJobMessage(
+    DTOs.Adventures.GenerateAdventureRequest Request,
+    Guid? CampaignId) : IBackgroundJob
+{
+    public Guid JobId { get; init; } = Guid.NewGuid();
+    public string JobType => "AdventureGeneration";
+    public Guid? DocumentId => null;
+}

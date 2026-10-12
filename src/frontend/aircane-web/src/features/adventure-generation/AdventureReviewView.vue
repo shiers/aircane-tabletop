@@ -76,12 +76,12 @@ async function handleApprove() {
   }
 }
 
-// Back goes to the campaign this adventure belongs to, otherwise to the generation form.
+// Back goes to the campaign this adventure belongs to, otherwise to the Adventure Forge list.
 function goBack() {
   if (draft.value?.campaignId) {
     router.push({ name: 'campaign-detail', params: { campaignId: draft.value.campaignId } })
   } else {
-    router.push({ name: 'adventure-generate' })
+    router.push({ name: 'adventures' })
   }
 }
 

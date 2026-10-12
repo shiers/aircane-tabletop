@@ -135,6 +135,35 @@ public class AdventureSessionPostgresTests : IClassFixture<PostgresFixture>, IAs
     }
 
     [Fact]
+    public async Task Transcript_RoundTripsInOrder_KeepsTheLast50_AndGoesWithTheRun()
+    {
+        var service = CreateService(_db);
+        var run = await service.StartAdventureSessionAsync(_adventure.Id, _campaign.Id, null);
+        for (var i = 1; i <= 30; i++)
+            await service.RecordExchangeAsync(run.Id, $"action {i}", $"narration {i}", "scene-1");
+
+        await using (var fresh = NewContext())
+        {
+            var history = await CreateService(fresh).GetHistoryAsync(run.Id);
+            Assert.Equal(50, history.Count);
+            Assert.Equal("action 6", history[0].Content);
+            Assert.Equal("narration 30", history[^1].Content);
+            Assert.Equal(history.Select(h => h.CreatedAt).Order(), history.Select(h => h.CreatedAt));
+            Assert.All(history, h => Assert.Equal("scene-1", h.SceneId));
+        }
+
+        // Entries are tied to the run: deleting the adventure deletes the run and its transcript.
+        await using (var db = NewContext())
+        {
+            db.GeneratedAdventures.Remove(await db.GeneratedAdventures.SingleAsync(a => a.Id == _adventure.Id));
+            await db.SaveChangesAsync();
+        }
+
+        await using var after = NewContext();
+        Assert.False(await after.AdventureSessionEntries.AnyAsync(e => e.AdventureSessionId == run.Id));
+    }
+
+    [Fact]
     public async Task PendingRoll_PersistsAndClears()
     {
         var service = CreateService(_db);

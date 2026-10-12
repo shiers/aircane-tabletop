@@ -79,6 +79,25 @@ public interface IAdventureSessionService
     /// </summary>
     Task UpdatePendingRollAsync(Guid sessionId, string? label, int? dc, CancellationToken ct = default);
 
+    /// <summary>
+    /// Saves one exchange to the run's transcript: the player's action and the AI's narration.
+    /// <paramref name="sceneIdAtStart"/> is the scene the player acted in; the narration is stamped with
+    /// the scene the run is in once the AI's actions have been applied.
+    /// </summary>
+    Task RecordExchangeAsync(
+        Guid sessionId,
+        string playerAction,
+        string narration,
+        string? sceneIdAtStart,
+        CancellationToken ct = default);
+
+    /// <summary>Returns the last <paramref name="limit"/> transcript entries, oldest first.</summary>
+    Task<IReadOnlyList<AdventureHistoryEntryDto>> GetHistoryAsync(
+        Guid sessionId, int limit = 50, CancellationToken ct = default);
+
+    /// <summary>Every run that is currently in progress, most recently active first.</summary>
+    Task<IReadOnlyList<AdventureSession>> ListInProgressAsync(CancellationToken ct = default);
+
     /// <summary>Ends the run successfully.</summary>
     Task CompleteAdventureAsync(Guid sessionId, string outcomeNotes, CancellationToken ct = default);
 
@@ -103,4 +122,5 @@ public interface IAdventureSessionService
 /// </summary>
 /// <param name="SessionId">The adventure run's ID.</param>
 /// <param name="Text">The context block to include in the AI system prompt.</param>
-public sealed record AdventureContext(Guid SessionId, string Text);
+/// <param name="CurrentSceneId">The scene the run is in right now (null if unknown).</param>
+public sealed record AdventureContext(Guid SessionId, string Text, string? CurrentSceneId = null);

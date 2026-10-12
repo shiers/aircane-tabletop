@@ -71,6 +71,28 @@ public sealed class UnassignedAdventuresTests : IDisposable
     }
 
     [Fact]
+    public async Task GetUnassigned_IncludesTheActiveSession_EvenThoughTheRunIsInACampaign()
+    {
+        // An unassigned adventure can be played inside a campaign; its card should still offer Resume.
+        var camp = await AddCampaignAsync();
+        var adv = await AddAsync(null, "Free but running", DateTime.UtcNow, GeneratedAdventureStatus.Approved);
+        var idle = await AddAsync(null, "Free and idle", DateTime.UtcNow.AddMinutes(-1), GeneratedAdventureStatus.Approved);
+        var run = new AdventureSession
+        {
+            Id = Guid.NewGuid(), GeneratedAdventureId = adv.Id, CampaignId = camp.Id, CurrentSceneId = "scene-3",
+            Status = AdventureSessionStatus.InProgress, StartedAt = DateTimeOffset.UtcNow, LastActivityAt = DateTimeOffset.UtcNow,
+        };
+        _db.AdventureSessions.Add(run);
+        await _db.SaveChangesAsync();
+
+        var items = await UnassignedAsync();
+
+        var running = items.Single(i => i.Id == adv.Id).ActiveSession!;
+        Assert.Equal((run.Id, 3, 3), (running.SessionId, running.CurrentSceneNumber, running.TotalScenes));
+        Assert.Null(items.Single(i => i.Id == idle.Id).ActiveSession);
+    }
+
+    [Fact]
     public async Task AdventuresController_GetUnassigned_ExcludesAdventuresWithCampaign()
     {
         var camp = await AddCampaignAsync();

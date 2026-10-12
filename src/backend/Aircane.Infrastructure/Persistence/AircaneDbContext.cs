@@ -40,6 +40,7 @@ public class AircaneDbContext : DbContext
     public DbSet<AiActionProposal> AiActionProposals => Set<AiActionProposal>();
     public DbSet<GeneratedAdventure> GeneratedAdventures => Set<GeneratedAdventure>();
     public DbSet<AdventureSession> AdventureSessions => Set<AdventureSession>();
+    public DbSet<AdventureSessionEntry> AdventureSessionEntries => Set<AdventureSessionEntry>();
     public DbSet<GameSystemDefinition> GameSystemDefinitions => Set<GameSystemDefinition>();
     public DbSet<GameSystemDefinitionVersion> GameSystemDefinitionVersions => Set<GameSystemDefinitionVersion>();
     public DbSet<GameSystemAlias> GameSystemAliases => Set<GameSystemAlias>();
@@ -438,6 +439,27 @@ public class AircaneDbContext : DbContext
                 .HasDatabaseName("IX_AdventureSessions_CampaignId_Status");
             entity.HasIndex(e => e.GeneratedAdventureId)
                 .HasDatabaseName("IX_AdventureSessions_GeneratedAdventureId");
+        });
+
+        // ── AdventureSessionEntry ─────────────────────────────────────────────
+        modelBuilder.Entity<AdventureSessionEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AdventureSessionId).IsRequired();
+            entity.Property(e => e.EntryType).HasConversion<int>();
+            if (!_isInMemory) entity.Property(e => e.Content).HasColumnType("text").IsRequired();
+            entity.Property(e => e.SceneId).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            // The transcript goes with its run.
+            entity.HasOne<AdventureSession>()
+                .WithMany()
+                .HasForeignKey(e => e.AdventureSessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // "Last N entries of this run" is the only read.
+            entity.HasIndex(e => new { e.AdventureSessionId, e.CreatedAt })
+                .HasDatabaseName("IX_AdventureSessionEntries_AdventureSessionId_CreatedAt");
         });
 
         // ── GameSystemDefinition ──────────────────────────────────────────────

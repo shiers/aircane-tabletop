@@ -38,6 +38,9 @@ public sealed record AdventureListItemDto
 
     /// <summary>Average party level; null if the stored generation request could not be read.</summary>
     public int? AverageLevel { get; init; }
+
+    /// <summary>The most recent in-progress run of this adventure, or null if there is none.</summary>
+    public AdventureActiveSessionDto? ActiveSession { get; init; }
 }
 
 /// <summary>Body of <c>PATCH /api/adventures/{id}/assign</c>.</summary>

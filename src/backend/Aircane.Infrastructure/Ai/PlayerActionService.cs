@@ -158,6 +158,9 @@ public sealed class PlayerActionService : IPlayerActionService
         // as its result. Every action consumes the previous pending roll, so this also clears it.
         await UpdatePendingRollAsync(adventureContext, aiOutput.ProposedActions, cancellationToken);
 
+        // 6c. Save the exchange to the run's transcript so the player can resume later.
+        await RecordExchangeAsync(adventureContext, request.ActionText, aiOutput.Narration, cancellationToken);
+
         // 7. Map citations, enriching built-in sources with license metadata (Phase 10.6).
         var licenseByDocId = await CitationLicenseEnricher.BuildLicenseMapAsync(
             _db, ragResult.Citations.Select(c => c.SourceDocumentId), cancellationToken);
@@ -246,6 +249,31 @@ public sealed class PlayerActionService : IPlayerActionService
             _logger.LogWarning(ex,
                 "Could not load adventure context for campaign {CampaignId}; continuing without it.", campaignId);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Saves the player's action and the AI's narration to the run's transcript. Best effort: the
+    /// narration history is a convenience and must never block or fail gameplay.
+    /// </summary>
+    private async Task RecordExchangeAsync(
+        AdventureContext? adventureContext,
+        string playerAction,
+        string narration,
+        CancellationToken cancellationToken)
+    {
+        if (_adventureSessions is null || adventureContext is null)
+            return;
+
+        try
+        {
+            await _adventureSessions.RecordExchangeAsync(
+                adventureContext.SessionId, playerAction, narration, adventureContext.CurrentSceneId, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Could not save the narration history for adventure session {AdventureSessionId}", adventureContext.SessionId);
         }
     }
 

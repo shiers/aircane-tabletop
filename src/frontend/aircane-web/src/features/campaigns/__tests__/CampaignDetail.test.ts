@@ -184,6 +184,40 @@ describe('CampaignDetail', () => {
     expect(router.currentRoute.value.fullPath).toBe('/adventures/solo/run-existing')
   })
 
+  const running = (over: Partial<CampaignAdventure> = {}) =>
+    adventure({ activeSession: { sessionId: 'run-7', currentSceneNumber: 1, totalScenes: 5, status: 'InProgress' }, ...over })
+
+  it('CampaignDetail_ShowsResumeButton_WhenSessionInProgress', async () => {
+    const { wrapper, router } = await mountDetail([running()])
+    const card = cards(wrapper)[0]
+
+    expect(card.findAll('button').map((b) => b.text())).toEqual(['Review', 'Resume', 'Delete'])
+    expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(false)
+
+    // Resume opens the existing run: it does not start a new one.
+    const start = vi.spyOn(useAdventureSessionStore(), 'startSession')
+    await card.find('[data-testid="resume-adventure-button"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/adventures/solo/run-7')
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('CampaignDetail_ShowsSceneProgress_WhenSessionInProgress', async () => {
+    const { wrapper } = await mountDetail([running()])
+
+    expect(cards(wrapper)[0].find('[data-testid="adventure-progress"]').text()).toBe('Scene 1 of 5 — In Progress')
+  })
+
+  it('CampaignDetail_ShowsPlaySolo_WhenNoActiveSession', async () => {
+    const { wrapper } = await mountDetail([adventure(), adventure({ id: 'adv-2', title: 'Other', activeSession: null })])
+
+    for (const card of cards(wrapper)) {
+      expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(true)
+      expect(card.find('[data-testid="resume-adventure-button"]').exists()).toBe(false)
+      expect(card.find('[data-testid="adventure-progress"]').exists()).toBe(false)
+    }
+  })
+
   it('CampaignDetail_GenerateAdventureButton_NavigatesToForgeWithCampaignId', async () => {
     const { wrapper, router } = await mountDetail([adventure()])
 

@@ -85,6 +85,58 @@ public sealed class CampaignAdventuresTests : IDisposable
         Assert.Equal(5, first.AverageLevel);
     }
 
+
+    private async Task<AdventureSession> AddRunAsync(
+        Guid adventureId, Guid campaignId, string sceneId = "scene-2",
+        AdventureSessionStatus status = AdventureSessionStatus.InProgress)
+    {
+        var run = new AdventureSession
+        {
+            Id = Guid.NewGuid(), GeneratedAdventureId = adventureId, CampaignId = campaignId,
+            CurrentSceneId = sceneId, Status = status,
+            StartedAt = DateTimeOffset.UtcNow, LastActivityAt = DateTimeOffset.UtcNow,
+        };
+        _db.AdventureSessions.Add(run);
+        await _db.SaveChangesAsync();
+        return run;
+    }
+
+    [Fact]
+    public async Task CampaignsController_GetAdventures_IncludesActiveSession()
+    {
+        var camp = await AddCampaignAsync();
+        var adv = await AddAdventureAsync(camp.Id, "Running", DateTime.UtcNow, GeneratedAdventureStatus.Approved);
+        var run = await AddRunAsync(adv.Id, camp.Id, sceneId: "scene-2");
+
+        var items = Assert.IsAssignableFrom<IReadOnlyList<CampaignAdventureListItemDto>>(
+            Assert.IsType<OkObjectResult>(await _controller.ListCampaignAdventures(camp.Id, default)).Value);
+
+        var active = Assert.IsType<AdventureActiveSessionDto>(Assert.Single(items).ActiveSession);
+        Assert.Equal(run.Id, active.SessionId);
+        Assert.Equal(2, active.CurrentSceneNumber);   // scene-2 ...
+        Assert.Equal(3, active.TotalScenes);          // ... of 3
+        Assert.Equal("InProgress", active.Status);
+    }
+
+    [Fact]
+    public async Task CampaignsController_GetAdventures_ActiveSessionIsNull_WhenNoSession()
+    {
+        var camp = await AddCampaignAsync();
+        var idle = await AddAdventureAsync(camp.Id, "Idle", DateTime.UtcNow, GeneratedAdventureStatus.Approved);
+        var finished = await AddAdventureAsync(camp.Id, "Finished", DateTime.UtcNow.AddMinutes(-1), GeneratedAdventureStatus.Approved);
+        await AddRunAsync(finished.Id, camp.Id, status: AdventureSessionStatus.Completed);
+        var other = await AddCampaignAsync("Other");
+        var elsewhere = await AddAdventureAsync(camp.Id, "Run in another campaign", DateTime.UtcNow.AddMinutes(-2), GeneratedAdventureStatus.Approved);
+        await AddRunAsync(elsewhere.Id, other.Id);   // not this campaign, so it is not "in progress here"
+
+        var items = Assert.IsAssignableFrom<IReadOnlyList<CampaignAdventureListItemDto>>(
+            Assert.IsType<OkObjectResult>(await _controller.ListCampaignAdventures(camp.Id, default)).Value);
+
+        Assert.Equal(3, items.Count);
+        Assert.All(items, i => Assert.Null(i.ActiveSession));
+        _ = idle;
+    }
+
     [Fact]
     public async Task ListCampaignAdventures_NoAdventures_ReturnsEmptyList()
     {

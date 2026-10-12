@@ -4,6 +4,7 @@ import * as signalR from '@microsoft/signalr'
 import {
   startAdventureSession,
   getAdventureSession,
+  getAdventureHistory,
   submitAdventureAction,
   advanceAdventureScene,
   abandonAdventureSession,
@@ -20,8 +21,8 @@ import {
 /** One line in the narration feed. */
 export interface NarrationEntry {
   id: string
-  /** player = what the user typed, dm = AI narration, system = state changes and notices. */
-  kind: 'player' | 'dm' | 'system'
+  /** player = what the user typed, dm = AI narration, system = state changes and notices, separator = a divider line. */
+  kind: 'player' | 'dm' | 'system' | 'separator'
   text: string
   timestamp: string
 }
@@ -34,6 +35,9 @@ const ADVENTURE_EVENTS = [
   'AdventureNpcUpdated',
   'AdventureCompleted',
 ] as const
+
+/** Shown between a run's saved conversation and anything new. */
+export const RESUME_SEPARATOR = '── Resuming session ──'
 
 let entryCounter = 0
 
@@ -151,19 +155,51 @@ export const useAdventureSessionStore = defineStore('adventureSession', () => {
   }
 
   /** Load a run's state (e.g. when opening the solo view directly). */
-  async function loadSession(sessionId: string): Promise<void> {
+  async function loadSession(sessionId: string, seedOpening = true): Promise<void> {
     isLoading.value = true
     error.value = null
     try {
       const state = await getAdventureSession(sessionId)
       if (currentSession.value?.id !== state.id) resetFeed()
       currentSession.value = state
-      if (narrationHistory.value.length === 0) {
+      if (seedOpening && narrationHistory.value.length === 0) {
         pushEntry('dm', state.currentScene.readAloudText?.trim() || state.currentScene.description)
       }
     } catch (err) {
       error.value = adventureErrorMessage(err, 'Could not load the adventure.')
       throw err
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Open a run for play. Loads its state, then, if the narration feed is empty (a fresh page load, or
+   * coming back to a run), fills it from the saved conversation, followed by a "Resuming session"
+   * divider. A run with no saved conversation starts with the scene's opening text instead.
+   */
+  async function openSession(sessionId: string): Promise<void> {
+    await loadSession(sessionId, false)
+    if (narrationHistory.value.length > 0) return
+
+    isLoading.value = true
+    try {
+      let saved: Awaited<ReturnType<typeof getAdventureHistory>> = []
+      try {
+        saved = await getAdventureHistory(sessionId)
+      } catch {
+        // The history is a convenience: play on without it rather than blocking the run.
+      }
+
+      if (saved.length > 0) {
+        for (const entry of saved) {
+          pushEntry(entry.entryType === 'PlayerAction' ? 'player' : 'dm', entry.content)
+        }
+        pushEntry('separator', RESUME_SEPARATOR)
+      } else if (currentSession.value) {
+        const scene = currentSession.value.currentScene
+        pushEntry('dm', scene.readAloudText?.trim() || scene.description)
+      }
     } finally {
       isLoading.value = false
     }
@@ -349,6 +385,7 @@ export const useAdventureSessionStore = defineStore('adventureSession', () => {
     // Actions
     startSession,
     loadSession,
+    openSession,
     sendPlayerAction,
     advanceScene,
     abandonSession,

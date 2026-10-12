@@ -41,6 +41,9 @@ const statusClass = computed(
       }}</span>
     </div>
     <p class="mt-1 text-sm text-gray-400" data-testid="adventure-meta">{{ meta }}</p>
+    <p v-if="adventure.activeSession" class="mt-1 text-sm text-aircane-300" data-testid="adventure-progress">
+      Scene {{ adventure.activeSession.currentSceneNumber }} of {{ adventure.activeSession.totalScenes }} — In Progress
+    </p>
 
     <div class="mt-3 flex flex-wrap items-start justify-end gap-2">
       <slot />

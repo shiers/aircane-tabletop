@@ -68,6 +68,10 @@ function generate(): void {
   void router.push({ name: 'adventure-generate' })
 }
 
+function resumeRun(runId: string): void {
+  void router.push({ name: 'adventure-solo', params: { sessionId: runId } })
+}
+
 function review(a: CampaignAdventure): void {
   void router.push({ name: 'adventure-review', params: { adventureId: a.id } })
 }
@@ -207,7 +211,14 @@ async function remove(a: CampaignAdventure): Promise<void> {
             @click="approve(a)"
           >Approve</button>
           <button type="button" data-testid="review-button" class="adventure-action" @click="review(a)">Review</button>
-          <PlaySoloLauncher v-if="canPlay(a)" :adventure-id="a.id" />
+          <button
+            v-if="a.activeSession"
+            type="button"
+            data-testid="resume-adventure-button"
+            class="adventure-action adventure-action--primary"
+            @click="resumeRun(a.activeSession.sessionId)"
+          >Resume</button>
+          <PlaySoloLauncher v-else-if="canPlay(a)" :adventure-id="a.id" />
           <button
             type="button"
             data-testid="delete-button"

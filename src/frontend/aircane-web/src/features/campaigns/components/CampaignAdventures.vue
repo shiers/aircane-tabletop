@@ -123,6 +123,11 @@ async function playSolo(a: CampaignAdventure): Promise<void> {
   }
 }
 
+/** Go back into a run that is already in progress (no new run is started). */
+async function resumeRun(runId: string): Promise<void> {
+  await router.push({ name: 'adventure-solo', params: { sessionId: runId } })
+}
+
 async function resume(): Promise<void> {
   if (resumeSessionId.value) {
     await router.push({ name: 'adventure-solo', params: { sessionId: resumeSessionId.value } })
@@ -197,7 +202,14 @@ async function resume(): Promise<void> {
           @click="approve(a)"
         >Approve</button>
         <button
-          v-if="canPlay(a)"
+          v-if="a.activeSession"
+          type="button"
+          data-testid="resume-adventure-button"
+          class="adventure-action adventure-action--primary"
+          @click="resumeRun(a.activeSession.sessionId)"
+        >Resume</button>
+        <button
+          v-else-if="canPlay(a)"
           type="button"
           data-testid="play-solo-button"
           class="adventure-action adventure-action--primary"

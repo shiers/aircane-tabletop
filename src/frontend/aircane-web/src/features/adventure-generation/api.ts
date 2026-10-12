@@ -163,6 +163,16 @@ export interface CampaignAdventure {
   length: string | null
   averageLevel: number | null
   createdAt: string
+  /** The in-progress run of this adventure, if any (so the card can offer Resume). */
+  activeSession?: ActiveSession | null
+}
+
+/** How far through an in-progress run is. */
+export interface ActiveSession {
+  sessionId: string
+  currentSceneNumber: number
+  totalScenes: number
+  status: string
 }
 
 /** The adventures generated for a campaign, newest first. */

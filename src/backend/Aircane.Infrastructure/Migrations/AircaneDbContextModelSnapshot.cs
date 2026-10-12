@@ -102,6 +102,37 @@ namespace Aircane.Infrastructure.Migrations
                     b.ToTable("AdventureSessions");
                 });
 
+            modelBuilder.Entity("Aircane.Domain.Entities.AdventureSessionEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AdventureSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EntryType")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SceneId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdventureSessionId", "CreatedAt")
+                        .HasDatabaseName("IX_AdventureSessionEntries_AdventureSessionId_CreatedAt");
+
+                    b.ToTable("AdventureSessionEntries");
+                });
+
             modelBuilder.Entity("Aircane.Domain.Entities.AiActionProposal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -985,6 +1016,15 @@ namespace Aircane.Infrastructure.Migrations
                     b.HasOne("Aircane.Domain.Entities.GeneratedAdventure", null)
                         .WithMany()
                         .HasForeignKey("GeneratedAdventureId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Aircane.Domain.Entities.AdventureSessionEntry", b =>
+                {
+                    b.HasOne("Aircane.Domain.Entities.AdventureSession", null)
+                        .WithMany()
+                        .HasForeignKey("AdventureSessionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

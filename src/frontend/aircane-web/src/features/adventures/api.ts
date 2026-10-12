@@ -180,6 +180,27 @@ export async function getActiveAdventureSession(
   }
 }
 
+/** One line of a run's saved conversation. */
+export interface AdventureHistoryEntryDto {
+  id: string
+  entryType: 'PlayerAction' | 'AiNarration'
+  content: string
+  sceneId: string | null
+  createdAt: string
+}
+
+/** The run's saved conversation: the last 50 entries, oldest first. */
+export async function getAdventureHistory(id: string): Promise<AdventureHistoryEntryDto[]> {
+  const response = await apiClient.get<AdventureHistoryEntryDto[]>(`${BASE}/${id}/history`)
+  return response.data
+}
+
+/** Every run that is currently in progress, most recently active first. */
+export async function listInProgressAdventureSessions(): Promise<AdventureSessionDto[]> {
+  const response = await apiClient.get<AdventureSessionDto[]>(`${BASE}/in-progress`)
+  return response.data
+}
+
 /** Scenes reachable from the run's current scene. */
 export async function getAvailableScenes(id: string): Promise<AdventureExitDto[]> {
   const response = await apiClient.get<AdventureExitDto[]>(`${BASE}/${id}/available-scenes`)

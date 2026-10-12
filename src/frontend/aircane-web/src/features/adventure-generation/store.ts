@@ -49,6 +49,7 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
 
   let connection: signalR.HubConnection | null = null
   let lastRequest: GenerateAdventureRequest | null = null
+  let lastCampaignId: string | null = null
 
   // ── SignalR ────────────────────────────────────────────────────────────────
 
@@ -117,9 +118,10 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
    * Queue a generation job. Listens for progress *before* posting, so no event can be missed.
    * Throws (leaving the store idle) if the live connection or the request fails.
    */
-  async function start(request: GenerateAdventureRequest): Promise<void> {
+  async function start(request: GenerateAdventureRequest, campaignId?: string | null): Promise<void> {
     if (isGenerating.value) return
     lastRequest = request
+    lastCampaignId = campaignId ?? null
     error.value = null
 
     try {
@@ -130,7 +132,7 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
     }
 
     try {
-      const response = await generateAdventure(request)
+      const response = await generateAdventure(request, campaignId)
       jobId.value = response.jobId
     } catch (e) {
       throw new Error(errorText(e, 'Failed to start adventure generation.'))
@@ -149,7 +151,7 @@ export const useAdventureGenerationStore = defineStore('adventureGeneration', ()
   async function retry(): Promise<void> {
     if (!lastRequest) return
     try {
-      await start(lastRequest)
+      await start(lastRequest, lastCampaignId)
     } catch (e) {
       status.value = 'failed'
       error.value = e instanceof Error ? e.message : 'Failed to start adventure generation.'

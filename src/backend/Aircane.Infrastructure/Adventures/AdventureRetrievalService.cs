@@ -75,6 +75,7 @@ public sealed class AdventureRetrievalService : IAdventureRetrievalService
             Id = entity.Id,
             Title = entity.Title,
             Status = entity.Status.ToString(),
+            CampaignId = entity.CampaignId,
             Pitch = DeserializeOrNull<AdventurePitch>(entity.PitchJson, "pitch"),
             Outline = DeserializeOrNull<AdventureOutline>(entity.OutlineJson, "outline"),
             Scenes = DeserializeOrNull<List<GeneratedScene>>(entity.ScenesJson, "scenes"),

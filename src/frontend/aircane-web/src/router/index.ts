@@ -16,6 +16,12 @@ const router = createRouter({
       component: () => import('@/features/campaigns/index'),
     },
     {
+      path: '/campaigns/:campaignId',
+      name: 'campaign-detail',
+      component: () => import('@/features/campaigns/CampaignDetail.vue'),
+      props: true,
+    },
+    {
       path: '/library',
       name: 'library',
       component: () => import('@/features/library/index'),

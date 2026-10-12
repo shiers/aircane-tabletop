@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAdventureGenerationStore } from './store'
+import { useCampaignStore } from '@/features/campaigns/store'
 import {
   type GenerateAdventureRequest,
   type AdventureMode,
@@ -22,6 +24,19 @@ const roleplayRatio = ref(33)
 const setting = ref('')
 
 const store = useAdventureGenerationStore()
+const route = useRoute()
+const campaignStore = useCampaignStore()
+
+// Arriving from a campaign's page (/adventures/generate?campaignId=...): the adventure is generated
+// for, and saved against, that campaign.
+const campaignId = computed(() => {
+  const q = route.query.campaignId
+  return typeof q === 'string' && q ? q : null
+})
+const campaignName = computed(() => campaignStore.campaigns.find((c) => c.id === campaignId.value)?.name ?? null)
+onMounted(() => {
+  if (campaignId.value && !campaignStore.campaigns.length) void campaignStore.fetchCampaigns().catch(() => {})
+})
 // True while the request is being posted or a generation job is running (form locked either way).
 const submitting = ref(false)
 const loading = computed(() => submitting.value || store.isGenerating)
@@ -74,7 +89,7 @@ async function submitForm() {
   }
 
   try {
-    await store.start(request)
+    await store.start(request, campaignId.value)
   } catch (e: any) {
     const data = e?.response?.data
     if (data?.errors) {
@@ -119,6 +134,10 @@ async function submitForm() {
         </div>
         <p class="mt-1 text-right text-xs text-gray-400">{{ store.percentComplete }}%</p>
       </output>
+
+      <p v-if="campaignId" class="text-sm text-gray-300" data-testid="forge-campaign">
+        Generating for campaign: <span class="font-medium text-white">{{ campaignName ?? 'this campaign' }}</span>
+      </p>
 
       <!-- Error banner -->
       <div

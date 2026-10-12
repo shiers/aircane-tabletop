@@ -380,6 +380,14 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.CreatedAt).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
 
+            entity.Property(e => e.CampaignId).IsRequired(false);
+            entity.HasOne<Campaign>()
+                .WithMany()
+                .HasForeignKey(e => e.CampaignId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => e.CampaignId).HasDatabaseName("IX_GeneratedAdventures_CampaignId");
+
             entity.HasIndex(e => e.Status).HasDatabaseName("IX_GeneratedAdventures_Status");
         });
 

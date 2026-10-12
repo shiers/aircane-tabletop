@@ -28,7 +28,7 @@ public sealed class AdventureGenerationJobTests
 
         public Task<GeneratedAdventureDto> GenerateAsync(
             GenerateAdventureRequest request, PartyAnalysisResult? partyAnalysis,
-            CancellationToken cancellationToken = default, Action<string, int>? onProgress = null)
+            CancellationToken cancellationToken = default, Action<string, int>? onProgress = null, Guid? campaignId = null)
         {
             foreach (var stage in Stages)
                 onProgress?.Invoke(stage, AdventureGenerationStages.PercentFor(stage));

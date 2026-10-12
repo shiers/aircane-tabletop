@@ -19,7 +19,8 @@ public interface IAdventureGenerationService
         GenerateAdventureRequest request,
         PartyAnalysisResult? partyAnalysis,
         CancellationToken cancellationToken = default,
-        Action<string, int>? onProgress = null);
+        Action<string, int>? onProgress = null,
+        Guid? campaignId = null);
 
     /// <summary>
     /// Regenerates only the pitch stage for an existing adventure.

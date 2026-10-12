@@ -25,4 +25,7 @@ public sealed record CampaignAdventureListItemDto
     public int? AverageLevel { get; init; }
 
     public required DateTime CreatedAt { get; init; }
+
+    /// <summary>The in-progress run of this adventure in this campaign, or null if there is none.</summary>
+    public AdventureActiveSessionDto? ActiveSession { get; init; }
 }

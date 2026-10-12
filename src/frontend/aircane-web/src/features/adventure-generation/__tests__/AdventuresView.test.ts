@@ -209,6 +209,26 @@ describe('Adventure Forge: unassigned adventures', () => {
     expect(router.currentRoute.value.fullPath).toBe('/adventures/solo/run-9')
   })
 
+  it('AdventureForge_ShowsResume_ForAnUnassignedAdventureWithARunInProgress', async () => {
+    const running = adventure({
+      activeSession: { sessionId: 'run-3', currentSceneNumber: 2, totalScenes: 5, status: 'InProgress' },
+    })
+    const { wrapper, router, pinia } = await mountPage([running, adventure({ id: 'adv-9', title: 'Idle' })])
+    const start = vi.spyOn(useAdventureSessionStore(pinia), 'startSession')
+    const [first, second] = cards(wrapper)
+
+    expect(first.find('[data-testid="adventure-progress"]').text()).toBe('Scene 2 of 5 — In Progress')
+    expect(buttons(first)).toEqual(['Assign to Campaign', 'Review', 'Resume', 'Delete'])
+    expect(first.find('[data-testid="play-solo-button"]').exists()).toBe(false)
+    expect(buttons(second)).toContain('▶ Play Solo')   // an idle one is unchanged
+
+    await first.find('[data-testid="resume-adventure-button"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/adventures/solo/run-3')
+    expect(start).not.toHaveBeenCalled()
+  })
+
   it('Review opens the adventure review screen', async () => {
     const { wrapper, router } = await mountPage([adventure()])
 

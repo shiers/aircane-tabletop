@@ -126,6 +126,41 @@ public sealed class AdventureSessionsController : ControllerBase
     }
 
     /// <summary>
+    /// Every run that is in progress, most recently active first (Host only). Used by the dashboard
+    /// to offer "Resume Adventure".
+    /// </summary>
+    [HttpGet("in-progress")]
+    [ProducesResponseType(typeof(IReadOnlyList<AdventureSessionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ListInProgress(CancellationToken cancellationToken)
+    {
+        if (!IsHost())
+            return Forbid();
+
+        var runs = await _adventureSessions.ListInProgressAsync(cancellationToken);
+        return Ok(runs.Select(ToDto).ToList());
+    }
+
+    /// <summary>
+    /// The run's saved conversation: the last 50 entries, oldest first. 50 entries is about 25
+    /// exchanges, a full one-shot.
+    /// </summary>
+    [HttpGet("{id:guid}/history")]
+    [ProducesResponseType(typeof(IReadOnlyList<AdventureHistoryEntryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetHistory(Guid id, CancellationToken cancellationToken)
+    {
+        var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
+        if (session is null)
+            return NotFound();
+        if (!CanAccess(session))
+            return Forbid();
+
+        return Ok(await _adventureSessions.GetHistoryAsync(id, 50, cancellationToken));
+    }
+
+    /// <summary>
     /// Returns the campaign's in-progress run (as a lightweight DTO), or 404 if there is none.
     /// </summary>
     [HttpGet("active")]

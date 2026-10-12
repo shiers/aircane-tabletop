@@ -1,6 +1,45 @@
 <script setup lang="ts">
 import AircaneImg from '@/shared/components/AircaneImg.vue'
 import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
+import { computed, onMounted, ref } from 'vue'
+import { useCampaignStore } from '@/features/campaigns/store'
+import { listInProgressAdventureSessions, type AdventureSessionDto } from '@/features/adventures/api'
+
+// Recent Campaigns: every campaign, most recently active first. A campaign counts as active when it
+// was last changed, or when an adventure run in it was last played, whichever is later. No play
+// session is required for a campaign to appear.
+const MAX_RECENT = 5
+const campaignStore = useCampaignStore()
+const inProgressRuns = ref<AdventureSessionDto[]>([])
+
+onMounted(async () => {
+  // Either failing just leaves that part of the panel empty; the dashboard still renders.
+  await Promise.all([
+    campaignStore.fetchCampaigns().catch(() => {}),
+    listInProgressAdventureSessions()
+      .then((runs) => {
+        inProgressRuns.value = runs
+      })
+      .catch(() => {}),
+  ])
+})
+
+const recentCampaigns = computed(() => {
+  const runByCampaign = new Map<string, AdventureSessionDto>()
+  for (const run of inProgressRuns.value) {
+    const seen = runByCampaign.get(run.campaignId)
+    if (!seen || Date.parse(run.lastActivityAt) > Date.parse(seen.lastActivityAt)) runByCampaign.set(run.campaignId, run)
+  }
+
+  return campaignStore.campaigns
+    .map((campaign) => {
+      const run = runByCampaign.get(campaign.id) ?? null
+      const lastActive = Math.max(Date.parse(campaign.updatedAt) || 0, run ? Date.parse(run.lastActivityAt) || 0 : 0)
+      return { campaign, run, lastActive }
+    })
+    .sort((a, b) => b.lastActive - a.lastActive)
+    .slice(0, MAX_RECENT)
+})
 
 const features = [
   {
@@ -192,6 +231,32 @@ const quickActions = [
       >
         <h2 class="panel-header-title">Recent Campaigns</h2>
       </div>
+
+      <ul v-if="recentCampaigns.length" class="space-y-2" data-testid="recent-campaigns">
+        <li
+          v-for="item in recentCampaigns"
+          :key="item.campaign.id"
+          class="flex items-center justify-between gap-4 rounded-xl border border-surface-700/50 bg-surface-850 px-5 py-3"
+          data-testid="recent-campaign"
+        >
+          <div class="min-w-0">
+            <RouterLink
+              :to="{ name: 'campaign-detail', params: { campaignId: item.campaign.id } }"
+              class="block truncate font-medium text-white hover:text-aircane-300"
+              data-testid="recent-campaign-link"
+            >{{ item.campaign.name }}</RouterLink>
+            <p class="truncate text-xs text-gray-400">
+              {{ [item.campaign.gameSystem, item.campaign.ruleset].filter(Boolean).join(' · ') }}
+            </p>
+          </div>
+          <RouterLink
+            v-if="item.run"
+            :to="{ name: 'adventure-solo', params: { sessionId: item.run.id } }"
+            class="shrink-0 rounded-md bg-aircane-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-aircane-500"
+            data-testid="resume-adventure-link"
+          >Resume Adventure</RouterLink>
+        </li>
+      </ul>
 
       <div class="flex items-center justify-between rounded-xl border border-surface-700/50 bg-surface-850 p-5">
         <p class="text-sm text-gray-400">Jump back into an existing adventure or start a fresh one.</p>

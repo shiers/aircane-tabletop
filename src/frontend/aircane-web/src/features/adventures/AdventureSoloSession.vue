@@ -30,12 +30,19 @@ const canSend = computed(
   () => isInProgress.value && !store.isLoading && actionText.value.trim().length > 0,
 )
 
+function scrollToBottom(): void {
+  if (feedEl.value) feedEl.value.scrollTop = feedEl.value.scrollHeight
+}
+
 onMounted(async () => {
   try {
-    await store.loadSession(props.sessionId)
+    // Loads the run and, when the feed is empty, the saved conversation behind a "Resuming" divider.
+    await store.openSession(props.sessionId)
   } catch {
     return // store.error is shown in the banner
   }
+  await nextTick()
+  scrollToBottom() // land on the most recent exchange
   await store.connectHub()
 })
 
@@ -48,7 +55,7 @@ watch(
   () => store.narrationHistory.length,
   async () => {
     await nextTick()
-    if (feedEl.value) feedEl.value.scrollTop = feedEl.value.scrollHeight
+    scrollToBottom()
   },
 )
 
@@ -162,13 +169,14 @@ function npcStatus(npc: { hasBeenMet: boolean; isAlive: boolean }): string {
             <p
               v-for="entry in store.narrationHistory"
               :key="entry.id"
-              data-testid="narration-entry"
+              :data-testid="entry.kind === 'separator' ? 'resume-separator' : 'narration-entry'"
               :data-kind="entry.kind"
               class="whitespace-pre-wrap text-sm leading-relaxed"
               :class="{
                 'text-gray-100': entry.kind === 'dm',
                 'text-right italic text-aircane-300': entry.kind === 'player',
                 'text-center text-xs uppercase tracking-wide text-gray-500': entry.kind === 'system',
+                'text-center text-xs tracking-wide text-gray-600': entry.kind === 'separator',
               }"
             >{{ entry.text }}</p>
             <p v-if="store.isLoading" class="text-sm italic text-gray-500" aria-live="polite">

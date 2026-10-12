@@ -339,6 +339,84 @@ public sealed class AdventureSessionService : IAdventureSessionService
     }
 
     /// <inheritdoc />
+    public async Task RecordExchangeAsync(
+        Guid sessionId,
+        string playerAction,
+        string narration,
+        string? sceneIdAtStart,
+        CancellationToken ct = default)
+    {
+        var currentSceneId = await _db.AdventureSessions
+            .AsNoTracking()
+            .Where(s => s.Id == sessionId)
+            .Select(s => s.CurrentSceneId)
+            .FirstOrDefaultAsync(ct)
+            ?? throw new KeyNotFoundException($"Adventure session '{sessionId}' not found.");
+
+        // Entries are read back by time, so keep it strictly increasing per run: the action before its
+        // answer, and each exchange after the previous one, even when the clock has not ticked.
+        var lastAt = await _db.AdventureSessionEntries
+            .Where(e => e.AdventureSessionId == sessionId)
+            .OrderByDescending(e => e.CreatedAt)
+            .Select(e => (DateTimeOffset?)e.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        if (lastAt is { } last && now <= last)
+            now = last.AddMilliseconds(1);
+
+        _db.AdventureSessionEntries.Add(new AdventureSessionEntry
+        {
+            Id = Guid.NewGuid(),
+            AdventureSessionId = sessionId,
+            EntryType = AdventureEntryType.PlayerAction,
+            Content = playerAction,
+            SceneId = sceneIdAtStart ?? currentSceneId,
+            CreatedAt = now,
+        });
+        _db.AdventureSessionEntries.Add(new AdventureSessionEntry
+        {
+            Id = Guid.NewGuid(),
+            AdventureSessionId = sessionId,
+            EntryType = AdventureEntryType.AiNarration,
+            Content = narration,
+            SceneId = currentSceneId,
+            CreatedAt = now.AddMilliseconds(1),
+        });
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AdventureHistoryEntryDto>> GetHistoryAsync(
+        Guid sessionId, int limit = 50, CancellationToken ct = default)
+    {
+        if (!await _db.AdventureSessions.AnyAsync(s => s.Id == sessionId, ct))
+            throw new KeyNotFoundException($"Adventure session '{sessionId}' not found.");
+
+        // Newest N, then flipped to oldest-first for display.
+        var latest = await _db.AdventureSessionEntries
+            .AsNoTracking()
+            .Where(e => e.AdventureSessionId == sessionId)
+            .OrderByDescending(e => e.CreatedAt)
+            .ThenByDescending(e => e.EntryType)
+            .Take(Math.Clamp(limit, 1, 200))
+            .ToListAsync(ct);
+
+        latest.Reverse();
+        return latest
+            .Select(e => new AdventureHistoryEntryDto(e.Id, e.EntryType.ToString(), e.Content, e.SceneId, e.CreatedAt))
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AdventureSession>> ListInProgressAsync(CancellationToken ct = default)
+        => await _db.AdventureSessions
+            .AsNoTracking()
+            .Where(s => s.Status == AdventureSessionStatus.InProgress)
+            .OrderByDescending(s => s.LastActivityAt)
+            .ToListAsync(ct);
+
+    /// <inheritdoc />
     public async Task CompleteAdventureAsync(Guid sessionId, string outcomeNotes, CancellationToken ct = default)
     {
         var session = await LoadTrackedAsync(sessionId, ct);
@@ -398,7 +476,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
         if (adventure?.Scenes is not { Count: > 0 })
             return null;
 
-        return new AdventureContext(session.Id, BuildAdventureContext(session, adventure));
+        return new AdventureContext(session.Id, BuildAdventureContext(session, adventure), session.CurrentSceneId);
     }
 
     /// <inheritdoc />

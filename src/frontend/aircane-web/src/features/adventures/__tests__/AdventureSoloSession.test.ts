@@ -35,6 +35,7 @@ vi.mock('../api', async (importOriginal) => {
   return {
     ...actual,
     getAdventureSession: vi.fn(),
+    getAdventureHistory: vi.fn(),
     submitAdventureAction: vi.fn(),
     advanceAdventureScene: vi.fn(),
     abandonAdventureSession: vi.fn(),
@@ -73,11 +74,16 @@ async function mountView(state = makeState()) {
   return { wrapper, router, store: useAdventureSessionStore(pinia) }
 }
 
+const entry = (entryType: 'PlayerAction' | 'AiNarration', content: string, n: number) => ({
+  id: `e${n}`, entryType, content, sceneId: 'scene-2', createdAt: `2026-10-12T10:0${n}:00Z`,
+})
+
 const text = (wrapper: ReturnType<typeof mount>, testId: string) =>
   wrapper.findAll(`[data-testid="${testId}"]`).map((w) => w.text())
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocked.getAdventureHistory.mockResolvedValue([])
   hub.connection.start.mockResolvedValue(undefined)
   hub.connection.invoke.mockResolvedValue(undefined)
   hub.connection.stop.mockResolvedValue(undefined)
@@ -102,6 +108,76 @@ describe('AdventureSoloSession', () => {
     expect(text(wrapper, 'exit-button')).toEqual(['→ The Grand Hall', '→ The Hidden Passage'])
     // The opening narration is the scene's read-aloud text.
     expect(text(wrapper, 'narration-entry')).toEqual(['Cold water laps at your boots.'])
+  })
+
+  // ── Resuming a saved run ──────────────────────────────────────────────────
+
+  it('AdventureSoloSession_LoadsHistory_OnMount', async () => {
+    mocked.getAdventureHistory.mockResolvedValue([
+      entry('PlayerAction', 'I search the shelves', 1),
+      entry('AiNarration', 'You find a torn letter.', 2),
+    ])
+
+    const { wrapper } = await mountView()
+
+    expect(mocked.getAdventureHistory).toHaveBeenCalledWith(RUN_ID)
+    const feed = wrapper.findAll('[data-testid="narration-entry"]')
+    expect(feed.map((e) => e.text())).toEqual(['I search the shelves', 'You find a torn letter.'])
+    expect(feed.map((e) => e.attributes('data-kind'))).toEqual(['player', 'dm'])
+  })
+
+  it('AdventureSoloSession_ShowsResumeSeparator_WhenHistoryLoaded', async () => {
+    mocked.getAdventureHistory.mockResolvedValue([entry('AiNarration', 'You find a torn letter.', 1)])
+
+    const { wrapper } = await mountView()
+
+    const separator = wrapper.find('[data-testid="resume-separator"]')
+    expect(separator.text()).toBe('── Resuming session ──')
+    // After the saved lines, before anything new.
+    const kinds = wrapper.findAll('[data-testid="narration-feed"] > p').map((p) => p.attributes('data-kind'))
+    expect(kinds).toEqual(['dm', 'separator'])
+  })
+
+  it('AdventureSoloSession_ScrollsToBottom_AfterHistoryLoad', async () => {
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(1234)
+    mocked.getAdventureHistory.mockResolvedValue([
+      entry('PlayerAction', 'first', 1),
+      entry('AiNarration', 'last', 2),
+    ])
+
+    const { wrapper } = await mountView()
+    await flushPromises()
+
+    expect((wrapper.find('[data-testid="narration-feed"]').element as HTMLElement).scrollTop).toBe(1234)
+    scrollHeight.mockRestore()
+  })
+
+  it('a brand-new run (no saved history) starts with the scene opening and no resume divider', async () => {
+    const { wrapper } = await mountView()
+
+    expect(mocked.getAdventureHistory).toHaveBeenCalledTimes(1)
+    expect(text(wrapper, 'narration-entry')).toEqual(['Cold water laps at your boots.'])
+    expect(wrapper.find('[data-testid="resume-separator"]').exists()).toBe(false)
+  })
+
+  it('still plays when the saved history cannot be loaded', async () => {
+    mocked.getAdventureHistory.mockRejectedValue(new Error('history down'))
+
+    const { wrapper } = await mountView()
+
+    expect(text(wrapper, 'narration-entry')).toEqual(['Cold water laps at your boots.'])
+    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="action-input"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('does not reload the history when the feed already has entries (navigating back within the app)', async () => {
+    const { store } = await mountView()
+    expect(mocked.getAdventureHistory).toHaveBeenCalledTimes(1)
+
+    mocked.getAdventureSession.mockResolvedValue(makeState())
+    await store.openSession(RUN_ID)
+
+    expect(mocked.getAdventureHistory).toHaveBeenCalledTimes(1)
   })
 
   it('AdventureSoloSession_ShowsNpcStates', async () => {

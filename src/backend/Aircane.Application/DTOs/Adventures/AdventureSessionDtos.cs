@@ -48,6 +48,25 @@ public sealed record AdventureSessionDto(
     DateTimeOffset? CompletedAt,
     DateTimeOffset LastActivityAt);
 
+/// <summary>One line of a run's saved conversation.</summary>
+/// <param name="EntryType">"PlayerAction" or "AiNarration".</param>
+public sealed record AdventureHistoryEntryDto(
+    Guid Id,
+    string EntryType,
+    string Content,
+    string? SceneId,
+    DateTimeOffset CreatedAt);
+
+/// <summary>
+/// Progress of an in-progress run, shown on an adventure's card so it can be resumed.
+/// </summary>
+/// <param name="SessionId">The run's ID (what to open to resume).</param>
+public sealed record AdventureActiveSessionDto(
+    Guid SessionId,
+    int CurrentSceneNumber,
+    int TotalScenes,
+    string Status);
+
 /// <summary>An exit from a scene: the scene it leads to.</summary>
 public sealed record AdventureExitDto(string SceneId, string Title, string SceneType);
 

@@ -80,8 +80,12 @@ public sealed class AdventuresController : ControllerBase
             })
             .ToListAsync(cancellationToken);
 
+        // The in-progress run (if any), so the card can offer Resume instead of Play Solo.
+        var active = await ActiveSessionsAsync(rows.Select(r => r.Id).ToList(), campaignId: null, cancellationToken);
+
         return Ok(rows.Select(r => ToListItem(
-            r.Id, r.Title, r.Status, r.Ruleset, r.GameSystem, r.CampaignId, r.RequestJson, r.CreatedAt, r.UpdatedAt)).ToList());
+            r.Id, r.Title, r.Status, r.Ruleset, r.GameSystem, r.CampaignId, r.RequestJson, r.CreatedAt, r.UpdatedAt,
+            active.GetValueOrDefault(r.Id))).ToList());
     }
 
     /// <summary>
@@ -120,7 +124,8 @@ public sealed class AdventuresController : ControllerBase
     /// </summary>
     private static AdventureListItemDto ToListItem(
         Guid id, string title, GeneratedAdventureStatus status, string ruleset, string gameSystem,
-        Guid? campaignId, string requestJson, DateTime createdAt, DateTime updatedAt)
+        Guid? campaignId, string requestJson, DateTime createdAt, DateTime updatedAt,
+        AdventureActiveSessionDto? activeSession = null)
     {
         GenerateAdventureRequest? request = null;
         try
@@ -146,7 +151,84 @@ public sealed class AdventuresController : ControllerBase
             Mode = request?.Mode,
             Length = request?.Length,
             AverageLevel = request?.AverageLevel,
+            ActiveSession = activeSession,
         };
+    }
+
+    /// <summary>
+    /// The most recent in-progress run for each of the given adventures, with how far through it is.
+    /// With a <paramref name="campaignId"/> only runs in that campaign count; without one, a run in any
+    /// campaign does (an adventure that belongs to no campaign can still be played inside one).
+    /// </summary>
+    private async Task<Dictionary<Guid, AdventureActiveSessionDto>> ActiveSessionsAsync(
+        List<Guid> adventureIds, Guid? campaignId, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<Guid, AdventureActiveSessionDto>();
+        if (adventureIds.Count == 0)
+            return result;
+
+        var runs = await _dbContext.AdventureSessions
+            .AsNoTracking()
+            .Where(s => s.Status == AdventureSessionStatus.InProgress
+                        && adventureIds.Contains(s.GeneratedAdventureId)
+                        && (campaignId == null || s.CampaignId == campaignId))
+            .OrderByDescending(s => s.LastActivityAt)
+            .Select(s => new { s.Id, s.GeneratedAdventureId, s.CurrentSceneId })
+            .ToListAsync(cancellationToken);
+        if (runs.Count == 0)
+            return result;
+
+        var withRuns = runs.Select(r => r.GeneratedAdventureId).Distinct().ToList();
+        var scenes = await _dbContext.GeneratedAdventures
+            .AsNoTracking()
+            .Where(a => withRuns.Contains(a.Id))
+            .Select(a => new { a.Id, a.ScenesJson })
+            .ToListAsync(cancellationToken);
+        var sceneIdsByAdventure = scenes.ToDictionary(a => a.Id, a => ReadSceneIds(a.ScenesJson));
+
+        foreach (var run in runs) // newest first, so the first run seen for an adventure is the one to show
+        {
+            if (result.ContainsKey(run.GeneratedAdventureId))
+                continue;
+
+            var sceneIds = sceneIdsByAdventure.GetValueOrDefault(run.GeneratedAdventureId) ?? [];
+            var index = sceneIds.FindIndex(id => string.Equals(id, run.CurrentSceneId, StringComparison.OrdinalIgnoreCase));
+            result[run.GeneratedAdventureId] = new AdventureActiveSessionDto(
+                run.Id, index < 0 ? 1 : index + 1, sceneIds.Count, nameof(AdventureSessionStatus.InProgress));
+        }
+
+        return result;
+    }
+
+    /// <summary>The scene IDs, in order, from a stored scenes array.</summary>
+    private static List<string> ReadSceneIds(string? scenesJson)
+    {
+        var ids = new List<string>();
+        if (string.IsNullOrWhiteSpace(scenesJson))
+            return ids;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(scenesJson);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return ids;
+
+            foreach (var scene in doc.RootElement.EnumerateArray())
+            {
+                if (scene.ValueKind == System.Text.Json.JsonValueKind.Object
+                    && scene.TryGetProperty("sceneId", out var id)
+                    && id.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    ids.Add(id.GetString()!);
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // unreadable scenes: no progress figures
+        }
+
+        return ids;
     }
 
     /// <summary>
@@ -166,6 +248,8 @@ public sealed class AdventuresController : ControllerBase
             .OrderByDescending(a => a.CreatedAt)
             .Select(a => new { a.Id, a.Title, a.Status, a.GameSystem, a.Ruleset, a.RequestJson, a.CreatedAt })
             .ToListAsync(cancellationToken);
+
+        var active = await ActiveSessionsAsync(rows.Select(r => r.Id).ToList(), campaignId, cancellationToken);
 
         // Mode / length / level live in the stored generation request, not in their own columns.
         var items = rows.Select(r =>
@@ -192,6 +276,7 @@ public sealed class AdventuresController : ControllerBase
                 Length = request?.Length,
                 AverageLevel = request?.AverageLevel,
                 CreatedAt = r.CreatedAt,
+                ActiveSession = active.GetValueOrDefault(r.Id),
             };
         }).ToList();
 

@@ -635,6 +635,78 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         Assert.Equal((_spy.RunId, "Dexterity (Stealth)", 14), (update.RunId, update.Label, update.Dc));
     }
 
+    // ── Narration history ─────────────────────────────────────────────────────
+
+    private Task<List<AdventureSessionEntry>> Entries(Guid runId) =>
+        _db.AdventureSessionEntries.AsNoTracking().Where(e => e.AdventureSessionId == runId)
+            .OrderBy(e => e.CreatedAt).ToListAsync();
+
+    [Fact]
+    public async Task AdventureSessionEntry_SavedAfterPlayerAction()
+    {
+        var (campaign, session, runId) = await SeedRunAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I search the shelves"));
+
+        var player = Assert.Single(await Entries(runId), e => e.EntryType == AdventureEntryType.PlayerAction);
+        Assert.Equal("I search the shelves", player.Content);
+        Assert.Equal("scene-1", player.SceneId);
+    }
+
+    [Fact]
+    public async Task AdventureSessionEntry_SavedAfterAiNarration()
+    {
+        var (campaign, session, runId) = await SeedRunAsync();
+        _aiProvider.NextOutput = Output(new AiProposedAction { Type = AiActionType.AdvanceScene, SceneId = "scene-2" });
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I go to the hall"));
+
+        var entries = await Entries(runId);
+        Assert.Equal([AdventureEntryType.PlayerAction, AdventureEntryType.AiNarration], entries.Select(e => e.EntryType));
+        Assert.Equal("The story continues.", entries[1].Content);
+        // Each entry is stamped with the scene it belongs to: the action was taken in scene-1, the
+        // narration is written once the move to scene-2 has been applied.
+        Assert.Equal("scene-1", entries[0].SceneId);
+        Assert.Equal("scene-2", entries[1].SceneId);
+    }
+
+    [Fact]
+    public async Task AdventureSessionEntry_AccumulatesAcrossTurns_InOrder()
+    {
+        var (campaign, session, runId) = await SeedRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = Output();
+
+        await sut.ProcessActionAsync(Request(campaign, session, "first"));
+        await sut.ProcessActionAsync(Request(campaign, session, "second"));
+
+        Assert.Equal(["first", "The story continues.", "second", "The story continues."], (await Entries(runId)).Select(e => e.Content));
+    }
+
+    [Fact]
+    public async Task AdventureSessionEntry_FailureDoesNotBlockAction()
+    {
+        var (campaign, session) = await SeedWithSpyRunAsync();
+        _spy.ThrowOnRecord = true;
+        _aiProvider.NextOutput = Output(new AiProposedAction { Type = AiActionType.RevealClue, ClueId = "clue-1" });
+
+        var response = await CreateSut(_spy).ProcessActionAsync(Request(campaign, session, "I search"));
+
+        Assert.Equal("The story continues.", response.Narration);
+        Assert.Equal(StateCommandOutcome.Applied, Assert.Single(response.ProposedActions).Outcome);   // the action itself still ran
+        Assert.Empty(_spy.Exchanges);
+    }
+
+    [Fact]
+    public async Task AdventureSessionEntry_NotSaved_WhenNoAdventureIsRunning()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session));
+
+        Assert.Empty(await _db.AdventureSessionEntries.ToListAsync());
+    }
+
     [Fact]
     public async Task PlayerActionService_WithCharacter_StillTagsTheUserMessage()
     {
@@ -706,6 +778,18 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         }
 
         public List<(Guid RunId, string? Label, int? Dc)> PendingRollUpdates { get; } = [];
+        public List<(Guid RunId, string Player, string Narration, string? Scene)> Exchanges { get; } = [];
+        public bool ThrowOnRecord { get; set; }
+
+        public Task RecordExchangeAsync(Guid sessionId, string playerAction, string narration, string? sceneIdAtStart, CancellationToken ct = default)
+        {
+            if (ThrowOnRecord) throw new InvalidOperationException("transcript store is down");
+            Exchanges.Add((sessionId, playerAction, narration, sceneIdAtStart));
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<AdventureHistoryEntryDto>> GetHistoryAsync(Guid sessionId, int limit = 50, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<AdventureSession>> ListInProgressAsync(CancellationToken ct = default) => throw new NotSupportedException();
 
         public Task UpdatePendingRollAsync(Guid sessionId, string? label, int? dc, CancellationToken ct = default)
         {

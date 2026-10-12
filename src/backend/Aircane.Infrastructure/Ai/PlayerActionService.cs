@@ -489,6 +489,39 @@ public sealed class PlayerActionService : IPlayerActionService
         sb.AppendLine("  - {\"type\":\"advanceScene\",\"sceneId\":\"scene-2\",\"narration\":\"transition narration\"} - only after the scene's objectives are met (or the fail-forward rule applies) AND the player has chosen one of the Available Exits. sceneId must be one of the Available Exits.");
         sb.AppendLine("  - {\"type\":\"completeAdventure\",\"outcomeNotes\":\"how the adventure ended\"} - when the final scene's objectives are met and the story is resolved.");
         sb.AppendLine("- Do not advance the scene or complete the adventure early; wait for the player to act.");
+        sb.AppendLine();
+        sb.AppendLine(BuildSkillCheckRules());
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Rules that stop the AI DM narrating auto-successes: risky actions must be rolled for, the
+    /// attempt is narrated first, and the outcome waits for the player's reported result.
+    /// </summary>
+    public static string BuildSkillCheckRules()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("MANDATORY ROLL TRIGGERS - always emit a RequestRoll (with a label, a formula such as \"1d20\", and a dc) for:");
+        sb.AppendLine("- Any physical challenge: climbing, jumping, swimming, lifting, forcing doors, breaking objects.");
+        sb.AppendLine("- Any stealth action: hiding, sneaking, moving silently.");
+        sb.AppendLine("- Any social challenge against an unwilling target: persuasion, deception, intimidation.");
+        sb.AppendLine("- Any search or investigation: finding hidden objects, detecting traps, reading ancient text.");
+        sb.AppendLine("- Any magical challenge: resisting spells, identifying magic, arcane knowledge checks.");
+        sb.AppendLine("- Any combat action.");
+        sb.AppendLine("NEVER auto-succeed these actions, whatever the context. The player must roll, and the outcome depends on their result.");
+        sb.AppendLine();
+        sb.AppendLine("NARRATE THEN ROLL - do not narrate the outcome before the roll. Narrate the attempt and the situation, emit the RequestRoll, then stop. Wait for the player to report the result before narrating success or failure.");
+        sb.AppendLine("WRONG: Player: \"I climb the wall\" -> AI: \"You grip the stones and haul yourself up successfully, reaching the top.\" (no roll requested)");
+        sb.AppendLine("CORRECT: Player: \"I climb the wall\" -> AI: \"The frost-slicked stones offer uncertain handholds as you reach for the breach. The cold wind pulls at you. Roll Athletics (DC 12) to make the climb.\" and a RequestRoll with label \"Athletics check\", formula \"1d20\", dc 12.");
+        sb.AppendLine();
+        sb.AppendLine("DC GUIDELINES:");
+        sb.AppendLine("- Easy task: DC 8");
+        sb.AppendLine("- Moderate task: DC 12");
+        sb.AppendLine("- Hard task: DC 16");
+        sb.AppendLine("- Very hard task: DC 20");
+        sb.AppendLine("- Nearly impossible: DC 24");
+        sb.AppendLine("Examples: climbing a damaged, frost-covered wall in darkness = DC 14. Hiding from supernatural entities with keen senses = DC 14. Sneaking past distracted spirits = DC 10.");
+        sb.AppendLine("Set each DC from the difficulty of the task and the situation described in the adventure. Do not default to the lowest DC.");
         return sb.ToString();
     }
 

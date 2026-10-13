@@ -37,8 +37,8 @@ public class AiStructuredOutputTests
     [Fact]
     public void AiStructuredOutput_WithCitations_StoresCitations()
     {
-        var docId = Guid.NewGuid();
-        var chunkId = Guid.NewGuid();
+        var docId = Guid.NewGuid().ToString();
+        var chunkId = Guid.NewGuid().ToString();
 
         var output = new AiStructuredOutput
         {
@@ -149,8 +149,8 @@ public class AiStructuredOutputTests
     [Fact]
     public void AiStructuredOutput_JsonRoundTrip_PreservesCitations()
     {
-        var docId = Guid.NewGuid();
-        var chunkId = Guid.NewGuid();
+        var docId = Guid.NewGuid().ToString();
+        var chunkId = Guid.NewGuid().ToString();
         var original = new AiStructuredOutput
         {
             Narration = "According to the rules...",

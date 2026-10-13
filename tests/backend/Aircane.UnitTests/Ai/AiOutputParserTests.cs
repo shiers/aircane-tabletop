@@ -44,8 +44,8 @@ public class AiOutputParserTests
     [Fact]
     public void Parse_ValidFullJson_ReturnsSuccess()
     {
-        var docId = Guid.NewGuid();
-        var chunkId = Guid.NewGuid();
+        var docId = Guid.NewGuid().ToString();
+        var chunkId = Guid.NewGuid().ToString();
         var charId = Guid.NewGuid();
 
         var json = $$"""
@@ -271,15 +271,15 @@ public class AiOutputParserTests
     }
 
     [Fact]
-    public void Parse_ValidJsonButCitationWithEmptyGuid_ReturnsValidationError()
+    public void Parse_ValidJsonButCitationWithEmptyIds_ReturnsValidationError()
     {
         var json = """
         {
             "narration": "Per the rules...",
             "rulesCitations": [
                 {
-                    "sourceDocumentId": "00000000-0000-0000-0000-000000000000",
-                    "chunkId": "00000000-0000-0000-0000-000000000000",
+                    "sourceDocumentId": "",
+                    "chunkId": "",
                     "summary": "Some rule"
                 }
             ],
@@ -290,7 +290,30 @@ public class AiOutputParserTests
         var result = _parser.Parse(json);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains(result.Errors, e => e.Contains("UUID"));
+        Assert.Contains(result.Errors, e => e.Contains("Source document ID is required"));
+        Assert.Contains(result.Errors, e => e.Contains("Chunk ID is required"));
+    }
+
+    [Fact]
+    public void Parse_CitationWithReadableSourceNames_ReturnsSuccess()
+    {
+        // What gpt-4o actually sends: names, not GUIDs. This used to fail with a 400.
+        var json = """
+        {
+            "narration": "You cannot cast another spell this turn.",
+            "rulesCitations": [
+                { "sourceDocumentId": "PHB", "chunkId": "rules-5e-players-handbook", "summary": "Bonus action spells, p.202" }
+            ],
+            "proposedActions": []
+        }
+        """;
+
+        var result = _parser.Parse(json);
+
+        Assert.True(result.IsSuccess, string.Join("; ", result.Errors));
+        var citation = Assert.Single(result.Output!.RulesCitations);
+        Assert.Equal("PHB", citation.SourceDocumentId);
+        Assert.Equal("rules-5e-players-handbook", citation.ChunkId);
     }
 
     // ── Case insensitivity ────────────────────────────────────────────────────

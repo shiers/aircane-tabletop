@@ -44,11 +44,16 @@ public sealed record AiStructuredOutput
 /// </summary>
 public sealed record AiRulesCitation
 {
-    /// <summary>The ID of the source document that was retrieved.</summary>
-    public required Guid SourceDocumentId { get; init; }
+    /// <summary>
+    /// Identifies the source document that was cited. A string, not a GUID: models cite sources by a
+    /// readable name ("PHB", "rules-5e-players-handbook") as often as by an ID.
+    /// </summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
+    public required string SourceDocumentId { get; init; }
 
-    /// <summary>The ID of the specific document chunk that was cited.</summary>
-    public required Guid ChunkId { get; init; }
+    /// <summary>Identifies the specific chunk that was cited (an ID or a readable reference).</summary>
+    [JsonConverter(typeof(StringOrObjectConverter))]
+    public required string ChunkId { get; init; }
 
     /// <summary>A short human-readable summary of the cited content.</summary>
     [JsonConverter(typeof(StringOrObjectConverter))]

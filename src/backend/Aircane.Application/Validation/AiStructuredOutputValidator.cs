@@ -37,11 +37,14 @@ public sealed class AiRulesCitationValidator : AbstractValidator<AiRulesCitation
 {
     public AiRulesCitationValidator()
     {
+        // Free text: the model may cite "PHB" as readily as a GUID. Only presence and size are checked.
         RuleFor(x => x.SourceDocumentId)
-            .NotEqual(Guid.Empty).WithMessage("Source document ID must be a valid non-empty UUID.");
+            .NotEmpty().WithMessage("Source document ID is required.")
+            .MaximumLength(200).WithMessage("Source document ID must not exceed 200 characters.");
 
         RuleFor(x => x.ChunkId)
-            .NotEqual(Guid.Empty).WithMessage("Chunk ID must be a valid non-empty UUID.");
+            .NotEmpty().WithMessage("Chunk ID is required.")
+            .MaximumLength(200).WithMessage("Chunk ID must not exceed 200 characters.");
 
         RuleFor(x => x.Summary)
             .NotEmpty().WithMessage("Citation summary is required.")

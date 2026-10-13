@@ -48,6 +48,9 @@ public sealed record AdventureSessionDto(
     DateTimeOffset? CompletedAt,
     DateTimeOffset LastActivityAt);
 
+/// <summary>A short "story so far" reminder shown when a run is resumed.</summary>
+public sealed record AdventureRecapDto(string Recap);
+
 /// <summary>One line of a run's saved conversation.</summary>
 /// <param name="EntryType">"PlayerAction" or "AiNarration".</param>
 public sealed record AdventureHistoryEntryDto(

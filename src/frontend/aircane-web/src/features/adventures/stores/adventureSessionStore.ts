@@ -5,6 +5,8 @@ import {
   startAdventureSession,
   getAdventureSession,
   getAdventureHistory,
+  getAdventureRecap,
+  resumeAdventureSession,
   submitAdventureAction,
   advanceAdventureScene,
   abandonAdventureSession,
@@ -70,6 +72,9 @@ export const useAdventureSessionStore = defineStore('adventureSession', () => {
   // ── State ──────────────────────────────────────────────────────────────────
   const currentSession = ref<AdventureSessionStateDto | null>(null)
   const narrationHistory = ref<NarrationEntry[]>([])
+  /** AI-written "story so far", shown above the feed when resuming a run that has history. */
+  const recap = ref<string | null>(null)
+  const recapLoading = ref(false)
   /** True while a request (start / load / player action / advance / abandon) is in flight. */
   const isLoading = ref(false)
   const error = ref<string | null>(null)
@@ -184,6 +189,14 @@ export const useAdventureSessionStore = defineStore('adventureSession', () => {
 
     isLoading.value = true
     try {
+      // Coming back to the run: drop any pending roll left over from the last visit. Awaited, so it
+      // cannot race with the first action sent from this page. Failing to do so is not worth blocking play.
+      try {
+        await resumeAdventureSession(sessionId)
+      } catch {
+        // ignore
+      }
+
       let saved: Awaited<ReturnType<typeof getAdventureHistory>> = []
       try {
         saved = await getAdventureHistory(sessionId)
@@ -196,12 +209,26 @@ export const useAdventureSessionStore = defineStore('adventureSession', () => {
           pushEntry(entry.entryType === 'PlayerAction' ? 'player' : 'dm', entry.content)
         }
         pushEntry('separator', RESUME_SEPARATOR)
+        void loadRecap(sessionId) // an AI call: do not hold the feed back for it
       } else if (currentSession.value) {
         const scene = currentSession.value.currentScene
         pushEntry('dm', scene.readAloudText?.trim() || scene.description)
       }
     } finally {
       isLoading.value = false
+    }
+  }
+
+  async function loadRecap(sessionId: string): Promise<void> {
+    recapLoading.value = true
+    try {
+      const text = await getAdventureRecap(sessionId)
+      // Ignore a late answer for a run that is no longer on screen.
+      if (currentSession.value?.id === sessionId) recap.value = text.trim() || null
+    } catch {
+      // A missing recap is fine: the saved conversation is still there.
+    } finally {
+      recapLoading.value = false
     }
   }
 
@@ -367,6 +394,8 @@ export const useAdventureSessionStore = defineStore('adventureSession', () => {
 
   function resetFeed(): void {
     narrationHistory.value = []
+    recap.value = null
+    recapLoading.value = false
   }
 
   /** Forget the current run entirely (e.g. after leaving the solo view). */
@@ -380,6 +409,8 @@ export const useAdventureSessionStore = defineStore('adventureSession', () => {
     // State
     currentSession,
     narrationHistory,
+    recap,
+    recapLoading,
     isLoading,
     error,
     // Actions

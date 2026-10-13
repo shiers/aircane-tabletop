@@ -36,6 +36,8 @@ vi.mock('../api', async (importOriginal) => {
     ...actual,
     getAdventureSession: vi.fn(),
     getAdventureHistory: vi.fn(),
+    getAdventureRecap: vi.fn(),
+    resumeAdventureSession: vi.fn(),
     submitAdventureAction: vi.fn(),
     advanceAdventureScene: vi.fn(),
     abandonAdventureSession: vi.fn(),
@@ -84,6 +86,8 @@ const text = (wrapper: ReturnType<typeof mount>, testId: string) =>
 beforeEach(() => {
   vi.clearAllMocks()
   mocked.getAdventureHistory.mockResolvedValue([])
+  mocked.getAdventureRecap.mockResolvedValue('You are in the Sunken Library, looking for the missing tome.')
+  mocked.resumeAdventureSession.mockResolvedValue(undefined)
   hub.connection.start.mockResolvedValue(undefined)
   hub.connection.invoke.mockResolvedValue(undefined)
   hub.connection.stop.mockResolvedValue(undefined)
@@ -150,6 +154,94 @@ describe('AdventureSoloSession', () => {
 
     expect((wrapper.find('[data-testid="narration-feed"]').element as HTMLElement).scrollTop).toBe(1234)
     scrollHeight.mockRestore()
+  })
+
+  // ── The AI recap ──────────────────────────────────────────────────────────
+
+  const saved = () => [entry('PlayerAction', 'I search the shelves', 1), entry('AiNarration', 'You find a torn letter.', 2)]
+
+  it('AdventureSoloSession_LoadsHistoryAndRecap_OnResume', async () => {
+    mocked.getAdventureHistory.mockResolvedValue(saved())
+
+    const { wrapper } = await mountView()
+
+    expect(mocked.resumeAdventureSession).toHaveBeenCalledWith(RUN_ID)   // stale pending roll dropped
+    expect(mocked.getAdventureHistory).toHaveBeenCalledWith(RUN_ID)
+    expect(mocked.getAdventureRecap).toHaveBeenCalledWith(RUN_ID)
+    expect(wrapper.find('[data-testid="recap-text"]').text()).toBe('You are in the Sunken Library, looking for the missing tome.')
+    expect(wrapper.find('[data-testid="recap-block"]').text()).toContain('📖 Story So Far')
+  })
+
+  it('AdventureSoloSession_ShowsRecapAboveHistory', async () => {
+    mocked.getAdventureHistory.mockResolvedValue(saved())
+
+    const { wrapper } = await mountView()
+
+    // Recap, then the saved exchanges, then the divider.
+    const order = wrapper
+      .findAll('[data-testid="narration-feed"] > *')
+      .map((el) => el.attributes('data-testid') === 'recap-block' ? 'recap' : (el.attributes('data-kind') ?? el.tagName))
+    expect(order).toEqual(['recap', 'player', 'dm', 'separator'])
+  })
+
+  it('AdventureSoloSession_DoesNotShowRecap_OnFreshStart', async () => {
+    const { wrapper } = await mountView()   // no saved history
+
+    expect(mocked.getAdventureRecap).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="recap-block"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recap-loading"]').exists()).toBe(false)
+  })
+
+  it('shows the history straight away and a placeholder while the recap is written', async () => {
+    mocked.getAdventureHistory.mockResolvedValue(saved())
+    let finish!: (text: string) => void
+    mocked.getAdventureRecap.mockReturnValue(new Promise<string>((resolve) => { finish = resolve }))
+
+    const { wrapper } = await mountView()
+
+    expect(wrapper.findAll('[data-testid="narration-entry"]')).toHaveLength(2)    // not held back by the AI call
+    expect(wrapper.find('[data-testid="recap-loading"]').text()).toContain('Recalling the story so far')
+    expect(wrapper.find('[data-testid="recap-block"]').exists()).toBe(false)
+
+    finish('Late but welcome.')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="recap-text"]').text()).toBe('Late but welcome.')
+    expect(wrapper.find('[data-testid="recap-loading"]').exists()).toBe(false)
+  })
+
+  it('a recap that fails is skipped quietly and play continues', async () => {
+    mocked.getAdventureHistory.mockResolvedValue(saved())
+    mocked.getAdventureRecap.mockRejectedValue(new Error('AI down'))
+
+    const { wrapper } = await mountView()
+
+    expect(wrapper.find('[data-testid="recap-block"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recap-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="narration-entry"]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="action-input"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('does not ask for a recap (or resume again) when the feed already has entries', async () => {
+    mocked.getAdventureHistory.mockResolvedValue(saved())
+    const { store } = await mountView()
+    expect(mocked.getAdventureRecap).toHaveBeenCalledTimes(1)
+    expect(mocked.resumeAdventureSession).toHaveBeenCalledTimes(1)
+
+    mocked.getAdventureSession.mockResolvedValue(makeState())
+    await store.openSession(RUN_ID)
+
+    expect(mocked.getAdventureRecap).toHaveBeenCalledTimes(1)
+    expect(mocked.resumeAdventureSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('a failing resume call does not stop the run opening', async () => {
+    mocked.resumeAdventureSession.mockRejectedValue(new Error('500'))
+
+    const { wrapper } = await mountView()
+
+    expect(text(wrapper, 'narration-entry')).toEqual(['Cold water laps at your boots.'])
+    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(false)
   })
 
   it('a brand-new run (no saved history) starts with the scene opening and no resume divider', async () => {

@@ -166,6 +166,19 @@ function npcStatus(npc: { hasBeenMet: boolean; isAlive: boolean }): string {
             class="flex-1 space-y-3 overflow-y-auto p-5"
             data-testid="narration-feed"
           >
+            <!-- "Story so far": an AI-written reminder, above the saved conversation -->
+            <aside
+              v-if="store.recap"
+              class="rounded-lg border border-amber-600/60 bg-gray-950 px-4 py-3"
+              data-testid="recap-block"
+              aria-label="Story so far"
+            >
+              <p class="text-sm font-semibold text-amber-300">📖 Story So Far</p>
+              <p class="mt-1 text-sm italic leading-relaxed text-gray-300" data-testid="recap-text">{{ store.recap }}</p>
+            </aside>
+            <p v-else-if="store.recapLoading" class="text-center text-xs italic text-gray-500" data-testid="recap-loading">
+              Recalling the story so far…
+            </p>
             <p
               v-for="entry in store.narrationHistory"
               :key="entry.id"

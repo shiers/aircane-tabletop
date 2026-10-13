@@ -34,8 +34,8 @@ public class AiStructuredOutputValidatorTests
             [
                 new AiRulesCitation
                 {
-                    SourceDocumentId = Guid.NewGuid(),
-                    ChunkId = Guid.NewGuid(),
+                    SourceDocumentId = Guid.NewGuid().ToString(),
+                    ChunkId = Guid.NewGuid().ToString(),
                     Summary = "Trap rules, DMG p.120",
                 },
             ],
@@ -101,7 +101,7 @@ public class AiStructuredOutputValidatorTests
     // ── Citation validation ───────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_CitationWithEmptyGuid_Fails()
+    public void Validate_CitationWithEmptySourceDocumentId_Fails()
     {
         var output = new AiStructuredOutput
         {
@@ -110,8 +110,8 @@ public class AiStructuredOutputValidatorTests
             [
                 new AiRulesCitation
                 {
-                    SourceDocumentId = Guid.Empty,
-                    ChunkId = Guid.NewGuid(),
+                    SourceDocumentId = "",
+                    ChunkId = Guid.NewGuid().ToString(),
                     Summary = "Some rule",
                 },
             ],
@@ -119,6 +119,33 @@ public class AiStructuredOutputValidatorTests
 
         var result = _validator.TestValidate(output);
         result.ShouldHaveAnyValidationError();
+    }
+
+    [Theory]
+    [InlineData("PHB")]
+    [InlineData("rules-5e-players-handbook")]
+    [InlineData("3f2b8c1e-5d4a-4c7e-9a10-2b6d8e4f7a11")]
+    public void Validate_CitationWithReadableOrGuidIds_Passes(string id)
+    {
+        var output = new AiStructuredOutput
+        {
+            Narration = "Per the rules...",
+            RulesCitations = [new AiRulesCitation { SourceDocumentId = id, ChunkId = id, Summary = "Some rule" }],
+        };
+
+        _validator.TestValidate(output).ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void Validate_CitationWithEmptyChunkId_Fails()
+    {
+        var output = new AiStructuredOutput
+        {
+            Narration = "Per the rules...",
+            RulesCitations = [new AiRulesCitation { SourceDocumentId = "PHB", ChunkId = "", Summary = "Some rule" }],
+        };
+
+        _validator.TestValidate(output).ShouldHaveAnyValidationError();
     }
 
     [Fact]
@@ -131,8 +158,8 @@ public class AiStructuredOutputValidatorTests
             [
                 new AiRulesCitation
                 {
-                    SourceDocumentId = Guid.NewGuid(),
-                    ChunkId = Guid.NewGuid(),
+                    SourceDocumentId = Guid.NewGuid().ToString(),
+                    ChunkId = Guid.NewGuid().ToString(),
                     Summary = "",
                 },
             ],

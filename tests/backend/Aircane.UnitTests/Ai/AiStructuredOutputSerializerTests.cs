@@ -210,3 +210,23 @@ public class AiStructuredOutputSerializerResilienceTests
     public void ProseWithNoJsonAtAll_StillThrows()
         => Assert.ThrowsAny<JsonException>(() => AiStructuredOutputSerializer.Deserialize("I could not do that."));
 }
+
+/// <summary>The provider path: a reply citing sources by name must deserialize.</summary>
+public class AiStructuredOutputSerializerCitationTests
+{
+    [Fact]
+    public void CitationsWithReadableIdsAndObjects_Deserialize()
+    {
+        var output = AiStructuredOutputSerializer.Deserialize("""
+            { "narration": "x",
+              "rulesCitations": [
+                { "sourceDocumentId": "PHB", "chunkId": "rules-5e-players-handbook", "summary": "Stealth, p.177" },
+                { "source_document_id": 12, "chunk_id": { "page": 177 }, "summary": "numbers and objects too" } ] }
+            """)!;
+
+        Assert.Equal("PHB", output.RulesCitations[0].SourceDocumentId);
+        Assert.Equal("rules-5e-players-handbook", output.RulesCitations[0].ChunkId);
+        Assert.Equal("12", output.RulesCitations[1].SourceDocumentId);
+        Assert.Equal("""{"page":177}""", output.RulesCitations[1].ChunkId);
+    }
+}

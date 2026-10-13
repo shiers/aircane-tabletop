@@ -341,6 +341,35 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         Assert.DoesNotContain("MANDATORY ROLL TRIGGERS", SystemPrompt());
     }
 
+    // The AI's behaviour is prompt-driven, so what can be tested is that it is told to describe exits.
+    [Fact]
+    public async Task AdventureSoloSession_DescribesExits_InNewSceneNarration()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I enter the hall"));
+
+        var system = SystemPrompt();
+        Assert.Contains("SCENE EXITS", system);
+        Assert.Contains("when a new scene begins", system);
+        Assert.Contains("where they can go", system);
+        Assert.Contains("describe each Available Exit in the narration with sensory detail", system);
+        Assert.Contains("Do not just list exit names", system);
+        Assert.Contains("meaningful choice", system);
+        Assert.Contains("Exits available: The Chamber of the Unrisen Sun", system);   // the WRONG example
+        Assert.Contains("a low archway opens onto a chamber where pale blue light filters through cracked stone", system);   // the CORRECT one
+    }
+
+    [Fact]
+    public async Task PlayerActionService_NoAdventure_PromptDoesNotCarryTheExitRules()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session));
+
+        Assert.DoesNotContain("SCENE EXITS", SystemPrompt());
+    }
+
     [Fact]
     public async Task PlayerActionService_NoActiveAdventure_PromptHasNoAdventureSection()
     {
@@ -778,6 +807,8 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         }
 
         public List<(Guid RunId, string? Label, int? Dc)> PendingRollUpdates { get; } = [];
+        public Task ResumeAsync(Guid sessionId, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<string> GenerateRecapAsync(Guid sessionId, CancellationToken ct = default) => throw new NotSupportedException();
         public List<(Guid RunId, string Player, string Narration, string? Scene)> Exchanges { get; } = [];
         public bool ThrowOnRecord { get; set; }
 

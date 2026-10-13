@@ -91,6 +91,18 @@ public interface IAdventureSessionService
         string? sceneIdAtStart,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Called when a player comes back to a run. Clears any pending roll: a roll the AI asked for in an
+    /// earlier visit and never got an answer to must not leak into this one.
+    /// </summary>
+    Task ResumeAsync(Guid sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Asks the AI for a 2-3 sentence "story so far" reminder built only from the run's state (no
+    /// retrieval, no transcript), to show when the player returns.
+    /// </summary>
+    Task<string> GenerateRecapAsync(Guid sessionId, CancellationToken ct = default);
+
     /// <summary>Returns the last <paramref name="limit"/> transcript entries, oldest first.</summary>
     Task<IReadOnlyList<AdventureHistoryEntryDto>> GetHistoryAsync(
         Guid sessionId, int limit = 50, CancellationToken ct = default);

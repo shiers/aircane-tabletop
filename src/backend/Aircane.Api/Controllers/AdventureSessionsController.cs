@@ -142,6 +142,48 @@ public sealed class AdventureSessionsController : ControllerBase
     }
 
     /// <summary>
+    /// Marks the run as resumed (a player has come back to it) and clears any stale pending roll.
+    /// </summary>
+    [HttpPost("{id:guid}/resume")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Resume(Guid id, CancellationToken cancellationToken)
+    {
+        var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
+        if (session is null)
+            return NotFound();
+        if (!CanAccess(session))
+            return Forbid();
+
+        return await RunAsync(async () =>
+        {
+            await _adventureSessions.ResumeAsync(id, cancellationToken);
+            return NoContent();
+        });
+    }
+
+    /// <summary>
+    /// A 2-3 sentence "story so far" for a returning player, written by the AI from the run's state.
+    /// </summary>
+    [HttpPost("{id:guid}/recap")]
+    [ProducesResponseType(typeof(AdventureRecapDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Recap(Guid id, CancellationToken cancellationToken)
+    {
+        var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
+        if (session is null)
+            return NotFound();
+        if (!CanAccess(session))
+            return Forbid();
+
+        return await RunAsync(async () =>
+            Ok(new AdventureRecapDto(await _adventureSessions.GenerateRecapAsync(id, cancellationToken))));
+    }
+
+    /// <summary>
     /// The run's saved conversation: the last 50 entries, oldest first. 50 entries is about 25
     /// exchanges, a full one-shot.
     /// </summary>

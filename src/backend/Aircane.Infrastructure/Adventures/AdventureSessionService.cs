@@ -31,14 +31,17 @@ public sealed class AdventureSessionService : IAdventureSessionService
     private readonly ICampaignStateService _campaignState;
     private readonly ILogger<AdventureSessionService> _logger;
     private readonly ISessionHubNotifier? _hubNotifier;
+    private readonly IAiProvider? _aiProvider;
 
     public AdventureSessionService(
         AircaneDbContext db,
         IAdventureRetrievalService retrieval,
         ICampaignStateService campaignState,
         ILogger<AdventureSessionService> logger,
-        ISessionHubNotifier? hubNotifier = null)
+        ISessionHubNotifier? hubNotifier = null,
+        IAiProvider? aiProvider = null)
     {
+        _aiProvider = aiProvider;
         _db = db;
         _retrieval = retrieval;
         _campaignState = campaignState;
@@ -68,7 +71,12 @@ public sealed class AdventureSessionService : IAdventureSessionService
         if (existing is not null)
         {
             if (existing.GeneratedAdventureId == generatedAdventureId)
+            {
+                // Starting an adventure that is already running is a resume.
+                await ClearPendingRollAsync(existing, ct);
                 return existing;
+            }
+
 
             throw new InvalidOperationException(
                 "This campaign already has an adventure in progress. Abandon or complete it before starting another.");
@@ -336,6 +344,74 @@ public sealed class AdventureSessionService : IAdventureSessionService
         session.PendingRollLabel = newLabel;
         session.PendingRollDC = newDc;
         await _db.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task ResumeAsync(Guid sessionId, CancellationToken ct = default)
+        => await ClearPendingRollAsync(await LoadTrackedAsync(sessionId, ct), ct);
+
+    private async Task ClearPendingRollAsync(AdventureSession session, CancellationToken ct)
+    {
+        if (session.PendingRollLabel is null && session.PendingRollDC is null)
+            return;
+
+        session.PendingRollLabel = null;
+        session.PendingRollDC = null;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<string> GenerateRecapAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        if (_aiProvider is null)
+            throw new InvalidOperationException("No AI provider is configured, so a recap cannot be generated.");
+
+        var session = await _db.AdventureSessions.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sessionId, ct)
+            ?? throw new KeyNotFoundException($"Adventure session '{sessionId}' not found.");
+        var adventure = await LoadAdventureAsync(session, ct);
+
+        // A short, focused task: just the run's state, no retrieval and none of the DM prompt.
+        var reply = await _aiProvider.ChatCompletionAsync(
+        [
+            AiMessage.System("You write brief, vivid reminders for a tabletop role-playing player. Reply with the reminder text only."),
+            AiMessage.User(BuildRecapPrompt(session, adventure)),
+        ], ct);
+
+        var recap = reply.Trim().Trim('"').Trim();
+        if (recap.Length == 0)
+            throw new InvalidOperationException("The AI returned an empty recap.");
+
+        return recap;
+    }
+
+    /// <summary>The recap request: the instruction plus the facts of the run so far.</summary>
+    public static string BuildRecapPrompt(AdventureSession session, GeneratedAdventureDto adventure)
+    {
+        var scenes = adventure.Scenes ?? [];
+        var scene = FindScene(adventure, session.CurrentSceneId);
+
+        string List(IEnumerable<string> items, string none)
+        {
+            var joined = string.Join(", ", items.Where(i => !string.IsNullOrWhiteSpace(i)));
+            return joined.Length == 0 ? none : joined;
+        }
+
+        var completed = session.CompletedSceneIds
+            .Select(id => scenes.FirstOrDefault(s => SameId(s.SceneId, id))?.Title ?? id);
+        var clues = RevealedClues(session, adventure).Select(c => c.Name);
+        var secrets = RevealedSecrets(session, adventure).Select(s => s.Name);
+        var objectives = scene?.Objectives ?? [];
+
+        return $"""
+            Summarize what has happened in this adventure session so far in 2-3 sentences, written in second person present tense as if reminding the player. Include: which scenes have been completed, what clues or secrets have been revealed, the current situation, and what the player's immediate goal is. Be concise - this is a reminder, not a retelling.
+
+            Adventure: {adventure.Pitch?.Title ?? "Untitled adventure"}
+            Completed scenes: {List(completed, "none yet")}
+            Revealed clues: {List(clues, "none yet")}
+            Revealed secrets: {List(secrets, "none yet")}
+            Current scene: {scene?.Title ?? session.CurrentSceneId} - {scene?.Description ?? "(unknown)"}
+            Current objectives: {(objectives.Count == 0 ? "none listed" : string.Join("; ", objectives))}
+            """;
     }
 
     /// <inheritdoc />

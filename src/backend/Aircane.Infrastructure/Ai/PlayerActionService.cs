@@ -519,6 +519,21 @@ public sealed class PlayerActionService : IPlayerActionService
         sb.AppendLine("- Do not advance the scene or complete the adventure early; wait for the player to act.");
         sb.AppendLine();
         sb.AppendLine(BuildSkillCheckRules());
+        sb.AppendLine();
+        sb.AppendLine(BuildExitRules());
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Exits are more than navigation links: when the player arrives somewhere, or asks where they can
+    /// go, the AI describes each way onward so the player can make a meaningful choice.
+    /// </summary>
+    public static string BuildExitRules()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("SCENE EXITS - when a new scene begins, or when the player asks what they can see or where they can go, describe each Available Exit in the narration with sensory detail. Do not just list exit names. Give the player enough information to make a meaningful choice, then ask what they do.");
+        sb.AppendLine("WRONG: \"Exits available: The Chamber of the Unrisen Sun, Scavengers at the Threshold.\"");
+        sb.AppendLine("CORRECT: \"Two paths lead onward. To your left, a low archway opens onto a chamber where pale blue light filters through cracked stone - the air there smells of old incense and cold metal. To your right, the sound of movement echoes from a wider passage, and something scrapes rhythmically against the floor in the dark.\"");
         return sb.ToString();
     }
 

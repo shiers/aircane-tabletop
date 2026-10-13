@@ -195,6 +195,20 @@ export async function getAdventureHistory(id: string): Promise<AdventureHistoryE
   return response.data
 }
 
+/** Tell the server a player has come back to this run (clears any stale pending roll). */
+export async function resumeAdventureSession(id: string): Promise<void> {
+  await apiClient.post(`${BASE}/${id}/resume`)
+}
+
+/**
+ * A short AI-written "story so far" for a returning player. It is an AI call, so it can take a few
+ * seconds: callers show the saved history first and add the recap when it arrives.
+ */
+export async function getAdventureRecap(id: string): Promise<string> {
+  const response = await apiClient.post<{ recap: string }>(`${BASE}/${id}/recap`, null, { timeout: 60_000 })
+  return response.data.recap
+}
+
 /** Every run that is currently in progress, most recently active first. */
 export async function listInProgressAdventureSessions(): Promise<AdventureSessionDto[]> {
   const response = await apiClient.get<AdventureSessionDto[]>(`${BASE}/in-progress`)

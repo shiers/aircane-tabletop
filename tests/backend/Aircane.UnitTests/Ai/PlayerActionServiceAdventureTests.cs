@@ -361,6 +361,37 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
     }
 
     [Fact]
+    public async Task AdventurePrompt_RequiresEndOfNarrationPlayerPrompt()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I look around"));
+
+        var system = SystemPrompt();
+        Assert.Contains("END OF NARRATION", system);
+        Assert.Contains("always close your narration with a clear signal that it is the player's turn to act", system);
+        // The three accepted endings, with their examples.
+        Assert.Contains("A direct question", system);
+        Assert.Contains("\"What do you do?\"", system);
+        Assert.Contains("A presented choice", system);
+        Assert.Contains("Do you press forward or hold your ground?", system);
+        Assert.Contains("A clear tension statement", system);
+        Assert.Contains("The moment hangs in the air.", system);
+        Assert.Contains("Never end narration with description alone", system);
+        Assert.Contains("The player must always know it is their turn", system);
+    }
+
+    [Fact]
+    public async Task AdventurePrompt_EndOfNarrationRule_IsNotAddedOutsideAnAdventure()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session));
+
+        Assert.DoesNotContain("END OF NARRATION", SystemPrompt());
+    }
+
+    [Fact]
     public async Task PlayerActionService_NoAdventure_PromptDoesNotCarryTheExitRules()
     {
         var (campaign, session) = await SeedCampaignAsync();

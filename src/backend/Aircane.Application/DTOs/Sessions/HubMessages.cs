@@ -272,9 +272,11 @@ public sealed record TurnAdvancedNotification(
     int CurrentRound);
 
 /// <summary>
-/// Broadcast when a participant is added to the end of a group run's turn order.
+/// Broadcast when a participant is added to the end of a group run's turn order (SignalR event
+/// <c>ParticipantJoinedAdventure</c>). <c>turnPosition</c> is zero-based: the first participant is 0, so it
+/// is the index into the state DTO's <c>turnOrder</c> array.
 /// </summary>
-/// <param name="TurnPosition">Zero-based index of the participant in the run's turn order.</param>
+/// <param name="TurnPosition">Zero-based index of the new participant in the run's turn order (0 = first to act).</param>
 public sealed record ParticipantJoinedAdventureNotification(
     Guid SessionId,
     Guid ParticipantId,

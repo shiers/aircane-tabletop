@@ -123,7 +123,8 @@ public sealed class PlayerActionService : IPlayerActionService
 
         // 4. Build AI prompt with state + adventure + combat + context + player action
         var messages = BuildPromptMessages(
-            request, campaign, state, ragResult, combatContext, adventureContext?.Text, adventureContext?.IsGroup ?? false);
+            request, campaign, state, ragResult, combatContext, adventureContext?.Text,
+            adventureContext?.IsGroup ?? false, adventureContext?.PlayersWithoutCharacter);
 
         // 5. Call AI provider for structured output
         var aiOutput = await _aiProvider.StructuredChatCompletionAsync(messages, cancellationToken);
@@ -433,6 +434,10 @@ public sealed class PlayerActionService : IPlayerActionService
     /// True when <paramref name="adventureContext"/> belongs to a group run: the group instruction
     /// block is sent instead of the solo one. Ignored when there is no adventure context.
     /// </param>
+    /// <param name="playersWithoutCharacter">
+    /// Group runs only: the participants with no character in this app. The group no-character block
+    /// names just these players, and is left out when everyone has a character.
+    /// </param>
     public static IReadOnlyList<AiMessage> BuildPromptMessages(
         PlayerActionRequest request,
         Application.DTOs.Campaigns.CampaignDto campaign,
@@ -440,8 +445,10 @@ public sealed class PlayerActionService : IPlayerActionService
         RagContextResult ragResult,
         string? combatContext = null,
         string? adventureContext = null,
-        bool isGroupRun = false)
+        bool isGroupRun = false,
+        IReadOnlyList<string>? playersWithoutCharacter = null)
     {
+        var groupRun = isGroupRun && !string.IsNullOrWhiteSpace(adventureContext);
         var messages = new List<AiMessage>();
 
         // System message with AI DM instructions
@@ -455,7 +462,13 @@ public sealed class PlayerActionService : IPlayerActionService
         }
 
         // No character attached: the player runs their character elsewhere, so do not use stats.
-        if (request.CharacterId == Guid.Empty)
+        // A group run has no run-level character, so it names only the players who lack one, if any.
+        if (groupRun)
+        {
+            if (playersWithoutCharacter is { Count: > 0 })
+                messages.Add(AiMessage.System(BuildGroupNoCharacterInstructions(playersWithoutCharacter)));
+        }
+        else if (request.CharacterId == Guid.Empty)
         {
             messages.Add(AiMessage.System(BuildNoCharacterInstructions()));
         }
@@ -464,7 +477,7 @@ public sealed class PlayerActionService : IPlayerActionService
         // Exactly one instruction block, chosen by run type: the solo and group blocks are never layered.
         if (!string.IsNullOrWhiteSpace(adventureContext))
         {
-            messages.Add(AiMessage.System(isGroupRun ? BuildGroupAdventureInstructions() : BuildAdventureInstructions()));
+            messages.Add(AiMessage.System(groupRun ? BuildGroupAdventureInstructions() : BuildAdventureInstructions()));
             messages.Add(AiMessage.System($"ACTIVE ADVENTURE:\n{adventureContext}"));
         }
 
@@ -502,6 +515,24 @@ public sealed class PlayerActionService : IPlayerActionService
         sb.AppendLine("- You may include a RequestRoll proposed action (use characterId null) so the request is recorded.");
         sb.AppendLine("- Do NOT apply modifiers, quote the character's stats, or assume proficiencies, HP or equipment.");
         sb.AppendLine("- Stop after asking for the roll. Do not narrate its outcome: wait for the player's next message (e.g. \"I rolled a 14\") and then resolve it.");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The group counterpart of <see cref="BuildNoCharacterInstructions"/>, naming only the
+    /// participants who have no character in this app. Not sent when every player has one.
+    /// </summary>
+    public static string BuildGroupNoCharacterInstructions(IReadOnlyList<string> playersWithoutCharacter)
+    {
+        ArgumentNullException.ThrowIfNull(playersWithoutCharacter);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("NO CHARACTER ATTACHED (SOME PLAYERS):");
+        sb.AppendLine($"These players have no character in this app; they play with their own tools and report results to you: {string.Join(", ", playersWithoutCharacter)}.");
+        sb.AppendLine($"- When one of them needs to roll, name them and say exactly what to roll (e.g. \"{playersWithoutCharacter[0]}, roll Dexterity (Stealth)\") and the DC if there is one.");
+        sb.AppendLine("- You may include a RequestRoll proposed action (use characterId null) so the request is recorded.");
+        sb.AppendLine("- For these players, do NOT apply modifiers, quote stats, or assume proficiencies, HP or equipment.");
+        sb.AppendLine("- Stop after asking for the roll. Do not narrate its outcome: wait for the result to be reported and then resolve it.");
         return sb.ToString();
     }
 

@@ -513,6 +513,48 @@ public sealed class AdventureGroupPlayTests : IDisposable
         // The pending roll stays the first, unmissable thing in the context.
         Assert.StartsWith("PENDING ROLL:", text);
         Assert.True(text.IndexOf("GROUP PLAY", StringComparison.Ordinal) > text.IndexOf("PENDING ROLL", StringComparison.Ordinal));
+        // ...and says who owes it, not "the player".
+        Assert.StartsWith("PENDING ROLL: Earlier this turn, Alice was asked to roll Dexterity (Stealth), DC 14.", text);
+        Assert.DoesNotContain("The player was previously asked", text);
+    }
+
+    [Fact]
+    public async Task AdventureSession_AdvanceTurn_ClearsThePendingRoll()
+    {
+        var run = await StartGroupAsync();
+        await _sut.UpdatePendingRollAsync(run.Id, "Dexterity (Stealth)", 14);
+
+        await _sut.AdvanceTurnAsync(run.Id);   // Bob is up
+
+        var saved = await ReloadAsync(run.Id);
+        Assert.Equal(_bob.Id, saved.ActiveParticipantId);
+        Assert.Null(saved.PendingRollLabel);
+        Assert.Null(saved.PendingRollDC);
+        Assert.DoesNotContain("PENDING ROLL", (await _sut.BuildActiveAdventureContextAsync(_campaign.Id))!.Text);
+    }
+
+    [Fact]
+    public async Task AdventureSession_GroupContext_ListsPlayersWithoutCharacter()
+    {
+        await SeedAsync();
+        var mira = new Character("Mira", "D&D 5e", "2014", 3, "{}", "{}", _campaign.Id);
+        _db.Characters.Add(mira);
+        await _db.SaveChangesAsync();
+        await AssignCharacterAsync(_alice.Id, mira.Id);
+        await _sut.StartGroupSessionAsync(_adventure.Id, _campaign.Id, [_alice.Id, _bob.Id, _cara.Id]);
+
+        var context = (await _sut.BuildActiveAdventureContextAsync(_campaign.Id))!;
+
+        Assert.Equal(["Bob", "Cara"], context.PlayersWithoutCharacter);
+    }
+
+    [Fact]
+    public async Task AdventureSession_SoloContext_HasNoPlayersWithoutCharacterList()
+    {
+        await SeedAsync();
+        await _sut.StartAdventureSessionAsync(_adventure.Id, _campaign.Id, characterId: null);
+
+        Assert.Null((await _sut.BuildActiveAdventureContextAsync(_campaign.Id))!.PlayersWithoutCharacter);
     }
 
     // ── Controller ────────────────────────────────────────────────────────────

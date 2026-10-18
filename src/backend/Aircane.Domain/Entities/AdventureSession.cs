@@ -50,7 +50,8 @@ public class AdventureSession
 
     /// <summary>
     /// What the AI last asked the player to roll (e.g. "Dexterity (Stealth)"), until the next player
-    /// action is processed. Lets the AI treat "I rolled a 14" as the answer without asking again.
+    /// action is processed (or, in a group run, until the turn passes). Lets the AI treat "I rolled a
+    /// 14" as the answer without asking again.
     /// </summary>
     public string? PendingRollLabel { get; set; }
 

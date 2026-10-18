@@ -21,8 +21,8 @@ const OLLAMA_DEFAULT_BASE_URL = 'http://localhost:11434'
 const OLLAMA_DEFAULT_MODEL = 'llama3.2'
 
 const commands = [
-  { cmd: 'ollama pull llama3.2', note: 'AI Dungeon Master, narration, rules answers (~2GB)' },
-  { cmd: 'ollama pull nomic-embed-text', note: 'RAG retrieval for your rules library (~270MB)' },
+  { cmd: 'ollama pull llama3.2', note: 'llama3.2 (~2 GB) — AI DM chat and reranking' },
+  { cmd: 'ollama pull nomic-embed-text', note: 'nomic-embed-text (~270 MB) — Rules library search' },
 ]
 
 const copiedCmd = ref<string | null>(null)
@@ -152,7 +152,7 @@ function onSkip() {
         </li>
       </ul>
       <p class="text-xs text-gray-500">
-        Total: ~2.3GB download. Ollama downloads models in the background after
+        Total: ~2.3 GB download. Ollama downloads models in the background after
         <code>pull</code>.
       </p>
     </div>

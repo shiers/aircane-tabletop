@@ -1,12 +1,18 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using Aircane.Application.Abstractions;
+using Aircane.Application.Retrieval;
+using Aircane.Infrastructure.Ai;
+using Aircane.Infrastructure.Embeddings;
 using Aircane.Infrastructure.Persistence;
+using Aircane.Infrastructure.Retrieval.Reranking;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -88,6 +94,17 @@ public class AircaneWebApplicationFactory : WebApplicationFactory<Program>
                 services.Remove(tokenServiceDescriptor);
             services.AddSingleton<Aircane.Application.Abstractions.IParticipantTokenService,
                 Aircane.Infrastructure.Sessions.ParticipantTokenService>();
+
+            // Never talk to a real AI service from a test. The real providers are chosen from the
+            // settings (appsettings plus the developer's local data/ai-settings.json, which the build
+            // copies into the test output), so a machine with OpenAI configured would otherwise make
+            // real, billed calls. Register the fakes whatever those settings say.
+            services.RemoveAll<IAiProvider>();
+            services.AddScoped<IAiProvider, FakeAiProvider>();
+            services.RemoveAll<IEmbeddingProvider>();
+            services.AddSingleton<IEmbeddingProvider, FakeEmbeddingProvider>();
+            services.RemoveAll<IRerankingProvider>();
+            services.AddScoped<IRerankingProvider, NullRerankingProvider>();
 
             // Replace authentication with a test scheme that always authenticates as Host
             services.AddAuthentication("TestScheme")

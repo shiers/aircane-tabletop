@@ -46,11 +46,11 @@ test.describe('App Navigation', () => {
     await expect(page).toHaveURL('/rules-lookup')
   })
 
-  test('clicking Adventure Forge navigates to /adventures/generate', async ({ page }) => {
+  test('clicking Adventure Forge navigates to /adventures', async ({ page }) => {
     await page.goto('/')
     const nav = page.locator('nav[aria-label="Main navigation"]')
     await nav.getByText('Adventure Forge').click()
-    await expect(page).toHaveURL('/adventures/generate')
+    await expect(page).toHaveURL('/adventures')
   })
 
   test('all pages load without JavaScript errors', async ({ page }) => {

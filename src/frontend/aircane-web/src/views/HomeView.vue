@@ -91,7 +91,7 @@ const features = [
     icon: 'adventure',
     title: 'Adventure Generation',
     description: 'Generate solo or group adventures scaled to your party level and tone.',
-    to: '/adventures/generate',
+    to: '/adventures',
     gradient: 'from-rose-600/20 to-red-600/20',
     iconColor: 'text-rose-400',
     thumbnail: '/assets/dashboard/adventure-generation-thumbnail.png',

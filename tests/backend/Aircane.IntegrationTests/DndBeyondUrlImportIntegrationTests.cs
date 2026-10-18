@@ -88,6 +88,11 @@ public class DndBeyondUrlImportIntegrationTests : IAsyncLifetime
         }
         """;
 
+    // Success-path tests must never trip the client timeout: under a loaded parallel run the first
+    // request to a cold WireMock/Kestrel can take well over a couple of seconds, which would surface
+    // as a 422 "not responding". Only the timeout test uses a short timeout (on its own factory).
+    private static readonly TimeSpan GenerousTimeout = TimeSpan.FromSeconds(30);
+
     private WireMockServer _wireMock = null!;
     private DndBeyondWebApplicationFactory _factory = null!;
     private HttpClient _client = null!;
@@ -96,7 +101,7 @@ public class DndBeyondUrlImportIntegrationTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _wireMock = WireMockServer.Start();
-        _factory = new DndBeyondWebApplicationFactory(_wireMock.Urls[0], _logs);
+        _factory = new DndBeyondWebApplicationFactory(_wireMock.Urls[0], _logs, GenerousTimeout);
         _client = _factory.CreateClient();
 
         using var scope = _factory.Services.CreateScope();
@@ -250,17 +255,21 @@ public class DndBeyondUrlImportIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Import_Timeout_Returns422NotResponding()
     {
-        // Delay the stub well beyond the client's 10s timeout (overridden to a short value in the
-        // test factory) so the request times out.
+        // Delay the stub well beyond a dedicated short client timeout (own factory, so the other
+        // tests keep their generous timeout) so the request deterministically times out.
+        using var shortTimeoutFactory = new DndBeyondWebApplicationFactory(
+            _wireMock.Urls[0], _logs, TimeSpan.FromSeconds(1));
+        using var shortTimeoutClient = shortTimeoutFactory.CreateClient();
+
         _wireMock
             .Given(Request.Create().WithPath($"/character/v5/character/{CharacterId}").UsingGet())
             .RespondWith(Response.Create()
                 .WithStatusCode(200)
                 .WithBody(DdbCharacterJson)
-                .WithDelay(TimeSpan.FromSeconds(5)));
+                .WithDelay(TimeSpan.FromSeconds(6)));
 
         var body = new { characterUrl = $"https://www.dndbeyond.com/characters/{CharacterId}" };
-        var response = await _client.PostAsJsonAsync("/api/characters/import/dndbeyond-url", body);
+        var response = await shortTimeoutClient.PostAsJsonAsync("/api/characters/import/dndbeyond-url", body);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
 
@@ -304,11 +313,13 @@ public class DndBeyondUrlImportIntegrationTests : IAsyncLifetime
     {
         private readonly string _baseAddress;
         private readonly ILoggerProvider _loggerProvider;
+        private readonly TimeSpan _timeout;
 
-        public DndBeyondWebApplicationFactory(string baseAddress, ILoggerProvider loggerProvider)
+        public DndBeyondWebApplicationFactory(string baseAddress, ILoggerProvider loggerProvider, TimeSpan timeout)
         {
             _baseAddress = baseAddress;
             _loggerProvider = loggerProvider;
+            _timeout = timeout;
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -318,13 +329,13 @@ public class DndBeyondUrlImportIntegrationTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 // Re-register the typed client so its BaseAddress points at WireMock and the timeout
-                // is short enough for the timeout test to run quickly. The later configure action
-                // runs last and overrides the production values.
+                // is the per-factory value. The later configure action runs last and overrides the
+                // production values.
                 services.AddHttpClient<Aircane.Application.Abstractions.IDndBeyondUrlImportService,
                     Aircane.Infrastructure.Characters.DndBeyondUrlImportService>(c =>
                 {
                     c.BaseAddress = new Uri(_baseAddress);
-                    c.Timeout = TimeSpan.FromSeconds(2);
+                    c.Timeout = _timeout;
                     c.DefaultRequestHeaders.UserAgent.ParseAdd("Aircane-Tabletop/1.0");
                 });
 

@@ -104,6 +104,33 @@ Example `appsettings.Development.json` entry:
 
 ---
 
+## Running `dotnet ef` Safely (Scratch and Verification Runs)
+
+> **Warning:** `ConnectionStrings__DefaultConnection` does **not** redirect `dotnet ef`. The design-time factory (`DesignTimeDbContextFactory`) ignores it and falls back to the real dev database (`Host=localhost;Port=5432;Database=aircane`) unless `AIRCANE_CONNECTION_STRING` is set. A scratch run with only `ConnectionStrings__DefaultConnection` set can silently apply migrations to your real dev data.
+
+For any scratch or verification run:
+
+1. Use a separate, throwaway database, never `aircane`.
+2. Pass `--connection` explicitly on every command that accepts it (`database update` and `migrations list`).
+
+```bash
+# Create a throwaway database in the Compose Postgres
+docker compose exec postgres psql -U aircane -d postgres -c "CREATE DATABASE aircane_scratch;"
+
+# Apply all migrations to the scratch database only
+dotnet ef database update \
+  --project src/backend/Aircane.Infrastructure \
+  --startup-project src/backend/Aircane.Api \
+  --connection "Host=localhost;Port=5432;Database=aircane_scratch;Username=aircane;Password=aircane_dev"
+
+# Drop it when finished
+docker compose exec postgres psql -U aircane -d postgres -c "DROP DATABASE aircane_scratch;"
+```
+
+Commands that do not accept `--connection` (such as `database drop` and `dbcontext info`) use the design-time factory's connection, so set `AIRCANE_CONNECTION_STRING` to the scratch connection string for those.
+
+---
+
 ## Local Overrides
 
 A `docker-compose.override.yml` template is included at the repository root. This file is excluded from version control and is automatically merged by Docker Compose. Use it to customise ports, mount source volumes for hot-reload, or inject local API keys without touching the shared `docker-compose.yml`.

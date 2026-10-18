@@ -521,7 +521,7 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
     [Fact]
     public async Task GroupAdventurePrompt_SendsTheGroupBlock_AndNoSoloText()
     {
-        var (campaign, session) = await SeedGroupRunAsync();
+        var (campaign, session, _) = await SeedGroupRunAsync();
 
         await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I check the shelves"));
 
@@ -652,20 +652,126 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         .Select(l => l.Trim())
         .Where(l => l.Length > 0);
 
-    /// <summary>A group run of two approved players, Alice up first; Alice plays Mira.</summary>
-    private async Task<(Campaign Campaign, Session Session)> SeedGroupRunAsync()
+    /// <summary>
+    /// A group run of two approved players, Alice up first; Alice plays Mira, and Bob plays Thorn
+    /// when <paramref name="bobHasCharacter"/> (otherwise Bob has no character in the app).
+    /// </summary>
+    private async Task<(Campaign Campaign, Session Session, Guid RunId)> SeedGroupRunAsync(bool bobHasCharacter = false)
     {
         var (campaign, session) = await SeedCampaignAsync();
         var mira = new Character("Mira", "D&D 5e", "2014", 3, "{}", "{}", campaign.Id);
+        var thorn = new Character("Thorn", "D&D 5e", "2014", 3, "{}", "{}", campaign.Id);
         var alice = new SessionParticipant(session.Id, "Alice", ParticipantRole.Player, isApproved: true, characterId: mira.Id);
-        var bob = new SessionParticipant(session.Id, "Bob", ParticipantRole.Player, isApproved: true);
+        var bob = new SessionParticipant(session.Id, "Bob", ParticipantRole.Player, isApproved: true,
+            characterId: bobHasCharacter ? thorn.Id : null);
         var adventure = AdventureSessionTestData.CreateAdventure();
-        _db.Characters.Add(mira);
+        _db.Characters.AddRange(mira, thorn);
         _db.SessionParticipants.AddRange(alice, bob);
         _db.GeneratedAdventures.Add(adventure);
         await _db.SaveChangesAsync();
-        await _realAdventureService.StartGroupSessionAsync(adventure.Id, campaign.Id, [alice.Id, bob.Id]);
-        return (campaign, session);
+        var run = await _realAdventureService.StartGroupSessionAsync(adventure.Id, campaign.Id, [alice.Id, bob.Id]);
+        return (campaign, session, run.Id);
+    }
+
+    // ── Group runs: pending roll across turns ────────────────────────────────
+
+    [Fact]
+    public async Task GroupRun_AdvanceTurnWithRollPending_NextPlayersMessageDoesNotResolveIt()
+    {
+        var (campaign, session, runId) = await SeedGroupRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = AsksForStealthRoll();
+        await sut.ProcessActionAsync(Request(campaign, session, "Mira sneaks toward the guard"));   // Alice's turn
+        _aiProvider.NextOutput = Output();
+
+        await _realAdventureService.AdvanceTurnAsync(runId);                                        // Bob is up
+        await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 17"));
+
+        Assert.DoesNotContain("PENDING ROLL", SystemPrompt());
+        var saved = await _db.AdventureSessions.AsNoTracking().SingleAsync(s => s.Id == runId);
+        Assert.Null(saved.PendingRollLabel);
+        Assert.Null(saved.PendingRollDC);
+    }
+
+    [Fact]
+    public async Task GroupRun_OwingParticipantsReply_ResolvesThePendingRoll_AndNamesWhoItIsFor()
+    {
+        var (campaign, session, _) = await SeedGroupRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = AsksForStealthRoll();
+        await sut.ProcessActionAsync(Request(campaign, session, "Mira sneaks toward the guard"));
+        _aiProvider.NextOutput = Output();
+
+        await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 14"));   // still Alice's turn
+
+        var prompt = SystemPrompt();
+        Assert.Contains("PENDING ROLL: Earlier this turn, Mira (played by Alice) was asked to roll Dexterity (Stealth), DC 14.", prompt);
+        Assert.Contains("The current message, from Mira (played by Alice), is the result of that roll", prompt);
+        Assert.DoesNotContain("The player was previously asked", prompt);
+    }
+
+    // A roll for several characters is still answered by the acting player, who reports every result.
+    [Fact]
+    public async Task GroupRun_PartyWideRoll_IsResolvedByTheActingPlayersReply()
+    {
+        var (campaign, session, runId) = await SeedGroupRunAsync(bobHasCharacter: true);
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = Output(new AiProposedAction
+        {
+            Type = AiActionType.RequestRoll, Label = "Dexterity saving throw - Mira, Thorn", Formula = "1d20", Dc = 13,
+        });
+        await sut.ProcessActionAsync(Request(campaign, session, "Mira pulls the lever"));
+        _aiProvider.NextOutput = Output();
+
+        await sut.ProcessActionAsync(Request(campaign, session, "Mira 15, Thorn 8"));
+
+        var prompt = SystemPrompt();
+        Assert.Contains("Mira (played by Alice) was asked to roll Dexterity saving throw - Mira, Thorn, DC 13.", prompt);
+        Assert.Contains("If the roll names several characters, the message reports each one's result: resolve each separately.", prompt);
+        // ...and, answered, it is consumed as before.
+        Assert.Null((await _db.AdventureSessions.AsNoTracking().SingleAsync(s => s.Id == runId)).PendingRollLabel);
+    }
+
+    // ── Group runs: players without a character ──────────────────────────────
+
+    [Fact]
+    public async Task GroupRun_FullyAssignedParty_GetsNoNoCharacterBlock()
+    {
+        var (campaign, session, _) = await SeedGroupRunAsync(bobHasCharacter: true);
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I look around"));
+
+        Assert.DoesNotContain("NO CHARACTER ATTACHED", SystemPrompt());
+    }
+
+    [Fact]
+    public async Task GroupRun_OneUnassignedPlayer_NoCharacterBlockNamesOnlyThatPlayer()
+    {
+        var (campaign, session, _) = await SeedGroupRunAsync();   // Bob has no character
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I look around"));
+
+        var block = Assert.Single(_aiProvider.LastMessages, m => m.Content.StartsWith("NO CHARACTER ATTACHED", StringComparison.Ordinal)).Content;
+        Assert.Equal(PlayerActionService.BuildGroupNoCharacterInstructions(["Bob"]), block);
+        Assert.Contains("report results to you: Bob.", block);
+        Assert.DoesNotContain("Alice", block);
+        Assert.DoesNotContain("Mira", block);
+        Assert.DoesNotContain(PlayerActionService.BuildNoCharacterInstructions(), SystemPrompt());
+    }
+
+    [Fact]
+    public void BuildPromptMessages_GroupRun_NoCharacterBlockOnlyForListedPlayers()
+    {
+        var (request, campaign, state, rag) = PromptInputs();   // request has no character, as group runs do
+
+        var none = PlayerActionService.BuildPromptMessages(request, campaign, state, rag,
+            adventureContext: "Current Adventure: Test", isGroupRun: true, playersWithoutCharacter: []);
+        var some = PlayerActionService.BuildPromptMessages(request, campaign, state, rag,
+            adventureContext: "Current Adventure: Test", isGroupRun: true, playersWithoutCharacter: ["Cara"]);
+
+        Assert.DoesNotContain(none, m => m.Content.Contains("NO CHARACTER ATTACHED", StringComparison.Ordinal));
+        Assert.Single(some, m => m.Content == PlayerActionService.BuildGroupNoCharacterInstructions(["Cara"]));
+        Assert.DoesNotContain(some, m => m.Content == PlayerActionService.BuildNoCharacterInstructions());
     }
 
     /// <summary>Every message the AI was sent, in order, with GUIDs masked and line endings normalised.</summary>

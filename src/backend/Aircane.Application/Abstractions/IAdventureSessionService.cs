@@ -46,7 +46,8 @@ public interface IAdventureSessionService
 
     /// <summary>
     /// Passes the turn of a group run to the next participant in the turn order, wrapping from the
-    /// last participant to the first (which starts the next round). Broadcasts <c>TurnAdvanced</c>.
+    /// last participant to the first (which starts the next round). Clears any pending roll: it was
+    /// owed by the player whose turn just ended. Broadcasts <c>TurnAdvanced</c>.
     /// </summary>
     /// <exception cref="KeyNotFoundException">The run does not exist.</exception>
     /// <exception cref="InvalidOperationException">The run is not a group run, or is no longer in progress.</exception>
@@ -173,4 +174,13 @@ public interface IAdventureSessionService
 /// <param name="Text">The context block to include in the AI system prompt.</param>
 /// <param name="CurrentSceneId">The scene the run is in right now (null if unknown).</param>
 /// <param name="IsGroup">True for a group run; selects the group instruction block instead of the solo one.</param>
-public sealed record AdventureContext(Guid SessionId, string Text, string? CurrentSceneId = null, bool IsGroup = false);
+/// <param name="PlayersWithoutCharacter">
+/// Group runs only: names of the participants with no character assigned in this app, in turn order.
+/// Null for solo runs.
+/// </param>
+public sealed record AdventureContext(
+    Guid SessionId,
+    string Text,
+    string? CurrentSceneId = null,
+    bool IsGroup = false,
+    IReadOnlyList<string>? PlayersWithoutCharacter = null);

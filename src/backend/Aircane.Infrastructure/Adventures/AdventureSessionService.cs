@@ -213,6 +213,12 @@ public sealed class AdventureSessionService : IAdventureSessionService
 
         var nextId = session.TurnOrder[nextIndex];
         session.ActiveParticipantId = nextId;
+
+        // A pending roll belongs to the turn it was asked in: only the acting player can answer it,
+        // so once the host moves on it is dropped rather than read as the next player's result.
+        session.PendingRollLabel = null;
+        session.PendingRollDC = null;
+
         Touch(session);
         await _db.SaveChangesAsync(ct);
 
@@ -695,17 +701,23 @@ public sealed class AdventureSessionService : IAdventureSessionService
         // A group run also tells the AI who is playing, as which character, and whose turn it is.
         IReadOnlyList<ParticipantTurnDto>? turnOrder = null;
         IReadOnlyDictionary<Guid, string>? characterNames = null;
+        List<string>? playersWithoutCharacter = null;
         if (session.IsGroup)
         {
             turnOrder = BuildTurnOrder(session, await LoadParticipantNamesAsync(session, ct));
             characterNames = await LoadCharacterNamesAsync(session, ct);
+            playersWithoutCharacter = turnOrder
+                .Where(t => !characterNames.ContainsKey(t.ParticipantId))
+                .Select(t => t.ParticipantName)
+                .ToList();
         }
 
         return new AdventureContext(
             session.Id,
             BuildAdventureContext(session, adventure, turnOrder, characterNames),
             session.CurrentSceneId,
-            session.IsGroup);
+            session.IsGroup,
+            playersWithoutCharacter);
     }
 
     /// <inheritdoc />
@@ -737,10 +749,25 @@ public sealed class AdventureSessionService : IAdventureSessionService
         if (!string.IsNullOrWhiteSpace(session.PendingRollLabel))
         {
             var dc = session.PendingRollDC is { } d ? $", DC {d}" : string.Empty;
-            sb.AppendLine(
-                $"PENDING ROLL: The player was previously asked to roll {session.PendingRollLabel}{dc}. " +
-                "Their current message is the result of that roll - do NOT ask them to clarify what the roll was for. " +
-                "Assume it is this pending roll. Narrate the outcome of the roll before continuing the scene.");
+            if (session.IsGroup)
+            {
+                // Passing the turn clears the roll, so it is always owed by whoever is acting now.
+                var actor = turnOrder is { Count: > 0 }
+                    ? ParticipantLabel(turnOrder.FirstOrDefault(t => t.IsActive) ?? turnOrder[0], characterNames)
+                    : "the acting player";
+                sb.AppendLine(
+                    $"PENDING ROLL: Earlier this turn, {actor} was asked to roll {session.PendingRollLabel}{dc}. " +
+                    $"The current message, from {actor}, is the result of that roll - do NOT ask them to clarify what the roll was for. " +
+                    "Assume it is this pending roll. If the roll names several characters, the message reports each one's result: resolve each separately. " +
+                    "Narrate the outcome of the roll before continuing the scene.");
+            }
+            else
+            {
+                sb.AppendLine(
+                    $"PENDING ROLL: The player was previously asked to roll {session.PendingRollLabel}{dc}. " +
+                    "Their current message is the result of that roll - do NOT ask them to clarify what the roll was for. " +
+                    "Assume it is this pending roll. Narrate the outcome of the roll before continuing the scene.");
+            }
             sb.AppendLine();
         }
 
@@ -821,10 +848,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
         IReadOnlyList<ParticipantTurnDto> turnOrder,
         IReadOnlyDictionary<Guid, string>? characterNames = null)
     {
-        string Label(ParticipantTurnDto t) =>
-            characterNames is not null && characterNames.TryGetValue(t.ParticipantId, out var character)
-                ? $"{character} (played by {t.ParticipantName})"
-                : t.ParticipantName;
+        string Label(ParticipantTurnDto t) => ParticipantLabel(t, characterNames);
 
         var active = turnOrder.FirstOrDefault(t => t.IsActive) ?? turnOrder[0];
 
@@ -835,6 +859,12 @@ public sealed class AdventureSessionService : IAdventureSessionService
         sb.Append($"Round: {session.CurrentRound}.");
         return sb.ToString();
     }
+
+    /// <summary>"Mira (played by Alice)", or the player's name alone when they have no character.</summary>
+    private static string ParticipantLabel(ParticipantTurnDto turn, IReadOnlyDictionary<Guid, string>? characterNames)
+        => characterNames is not null && characterNames.TryGetValue(turn.ParticipantId, out var character)
+            ? $"{character} (played by {turn.ParticipantName})"
+            : turn.ParticipantName;
 
     private static void AppendProgress(StringBuilder sb, AdventureSession session, int totalScenes)
     {

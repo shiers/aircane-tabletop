@@ -118,9 +118,10 @@ narrating, tracking state, and advancing the story from the player's actions.
   abandon, available scenes, plus `POST /{id}/player-action` (the solo loop; solo play has no formal character).
   Callers must be the Host, or the Player whose token was issued for the run's play session.
 - **Frontend.** `features/adventures/`: `AdventureSoloSession.vue` (narration feed, scene panel, action input),
-  `adventureSessionStore.ts`, `PlaySoloLauncher.vue` (campaign picker, shown on the review screen of approved
-  adventures), route `/adventures/solo/:sessionId`. Exits ask the AI to narrate the move; if the AI agrees but the
-  campaign's authority blocks it, the chosen exit is applied as a host override.
+  `adventureSessionStore.ts`, `PlaySoloLauncher.vue` (campaign picker for adventures that are not yet in a
+  campaign), route `/adventures/solo/:sessionId`. Exits ask the AI to narrate the move; if the AI agrees but the
+  campaign's authority blocks it, the chosen exit is applied as a host override. Where adventures are listed and
+  played from, and how a run is resumed, is covered in "Adventure Forge, Campaigns and Play Polish" below.
 - **Content IDs.** The generation pipeline only numbers scenes, so NPCs/clues/secrets/encounters are addressed by
   deterministic derived IDs (`npc-<slug>`, `clue-N`, `secret-N`, `encounter-N`; see `AdventureContentIds`). Scenes also gained
   an optional `objectives` list (requested in the scenes prompt; older adventures simply have none).
@@ -131,12 +132,91 @@ narrating, tracking state, and advancing the story from the player's actions.
 
 **Known gaps / follow-ups:**
 (1) `AdventureEncounterOutcome` is persisted and shown in the state DTO, but nothing records outcomes yet (no AI action
-or endpoint). (2) The narration feed is client-side only; reopening a run re-seeds it from the current scene. Persisting
-a transcript (or deriving it from the `Adventure:*` events) would fix that. (3) There is no generated-adventure *list*
-view, so "Play Solo" lives on the adventure review screen. (4) Run history / replaying a finished adventure isn't surfaced
-in the UI. (5) **Test hygiene:** the Web SDK copies a developer's local `data/ai-settings.json` into test output, so
-integration tests that reach the AI provider call the *real* provider on a machine with one configured (the new solo tests
-point `Storage:DocumentsPath` at a temp dir to avoid this; the shared `AircaneWebApplicationFactory` should do the same).
+or endpoint). (2) Finished runs (Completed / Abandoned) can't be reopened or replayed from the UI; only in-progress runs
+are surfaced. _(Earlier gaps now closed: the narration transcript is persisted, adventures have list views, and the
+integration test factory no longer reaches a real AI provider; see below.)_
+
+### Adventure Forge, Campaigns and Play Polish (generation, resume, AI DM behaviour)
+
+> **✅ Delivered and merged to `dev`** (PRs #19–#36, 2026-10-12 → 2026-10-18). Backend unit (2,520) and integration (144, incl. real-PostgreSQL) and frontend (478) suites green; `vue-tsc` clean. Migrations added: `AddGeneratedAdventureCampaignId`, `AddAdventureSessionPendingRoll`, `AddAdventureSessionEntry`.
+
+Follow-on work that turned solo execution into something you can actually use day to day.
+
+- **Async generation with live progress (#21, #22).** `POST /api/adventures/generate` queues an
+  `AdventureGenerationJob` on the background queue and returns 202 `{ jobId }`; the job reports stages
+  (analysing 10 % → complete 100 %) over a host-only `adventure-generation` group on `LibraryHub`
+  (`AdventureGenerationProgress / Completed / Failed`). An app-level toast (mounted in `App.vue`) shows the stage and
+  a bar, links to the result, auto-dismisses after 10 s unless hovered, and offers Try Again on failure; the Forge form
+  locks and shows progress inline while a job runs, and navigation is never blocked. The listeners start once at app
+  launch, rebuild if the connection closes for good, and adopt events for a job they didn't start (reload / other tab).
+- **Adventures belong to campaigns (#23, #24).** `GeneratedAdventure.CampaignId` (nullable, `SET NULL` on campaign
+  delete). New `/campaigns/:campaignId` page with an Adventures section (Draft: Review / Approve / Delete; Approved:
+  Review / Play Solo / Delete), generation from a campaign saves into it (`?campaignId=`), and Back on the review screen
+  returns to the campaign. `/adventures` (the sidebar's Adventure Forge item) lists **unassigned** adventures with
+  Assign to Campaign / Approve / Review / Play Solo / Delete and a + Generate New Adventure button
+  (`GET /api/adventures?unassigned=true`, `PATCH /api/adventures/{id}/assign`). The toast links to the campaign page, or
+  to `/adventures` when no campaign was chosen.
+- **Narration persistence and resume (#31, #33).** `AdventureSessionEntry` stores each player action and AI narration
+  (best effort, never blocks a turn); `GET /api/adventure-sessions/{id}/history` returns the last 50. Reopening a run
+  fills the feed behind a "── Resuming session ──" divider, scrolls to the latest exchange, and shows an AI-written
+  **Story So Far** (`POST …/recap`, a short state-only call, no retrieval). Cards with a run in progress show
+  "Scene X of Y — In Progress" and **Resume** instead of Play Solo (campaign page and Forge list), and the dashboard's
+  Recent Campaigns panel (previously static markup) now lists every campaign by recent activity with a Resume Adventure
+  link. `POST …/resume` clears a stale pending roll when a player comes back.
+- **AI DM behaviour (#28–#30, #34, #35).** RequestRoll no longer needs a linked character (players can use an external
+  sheet; the prompt then asks for the roll in words and waits for the result) but must carry a label; the run remembers
+  the roll it asked for (`PendingRollLabel/DC`) so "I rolled a 14" is read as its result, and clears it after the next
+  action; adventure retrieval skips reranking (standard pool of 10, 0.4 floor) to avoid the Ollama latency. Prompt rules
+  added for mandatory roll triggers (physical, stealth, social, search, magic, combat, awareness/detection) with DC
+  guidelines, narrate-then-roll, describing every exit with sensory detail, and ending every narration with a clear
+  player prompt.
+- **Resilient AI replies (#20, #27, #32).** Free-text fields use `StringOrObjectConverter` (object/array/number → compact
+  JSON text) across the adventure DTOs, `AiStructuredOutput` and its actions/citations; the provider deserializer strips
+  markdown fences and extracts the first JSON object from prose-wrapped replies; `RulesCitation` IDs are strings
+  (models cite "PHB", not GUIDs).
+- **Smaller changes.** Review-screen Back goes to the Forge list (#25); the "Dice Roller" nav item and dashboard card are
+  now **Join Session** (#26); the dashboard's adventure card opens `/adventures`, and the integration test factory now
+  always registers the fake AI, embedding and reranking providers, so tests can no longer make real, billed calls (#36).
+
+**Known gaps / follow-ups:**
+(1) The prompt rules (rolls, detection, exits, end-of-narration) are instructions, not enforcement: the model can still
+ignore them. A server-side check (e.g. flag a narrated success for an action that should have been rolled) or a
+smaller, structured "what happens next" step would make them reliable. (2) The recap is regenerated on every resume;
+it could be cached on the run and refreshed only after new turns. (3) The transcript holds player actions and AI
+narration only (clue/secret/NPC system lines are re-derived from state, not saved), and runs played before #31 have none.
+(4) Reloading the page between the AI asking for a roll and the player answering clears the pending roll, so the AI may
+ask again. (5) Generation jobs live in the in-memory queue: an API restart mid-generation loses the job, and a page
+reload mid-job loses the progress display (the job still finishes and saves). (6) Strict deserialization remains for
+non-text fields (GUIDs, numbers, booleans), where a wrong type has no sensible fallback. (7) Campaigns have no
+"last active" field; the dashboard derives it from the campaign's update time and its latest run. (8) The Playwright e2e
+suite is not run by the usual checks and has needed manual fixes after navigation changes (#24, #26, #36); consider
+running it in CI.
+
+### First-Launch Setup Wizard (PR #7, audited PR #37)
+
+> **✅ Delivered and merged to `dev`** (PR #7 commits `a1e5554`, `ec8ee07`,
+> `c81b117`; Ollama probe timeout raised in `765b8cf`; spec audit and model
+> description fix in PR #37). Frontend (24 setup-specific) and integration
+> (5 setup status) tests green; `vue-tsc` clean.
+
+A fullscreen setup wizard shown once on first launch (or when the AI provider
+is still Fake and the wizard has not been previously dismissed).
+
+- **Trigger.** Shows when `GET /api/setup/status` returns `aiProviderConfigured: false`
+  and `localStorage.setup_wizard_completed` is not set. Skipped entirely for Player
+  browsers (detected via `participant_token` in sessionStorage).
+- **Steps.** Welcome → Choose provider (Ollama ★ Recommended / OpenAI / Try first) →
+  Ollama setup (download link, two copy commands, live connection poller every 3 s) or
+  OpenAI setup (API key field, test connection, save) → Done (summary + gentle reminder
+  if provider is still Fake). The Try-first path skips Step 3 and shows "Step 2 of 3".
+- **Ollama step.** Lists exactly two models: `llama3.2` (~2 GB, AI DM chat and
+  reranking) and `nomic-embed-text` (~270 MB, rules library search). Connection check
+  polls `/api/setup/status` automatically — no manual button.
+- **Completion.** "Start playing" sets `localStorage.setup_wizard_completed = true` and
+  navigates to the dashboard. Skip on any step does the same immediately.
+- **Backend.** `GET /api/setup/status` (anonymous, `SetupController`) returns
+  `isFirstLaunch`, `aiProviderConfigured`, `activeAiProvider`, `activeEmbeddingProvider`,
+  `ollamaReachable` (2000 ms probe timeout, raised from 200 ms to fix a flaky test).
 
 ---
 
@@ -203,6 +283,24 @@ Replace short-lived session tokens with full user accounts (local credentials or
 
 Allow single-user or desktop installations to run without Docker/PostgreSQL by using SQLite with a compatible vector extension.
 
+### Group Play (Full AI DM and Co-DM Modes)
+
+Solo adventure execution is delivered. The next play mode is group play:
+multiple players joining a campaign session while the AI DM (or AI-assisted
+human DM) runs the adventure.
+
+- **Full AI DM mode** — same AI loop as solo but with multiple player tokens;
+  each player submits actions, the AI narrates to all, and the session hub
+  broadcasts events to every connected client.
+- **Co-DM mode** — a human host runs the session with the AI in Suggest or
+  Ask authority; the AI proposes actions (scene advances, roll requests,
+  NPC updates) which the host approves or rejects before they take effect.
+- Backend: `AdventureSession` already supports multiple players conceptually;
+  the main work is the multi-player action queue and turn ordering.
+- Frontend: player-facing session view (read-only narration feed, roll prompts,
+  character panel) and host-facing DM controls (approve/reject proposals,
+  manual overrides, combat tracker integration).
+
 > **Delivered and moved out of P2:** _D&D Beyond / VTT Integration_ and _Pathbuilder 2e Character
 > Import_ shipped together as the source-specific character import adapters — see "Recently
 > Delivered" above (PR #15). The one standing caveat is that the D&D Beyond URL path relies on an
@@ -256,6 +354,50 @@ driven `ImportReviewPanel` every other source uses. Two follow-ups to converge i
   for unknown). _Deferred deliberately_ from the button-consolidation change (Option A) because merging
   the two review models touches the backend PDF endpoint, the review components, and their tests, and the
   existing PDF flow works and is tested.
+
+### Curated AI Model List
+
+The OpenAI model dropdown currently fetches every model on the account (50+).
+Replace with a curated hardcoded list of models that work well for TTRPG AI DM
+use, with a recommended default. Pending model testing across gpt-4o, gpt-4.1,
+gpt-4.1-mini, gpt-5-mini to confirm the best balance of quality and response
+time before the list is locked down. Ollama keeps its live-fetched list since
+users control what is installed locally.
+
+### Art Assets and UI Polish
+
+~95 art assets generated and placed in `public/assets/` subfolders. Kiro tasks
+written covering: wiring all assets into their Vue components (backgrounds,
+hero banners, panel art, thumbnails, portraits, nav icons, button art, ornaments),
+the `v-bg-asset` directive and `AircaneImg` / `NavIcon` / `ThumbnailPlaceholder`
+fallback components, and layout consistency fixes (common page template, sidebar
+width, duplicate headings, background removal from pages that should be clean).
+Blocked only on `new-character-button-art.png` regeneration for the Characters
+page. All other assets are ready to wire.
+
+### Playwright E2E in CI
+
+The Playwright end-to-end suite is not run by the usual CI checks and has needed
+manual fixes after navigation changes (PRs #24, #26, #36). Add it to the CI
+workflow so navigation regressions are caught automatically. The suite itself
+exists; the work is wiring it into the CI pipeline and fixing any currently
+broken specs.
+
+### Adventure Prompt Rule Enforcement
+
+The current AI DM prompt rules (mandatory roll triggers, detection checks, exit
+descriptions, end-of-narration player prompt) are instructions — the model can
+still ignore them. Known gaps: the AI can narrate an auto-success for an action
+that should have required a roll, or end narration without a clear player prompt.
+
+Options for making these reliable:
+
+- **Server-side detection** — after receiving the AI response, check whether a
+  mandatory-roll scenario was narrated without a `RequestRoll` action and flag or
+  retry the response.
+- **Structured "what next" step** — split the AI DM loop into narration + a
+  separate structured decision step that forces the model to choose between
+  RequestRoll, AdvanceScene, or NarrateOnly explicitly.
 
 ### In-App Help / How-To Menu
 
@@ -313,7 +455,8 @@ Persistent AI memory across sessions beyond what is stored in campaign state - l
 
 ### Session Export and Replay
 
-Export full session logs, event history, and summaries in a portable format for archival or sharing.
+Export full session logs, event history, and summaries in a portable format for archival or sharing. (Adventure runs now
+keep a persisted transcript and campaign event log, which this can build on.)
 
 ---
 
@@ -367,4 +510,16 @@ Localize the UI and support non-English source documents.
 
 ---
 
-_Last updated: 2026-10-12 — solo adventure execution delivered (AI-run play of generated adventures; see Recently Delivered). Earlier (2026-10-11): structured stat block chunker delivered (RAG item 11; follow-ups added to P4). Earlier (2026-10-11): RAG pipeline optimization delivered (items 1–10: visibility fix, source priority, ruleset normalization, scoring, retrieval limits, dedup, OCR cleanup, heading-aware chunking, Postgres integration tests, cross-encoder reranking with Cohere and Ollama LLM-judge providers); "Reranking in RAG Pipeline" removed from P4 (delivered); query decomposition (agentic retrieval) and vector column dimension fix added to P4. Earlier (2026-10-04): source-specific character import adapters (D&D Beyond URL+file, Foundry VTT 5e/PF2e, Roll20, Pathbuilder 2e, Generic VTT) delivered and merged to `dev` via PR #15; the P2 items "D&D Beyond / VTT Integration" and "Pathbuilder 2e Character Import" moved to Recently Delivered. Earlier (2026-10-04): in-app "Report a bug" feedback feature delivered and merged to `dev` (moved from In Progress to Recently Delivered). Earlier (2026-10-01): added the feedback feature as an In Progress item. Earlier (2026-10-01): Internet Tunnel / Remote Play (Cloudflare Tunnel) delivered and moved to Completed P1 Work, including its security-hardening prerequisites; removed the now-shipped P3 "Rate Limiting" and "Persistent Token Revocation" items. Earlier (2026-10-01): moved D&D Beyond / VTT Integration and Pathbuilder 2e Character Import from P3 to P2. Earlier (2026-09-29): native mobile companion app technology decided — Flutter._
+_Last updated: 2026-10-18 — first-launch setup wizard delivered (PR #7, audited
+PR #37); group play, curated model list, art assets/UI polish, Playwright CI, and
+adventure prompt enforcement added to backlog. Earlier (2026-10-18): adventure
+forge, campaign integration and play polish delivered (async generation with
+progress toast, adventures on campaign pages, unassigned list, narration
+persistence and resume with AI recap, roll/detection/exit prompt rules, resilient
+AI reply parsing, fake AI in integration tests; PRs #19–#36). Earlier
+(2026-10-12): solo adventure execution delivered. Earlier (2026-10-11): structured
+stat block chunker delivered (RAG item 11). Earlier (2026-10-11): RAG pipeline
+optimization delivered (items 1–10). Earlier (2026-10-04): source-specific
+character import adapters delivered (PR #15). Earlier (2026-10-04): in-app
+feedback feature delivered. Earlier (2026-10-01): Internet Tunnel / Remote Play
+delivered. Earlier (2026-09-29): Flutter chosen for native mobile companion app._

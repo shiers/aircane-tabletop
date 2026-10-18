@@ -122,9 +122,7 @@ public sealed class PlayerActionService : IPlayerActionService
         var combatContext = await BuildCombatContextAsync(request.CampaignId, state, cancellationToken);
 
         // 4. Build AI prompt with state + adventure + combat + context + player action
-        var messages = BuildPromptMessages(
-            request, campaign, state, ragResult, combatContext, adventureContext?.Text,
-            adventureContext?.IsGroup ?? false, adventureContext?.PlayersWithoutCharacter);
+        var messages = BuildPromptMessages(request, campaign, state, ragResult, combatContext, adventureContext);
 
         // 5. Call AI provider for structured output
         var aiOutput = await _aiProvider.StructuredChatCompletionAsync(messages, cancellationToken);
@@ -430,13 +428,11 @@ public sealed class PlayerActionService : IPlayerActionService
     /// Builds the prompt messages for the AI DM, including system instructions,
     /// campaign state, RAG context, and the player's action.
     /// </summary>
-    /// <param name="isGroupRun">
-    /// True when <paramref name="adventureContext"/> belongs to a group run: the group instruction
-    /// block is sent instead of the solo one. Ignored when there is no adventure context.
-    /// </param>
-    /// <param name="playersWithoutCharacter">
-    /// Group runs only: the participants with no character in this app. The group no-character block
-    /// names just these players, and is left out when everyone has a character.
+    /// <param name="adventure">
+    /// The campaign's in-progress adventure run, or null when there is none. Its
+    /// <see cref="AdventureContext.IsGroup"/> selects the group instruction block instead of the solo
+    /// one, and <see cref="AdventureContext.PlayersWithoutCharacter"/> names the players the group
+    /// no-character block covers (left out when everyone has a character). Ignored when its text is empty.
     /// </param>
     public static IReadOnlyList<AiMessage> BuildPromptMessages(
         PlayerActionRequest request,
@@ -444,11 +440,10 @@ public sealed class PlayerActionService : IPlayerActionService
         Application.DTOs.CampaignState.CampaignStateDto state,
         RagContextResult ragResult,
         string? combatContext = null,
-        string? adventureContext = null,
-        bool isGroupRun = false,
-        IReadOnlyList<string>? playersWithoutCharacter = null)
+        AdventureContext? adventure = null)
     {
-        var groupRun = isGroupRun && !string.IsNullOrWhiteSpace(adventureContext);
+        var inAdventure = !string.IsNullOrWhiteSpace(adventure?.Text);
+        var groupRun = inAdventure && adventure!.IsGroup;
         var messages = new List<AiMessage>();
 
         // System message with AI DM instructions
@@ -465,7 +460,7 @@ public sealed class PlayerActionService : IPlayerActionService
         // A group run has no run-level character, so it names only the players who lack one, if any.
         if (groupRun)
         {
-            if (playersWithoutCharacter is { Count: > 0 })
+            if (adventure!.PlayersWithoutCharacter is { Count: > 0 } playersWithoutCharacter)
                 messages.Add(AiMessage.System(BuildGroupNoCharacterInstructions(playersWithoutCharacter)));
         }
         else if (request.CharacterId == Guid.Empty)
@@ -475,10 +470,10 @@ public sealed class PlayerActionService : IPlayerActionService
 
         // Adventure run: how to drive the adventure (action schema) + where the players are in it.
         // Exactly one instruction block, chosen by run type: the solo and group blocks are never layered.
-        if (!string.IsNullOrWhiteSpace(adventureContext))
+        if (inAdventure)
         {
             messages.Add(AiMessage.System(groupRun ? BuildGroupAdventureInstructions() : BuildAdventureInstructions()));
-            messages.Add(AiMessage.System($"ACTIVE ADVENTURE:\n{adventureContext}"));
+            messages.Add(AiMessage.System($"ACTIVE ADVENTURE:\n{adventure!.Text}"));
         }
 
         // Live combat context (initiative, HP, conditions, whose turn it is)

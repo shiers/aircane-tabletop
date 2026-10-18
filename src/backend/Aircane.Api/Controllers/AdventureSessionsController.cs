@@ -409,7 +409,8 @@ public sealed class AdventureSessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Manually advances to a scene reachable from the current one (host override).
+    /// Manually advances to a scene reachable from the current one (host override). In a group run
+    /// only the Host may do this.
     /// </summary>
     [HttpPost("{id:guid}/advance-scene")]
     [ProducesResponseType(typeof(AdventureSessionStateDto), StatusCodes.Status200OK)]
@@ -427,7 +428,7 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanAccess(session))
+        if (!CanManage(session))
             return Forbid();
 
         return await RunAsync(async () =>
@@ -439,7 +440,7 @@ public sealed class AdventureSessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Abandons the run. Idempotent for an already-abandoned run.
+    /// Abandons the run. Idempotent for an already-abandoned run. In a group run only the Host may do this.
     /// </summary>
     [HttpPost("{id:guid}/abandon")]
     [ProducesResponseType(typeof(AdventureSessionStateDto), StatusCodes.Status200OK)]
@@ -451,7 +452,7 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanAccess(session))
+        if (!CanManage(session))
             return Forbid();
 
         return await RunAsync(async () =>
@@ -506,6 +507,14 @@ public sealed class AdventureSessionsController : ControllerBase
                && Guid.TryParse(User.FindFirst(SessionIdClaim)?.Value, out var tokenSessionId)
                && tokenSessionId == session.SessionId;
     }
+
+    /// <summary>
+    /// Who may change the run's course (abandon it, move it to another scene). Solo: anyone who
+    /// <see cref="CanAccess"/> it, since the single player runs it. Group: the Host only, as one
+    /// player must not be able to end or redirect the game for everyone.
+    /// </summary>
+    private bool CanManage(AdventureSession session)
+        => session.IsGroup ? IsHost() : CanAccess(session);
 
     /// <summary>
     /// True when the caller's token was issued to the participant whose turn it is. A caller with no

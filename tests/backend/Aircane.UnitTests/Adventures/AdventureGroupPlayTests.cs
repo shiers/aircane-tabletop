@@ -236,8 +236,9 @@ public sealed class AdventureGroupPlayTests : IDisposable
         // A solo "start" must not hand back a group's run as if it were the caller's own.
         await StartGroupAsync();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _sut.StartAdventureSessionAsync(_adventure.Id, _campaign.Id, characterId: null));
+        Assert.Contains("start-group", ex.Message);
     }
 
     // ── Turn gating on player-action ──────────────────────────────────────────
@@ -603,6 +604,101 @@ public sealed class AdventureGroupPlayTests : IDisposable
             run.Id, new AddAdventureParticipantRequest(Guid.NewGuid()), default);
 
         Assert.IsType<ForbidResult>(result);
+    }
+
+    // ── Abandon / advance-scene: Host only in a group run ─────────────────────
+
+    private const string NextScene = "scene-2";
+
+    private async Task<(Guid RunId, ClaimsPrincipal Player)> StartSoloRunWithPlayerAsync()
+    {
+        await SeedAsync();
+        var solo = await _sut.StartAdventureSessionAsync(_adventure.Id, _campaign.Id, characterId: null);
+        await _sut.AttachPlaySessionAsync(solo.Id, _playSession.Id);
+        return (solo.Id, Player(_alice));
+    }
+
+    [Fact]
+    public async Task AdventureSessionsController_Abandon_GroupRun_PlayerGets403()
+    {
+        var run = await StartGroupAsync();
+
+        var result = await CreateController(Player(_alice)).Abandon(run.Id, default);
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.Equal(AdventureSessionStatus.InProgress, (await ReloadAsync(run.Id)).Status);
+    }
+
+    [Fact]
+    public async Task AdventureSessionsController_Abandon_GroupRun_HostGets200()
+    {
+        var run = await StartGroupAsync();
+
+        var result = await CreateController(Host()).Abandon(run.Id, default);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(AdventureSessionStatus.Abandoned, (await ReloadAsync(run.Id)).Status);
+    }
+
+    [Fact]
+    public async Task AdventureSessionsController_Abandon_SoloRun_PlayerGets200()
+    {
+        var (runId, player) = await StartSoloRunWithPlayerAsync();
+
+        var result = await CreateController(player).Abandon(runId, default);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(AdventureSessionStatus.Abandoned, (await ReloadAsync(runId)).Status);
+    }
+
+    [Fact]
+    public async Task AdventureSessionsController_AdvanceScene_GroupRun_PlayerGets403()
+    {
+        var run = await StartGroupAsync();
+
+        var result = await CreateController(Player(_alice))
+            .AdvanceScene(run.Id, new AdvanceSceneRequest(NextScene), default);
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.Equal("scene-1", (await ReloadAsync(run.Id)).CurrentSceneId);
+    }
+
+    [Fact]
+    public async Task AdventureSessionsController_AdvanceScene_GroupRun_HostGets200()
+    {
+        var run = await StartGroupAsync();
+
+        var result = await CreateController(Host())
+            .AdvanceScene(run.Id, new AdvanceSceneRequest(NextScene), default);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(NextScene, (await ReloadAsync(run.Id)).CurrentSceneId);
+    }
+
+    [Fact]
+    public async Task AdventureSessionsController_AdvanceScene_SoloRun_PlayerGets200()
+    {
+        var (runId, player) = await StartSoloRunWithPlayerAsync();
+
+        var result = await CreateController(player)
+            .AdvanceScene(runId, new AdvanceSceneRequest(NextScene), default);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(NextScene, (await ReloadAsync(runId)).CurrentSceneId);
+    }
+
+    // ── Solo start against a group run ────────────────────────────────────────
+
+    [Fact]
+    public async Task AdventureSessionsController_StartSolo_GroupRunInProgress_Returns400PointingToStartGroup()
+    {
+        await StartGroupAsync();
+
+        var result = await CreateController(Host()).StartSession(
+            new StartAdventureSessionRequest(_adventure.Id, _campaign.Id), default);
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+        Assert.Contains("start-group", problem.Detail);
     }
 
     // ── Solo state is unchanged ───────────────────────────────────────────────

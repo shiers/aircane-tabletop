@@ -75,6 +75,9 @@ public interface ISessionHubNotifier
     /// <summary>Broadcasts that the turn passed to another participant of a group adventure run.</summary>
     Task NotifyTurnAdvancedAsync(Guid sessionId, TurnAdvancedNotification notification, CancellationToken ct = default);
 
-    /// <summary>Broadcasts that a participant was added to a group adventure run's turn order.</summary>
+    /// <summary>
+    /// Broadcasts that a participant was added to a group adventure run's turn order. The event's
+    /// <c>turnPosition</c> is zero-based (0 = first to act).
+    /// </summary>
     Task NotifyParticipantJoinedAdventureAsync(Guid sessionId, ParticipantJoinedAdventureNotification notification, CancellationToken ct = default);
 }

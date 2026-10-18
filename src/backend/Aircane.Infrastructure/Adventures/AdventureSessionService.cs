@@ -74,7 +74,8 @@ public sealed class AdventureSessionService : IAdventureSessionService
             if (existing.IsGroup)
             {
                 throw new InvalidOperationException(
-                    "This campaign already has a group adventure in progress. Abandon or complete it before starting a solo run.");
+                    "This campaign already has a group adventure in progress. Use start-group to resume it, " +
+                    "or abandon or complete it before starting a solo run.");
             }
 
             if (existing.GeneratedAdventureId == generatedAdventureId)
@@ -258,7 +259,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
             participantId, sessionId, position);
 
         await AppendEventAsync(session, "Adventure:ParticipantJoined",
-            new { adventureSessionId = sessionId, participantId, turnPosition = position }, ct);
+            new { adventureSessionId = sessionId, participantId, turnPosition = position /* zero-based */ }, ct);
 
         await NotifyAsync(session, hub => hub.NotifyParticipantJoinedAdventureAsync(
             playSessionId,

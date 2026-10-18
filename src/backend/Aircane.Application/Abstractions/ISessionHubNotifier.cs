@@ -71,4 +71,10 @@ public interface ISessionHubNotifier
 
     /// <summary>Broadcasts that a solo adventure run was completed.</summary>
     Task NotifyAdventureCompletedAsync(Guid sessionId, AdventureCompletedNotification notification, CancellationToken ct = default);
+
+    /// <summary>Broadcasts that the turn passed to another participant of a group adventure run.</summary>
+    Task NotifyTurnAdvancedAsync(Guid sessionId, TurnAdvancedNotification notification, CancellationToken ct = default);
+
+    /// <summary>Broadcasts that a participant was added to a group adventure run's turn order.</summary>
+    Task NotifyParticipantJoinedAdventureAsync(Guid sessionId, ParticipantJoinedAdventureNotification notification, CancellationToken ct = default);
 }

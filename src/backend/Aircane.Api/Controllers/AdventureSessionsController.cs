@@ -12,9 +12,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aircane.Api.Controllers;
 
 /// <summary>
-/// Solo adventure execution: start a run of a generated adventure, read its state, play it
-/// through the AI DM, and override it manually. The caller must be the Host, or the solo Player
-/// who joined the run's play session.
+/// Adventure execution: start a run of a generated adventure, read its state, play it
+/// through the AI DM, and override it manually. The caller must be the Host, or a Player
+/// who joined the run's play session. A group run (several players taking turns) additionally
+/// gates player actions on whose turn it is; the Host passes the turn and adds players.
 /// </summary>
 [ApiController]
 [Route("api/adventure-sessions")]
@@ -24,6 +25,9 @@ public sealed class AdventureSessionsController : ControllerBase
 {
     // Claim carrying the session a participant token was issued for (see ParticipantTokenService).
     private const string SessionIdClaim = "sid";
+
+    // Claim carrying the participant a token was issued to; who is acting in a group run.
+    private const string ParticipantIdClaim = "pid";
 
     private readonly IAdventureSessionService _adventureSessions;
     private readonly IPlayerActionService _playerActionService;
@@ -96,6 +100,66 @@ public sealed class AdventureSessionsController : ControllerBase
             }
 
             return Ok(ToDto(session));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(NotFoundProblem(ex));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem400(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Starts a group run of an approved adventure: the listed participants of the campaign's
+    /// current play session take turns, in the order given. 201 when a run is created; 200 with the
+    /// existing run when the campaign is already running this adventure as a group (idempotent).
+    /// </summary>
+    [HttpPost("start-group")]
+    [ProducesResponseType(typeof(AdventureSessionStateDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(AdventureSessionStateDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> StartGroupSession(
+        [FromBody] StartGroupAdventureSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsHost())
+            return Forbid();
+
+        if (request is null || request.GeneratedAdventureId == Guid.Empty || request.CampaignId == Guid.Empty)
+            return Problem400("generatedAdventureId and campaignId are required.");
+        if (request.ParticipantIds is null || request.ParticipantIds.Count == 0)
+            return Problem400("participantIds must list at least one participant.");
+
+        try
+        {
+            var active = await _adventureSessions.GetActiveByCampaignAsync(request.CampaignId, cancellationToken);
+            var resuming = active is not null
+                           && active.IsGroup
+                           && active.GeneratedAdventureId == request.GeneratedAdventureId;
+            if (active is not null && !resuming)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Adventure already in progress",
+                    Detail = active.GeneratedAdventureId == request.GeneratedAdventureId
+                        ? "This campaign is already running this adventure as a solo run. Abandon or complete it before starting a group run."
+                        : "This campaign already has an adventure in progress. Abandon or complete it before starting another.",
+                    Status = StatusCodes.Status409Conflict,
+                });
+            }
+
+            var session = await _adventureSessions.StartGroupSessionAsync(
+                request.GeneratedAdventureId, request.CampaignId, request.ParticipantIds, cancellationToken);
+            var state = await _adventureSessions.GetSessionStateAsync(session.Id, cancellationToken);
+
+            return resuming
+                ? Ok(state)
+                : CreatedAtAction(nameof(GetSession), new { id = session.Id }, state);
         }
         catch (KeyNotFoundException ex)
         {
@@ -227,12 +291,13 @@ public sealed class AdventureSessionsController : ControllerBase
 
     /// <summary>
     /// Submits a free-text player action to the AI DM for this run. Returns the narration, the
-    /// outcome of any adventure actions the AI proposed, and the refreshed run state.
+    /// outcome of any adventure actions the AI proposed, and the refreshed run state. In a group
+    /// run only the participant whose turn it is may act (403 otherwise).
     /// </summary>
     [HttpPost("{id:guid}/player-action")]
     [ProducesResponseType(typeof(AdventureSessionActionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> SubmitPlayerAction(
         Guid id,
@@ -252,6 +317,19 @@ public sealed class AdventureSessionsController : ControllerBase
 
         return await RunAsync(async () =>
         {
+            // Solo runs have no turn order, so this only applies to group runs.
+            if (session.IsGroup && !IsActiveParticipant(session))
+            {
+                var waitingFor = (await _adventureSessions.GetSessionStateAsync(id, cancellationToken))
+                    .ActiveParticipantName ?? "another player";
+                return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+                {
+                    Title = "Not your turn",
+                    Detail = $"It is not your turn. Waiting for {waitingFor}.",
+                    Status = StatusCodes.Status403Forbidden,
+                });
+            }
+
             var response = await _playerActionService.ProcessActionAsync(
                 new PlayerActionRequest(
                     SessionId: session.SessionId ?? Guid.Empty,
@@ -266,6 +344,67 @@ public sealed class AdventureSessionsController : ControllerBase
                 IsHost() ? response.PrivateDmNote : null,   // DM-only: never sent to a Player token
                 response.ProposedActions.Select(AdventureActionOutcomeDto.From).ToList(),
                 state));
+        });
+    }
+
+    /// <summary>
+    /// Passes the turn of a group run to the next participant, starting a new round when it wraps
+    /// back to the first (Host only).
+    /// </summary>
+    [HttpPost("{id:guid}/advance-turn")]
+    [ProducesResponseType(typeof(AdventureSessionStateDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AdvanceTurn(Guid id, CancellationToken cancellationToken)
+    {
+        if (!IsHost())
+            return Forbid();
+
+        return await RunAsync(async () =>
+        {
+            await _adventureSessions.AdvanceTurnAsync(id, cancellationToken);
+            return Ok(await _adventureSessions.GetSessionStateAsync(id, cancellationToken));
+        });
+    }
+
+    /// <summary>
+    /// Adds a participant of the run's play session to the end of a group run's turn order (Host only).
+    /// </summary>
+    [HttpPost("{id:guid}/participants")]
+    [ProducesResponseType(typeof(AdventureSessionStateDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> AddParticipant(
+        Guid id,
+        [FromBody] AddAdventureParticipantRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsHost())
+            return Forbid();
+
+        if (request is null || request.ParticipantId == Guid.Empty)
+            return Problem400("participantId is required.");
+
+        var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
+        if (session is null)
+            return NotFound();
+        if (session.TurnOrder.Contains(request.ParticipantId))
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Already in the adventure",
+                Detail = "That participant is already in this adventure run.",
+                Status = StatusCodes.Status409Conflict,
+            });
+        }
+
+        return await RunAsync(async () =>
+        {
+            await _adventureSessions.AddParticipantAsync(id, request.ParticipantId, cancellationToken);
+            return Ok(await _adventureSessions.GetSessionStateAsync(id, cancellationToken));
         });
     }
 
@@ -367,6 +506,14 @@ public sealed class AdventureSessionsController : ControllerBase
                && Guid.TryParse(User.FindFirst(SessionIdClaim)?.Value, out var tokenSessionId)
                && tokenSessionId == session.SessionId;
     }
+
+    /// <summary>
+    /// True when the caller's token was issued to the participant whose turn it is. A caller with no
+    /// participant identity (the trusted local host) is never the active participant.
+    /// </summary>
+    private bool IsActiveParticipant(AdventureSession session)
+        => Guid.TryParse(User.FindFirst(ParticipantIdClaim)?.Value, out var participantId)
+           && session.ActiveParticipantId == participantId;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

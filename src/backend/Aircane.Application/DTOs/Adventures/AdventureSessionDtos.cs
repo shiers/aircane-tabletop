@@ -30,6 +30,26 @@ public sealed record AdvanceSceneRequest(
 /// <param name="ActionText">What the player does or says (e.g. "I search the shelves").</param>
 public sealed record AdventureSessionActionRequest(string ActionText);
 
+/// <summary>
+/// Request body for starting (or resuming) a group run of a generated adventure.
+/// </summary>
+/// <param name="GeneratedAdventureId">The approved adventure to play.</param>
+/// <param name="CampaignId">The campaign the run belongs to.</param>
+/// <param name="ParticipantIds">
+/// Participants of the campaign's current play session, in the order they take their turns.
+/// The first one acts first.
+/// </param>
+public sealed record StartGroupAdventureSessionRequest(
+    Guid GeneratedAdventureId,
+    Guid CampaignId,
+    IReadOnlyList<Guid> ParticipantIds);
+
+/// <summary>
+/// Request body for adding a participant to the end of a group run's turn order.
+/// </summary>
+/// <param name="ParticipantId">A participant of the run's play session.</param>
+public sealed record AddAdventureParticipantRequest(Guid ParticipantId);
+
 // ── Responses ────────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -103,9 +123,12 @@ public sealed record AdventureSceneDto(
     IReadOnlyList<AdventureExitDto> Exits,
     IReadOnlyList<AdventureNpcStateDto> Npcs);
 
+/// <summary>One participant's place in a group run's turn order.</summary>
+public sealed record ParticipantTurnDto(Guid ParticipantId, string ParticipantName, bool IsActive);
+
 /// <summary>
 /// Full current state of an adventure run. This is what the frontend loads and keeps in sync via
-/// the adventure SignalR events.
+/// the adventure SignalR events. The group-play fields at the end are false/null/0/empty for solo runs.
 /// </summary>
 public sealed record AdventureSessionStateDto(
     Guid Id,
@@ -127,7 +150,12 @@ public sealed record AdventureSessionStateDto(
     IReadOnlyList<AdventureEncounterOutcomeDto> EncounterOutcomes,
     DateTimeOffset StartedAt,
     DateTimeOffset? CompletedAt,
-    DateTimeOffset LastActivityAt);
+    DateTimeOffset LastActivityAt,
+    bool IsGroup,
+    Guid? ActiveParticipantId,
+    string? ActiveParticipantName,
+    int CurrentRound,
+    IReadOnlyList<ParticipantTurnDto> TurnOrder);
 
 /// <summary>
 /// What happened to one action the AI DM proposed. Names rather than enum numbers, so clients

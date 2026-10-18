@@ -30,6 +30,9 @@ namespace Aircane.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ActiveParticipantId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("CampaignId")
                         .HasColumnType("uuid");
 
@@ -43,6 +46,9 @@ namespace Aircane.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<int>("CurrentRound")
+                        .HasColumnType("integer");
+
                     b.Property<string>("CurrentSceneId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -54,6 +60,9 @@ namespace Aircane.Infrastructure.Migrations
 
                     b.Property<Guid>("GeneratedAdventureId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("IsGroup")
+                        .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset>("LastActivityAt")
                         .HasColumnType("timestamp with time zone");
@@ -88,6 +97,10 @@ namespace Aircane.Infrastructure.Migrations
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
+
+                    b.Property<string>("TurnOrder")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
 
                     b.HasKey("Id");
 

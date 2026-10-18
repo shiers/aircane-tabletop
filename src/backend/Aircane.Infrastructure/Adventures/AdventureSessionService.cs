@@ -6,6 +6,7 @@ using Aircane.Application.DTOs.Adventures;
 using Aircane.Application.DTOs.CampaignState;
 using Aircane.Application.DTOs.Sessions;
 using Aircane.Domain.Entities;
+using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -70,6 +71,12 @@ public sealed class AdventureSessionService : IAdventureSessionService
 
         if (existing is not null)
         {
+            if (existing.IsGroup)
+            {
+                throw new InvalidOperationException(
+                    "This campaign already has a group adventure in progress. Abandon or complete it before starting a solo run.");
+            }
+
             if (existing.GeneratedAdventureId == generatedAdventureId)
             {
                 // Starting an adventure that is already running is a resume.
@@ -82,40 +89,12 @@ public sealed class AdventureSessionService : IAdventureSessionService
                 "This campaign already has an adventure in progress. Abandon or complete it before starting another.");
         }
 
-        if (adventure.Status is not ("Approved" or "Active"))
-        {
-            throw new InvalidOperationException(
-                $"Adventure is in '{adventure.Status}' status; only approved adventures can be played.");
-        }
-
-        var scenes = adventure.Scenes;
-        if (scenes is null || scenes.Count == 0)
-            throw new InvalidOperationException("This adventure has no scenes to play.");
+        RequirePlayable(adventure);
 
         if (characterId is not null && !await _db.Characters.AnyAsync(c => c.Id == characterId, ct))
             throw new KeyNotFoundException($"Character '{characterId}' not found.");
 
-        var now = DateTimeOffset.UtcNow;
-        var session = new AdventureSession
-        {
-            Id = Guid.NewGuid(),
-            GeneratedAdventureId = generatedAdventureId,
-            CampaignId = campaignId,
-            CharacterId = characterId,
-            CurrentSceneId = scenes[0].SceneId,
-            Status = AdventureSessionStatus.InProgress,
-            StartedAt = now,
-            LastActivityAt = now,
-            NpcStates = AdventureContentIds.ForNpcs(adventure.Npcs)
-                .Select(n => new AdventureNpcState
-                {
-                    NpcId = n.Id,
-                    NpcName = n.Npc.Name,
-                    HasBeenMet = false,
-                    IsAlive = true,
-                })
-                .ToList(),
-        };
+        var session = NewRun(adventure, generatedAdventureId, campaignId, characterId);
 
         _db.AdventureSessions.Add(session);
         await _db.SaveChangesAsync(ct);
@@ -126,6 +105,165 @@ public sealed class AdventureSessionService : IAdventureSessionService
 
         await AppendEventAsync(session, "Adventure:Started",
             new { adventureSessionId = session.Id, adventureId = generatedAdventureId, sceneId = session.CurrentSceneId }, ct);
+
+        return session;
+    }
+
+    // ── Group play ────────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<AdventureSession> StartGroupSessionAsync(
+        Guid generatedAdventureId,
+        Guid campaignId,
+        IReadOnlyList<Guid> participantIds,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(participantIds);
+
+        var adventure = await _retrieval.GetByIdAsync(generatedAdventureId, ct)
+            ?? throw new KeyNotFoundException($"Adventure '{generatedAdventureId}' not found.");
+
+        if (!await _db.Campaigns.AnyAsync(c => c.Id == campaignId, ct))
+            throw new KeyNotFoundException($"Campaign '{campaignId}' not found.");
+
+        var existing = await _db.AdventureSessions
+            .FirstOrDefaultAsync(s => s.CampaignId == campaignId && s.Status == AdventureSessionStatus.InProgress, ct);
+
+        if (existing is not null)
+        {
+            if (existing.GeneratedAdventureId == generatedAdventureId && existing.IsGroup)
+            {
+                // Idempotent, like a solo start: the turn order of the running group is left alone.
+                await ClearPendingRollAsync(existing, ct);
+                return existing;
+            }
+
+            throw new InvalidOperationException(existing.GeneratedAdventureId == generatedAdventureId
+                ? "This campaign already has a solo run of this adventure in progress. Abandon or complete it before starting a group run."
+                : "This campaign already has an adventure in progress. Abandon or complete it before starting another.");
+        }
+
+        RequirePlayable(adventure);
+
+        if (participantIds.Count == 0)
+            throw new InvalidOperationException("A group run needs at least one participant.");
+
+        if (participantIds.Distinct().Count() != participantIds.Count)
+            throw new InvalidOperationException("A participant can appear in the turn order only once.");
+
+        var playSession = await _db.Sessions
+            .AsNoTracking()
+            .Where(s => s.CampaignId == campaignId && s.Status != SessionStatus.Ended)
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException(
+                "This campaign has no play session in progress. Start a session and let the players join before starting a group run.");
+
+        var eligible = await FindActiveParticipantsAsync(playSession.Id, participantIds, ct);
+        var ineligible = participantIds.Where(id => !eligible.ContainsKey(id)).ToList();
+        if (ineligible.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Not active participants of the campaign's current session: {string.Join(", ", ineligible)}.");
+        }
+
+        var session = NewRun(adventure, generatedAdventureId, campaignId, characterId: null);
+        session.SessionId = playSession.Id;
+        session.IsGroup = true;
+        session.TurnOrder = participantIds.ToList();
+        session.ActiveParticipantId = participantIds[0];
+        session.CurrentRound = 1;
+
+        _db.AdventureSessions.Add(session);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Started group adventure session {AdventureSessionId} for adventure {AdventureId} in campaign {CampaignId} with {PlayerCount} players",
+            session.Id, generatedAdventureId, campaignId, participantIds.Count);
+
+        await AppendEventAsync(session, "Adventure:Started",
+            new
+            {
+                adventureSessionId = session.Id,
+                adventureId = generatedAdventureId,
+                sceneId = session.CurrentSceneId,
+                isGroup = true,
+                turnOrder = session.TurnOrder,
+            }, ct);
+
+        return session;
+    }
+
+    /// <inheritdoc />
+    public async Task<AdventureSession> AdvanceTurnAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        var session = await LoadTrackedAsync(sessionId, ct);
+        RequireInProgress(session);
+        RequireGroup(session);
+
+        var previousId = session.ActiveParticipantId;
+        var previousIndex = previousId is { } p ? session.TurnOrder.IndexOf(p) : -1;
+        var nextIndex = (previousIndex + 1) % session.TurnOrder.Count;
+
+        // Passing the turn from the last participant back to the first starts a new round. When no
+        // one holds the turn (previousIndex -1) the first participant simply picks it up.
+        if (previousIndex >= 0 && nextIndex == 0)
+            session.CurrentRound++;
+
+        var nextId = session.TurnOrder[nextIndex];
+        session.ActiveParticipantId = nextId;
+        Touch(session);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Adventure session {AdventureSessionId} turn passed from {Previous} to {Next} (round {Round})",
+            sessionId, previousId, nextId, session.CurrentRound);
+
+        await AppendEventAsync(session, "Adventure:TurnAdvanced",
+            new { adventureSessionId = sessionId, from = previousId, to = nextId, round = session.CurrentRound }, ct);
+
+        var names = await LoadParticipantNamesAsync(session, ct);
+        await NotifyAsync(session, hub => hub.NotifyTurnAdvancedAsync(
+            session.SessionId!.Value,
+            new TurnAdvancedNotification(sessionId, previousId, nextId, NameOf(names, nextId), session.CurrentRound),
+            ct));
+
+        return session;
+    }
+
+    /// <inheritdoc />
+    public async Task<AdventureSession> AddParticipantAsync(Guid sessionId, Guid participantId, CancellationToken ct = default)
+    {
+        var session = await LoadTrackedAsync(sessionId, ct);
+        RequireInProgress(session);
+        RequireGroup(session);
+
+        if (session.TurnOrder.Contains(participantId))
+            throw new InvalidOperationException("That participant is already in this adventure run.");
+
+        if (session.SessionId is not { } playSessionId)
+            throw new InvalidOperationException("This adventure run has no play session for participants to join.");
+
+        var eligible = await FindActiveParticipantsAsync(playSessionId, [participantId], ct);
+        if (!eligible.TryGetValue(participantId, out var participantName))
+            throw new InvalidOperationException($"Participant '{participantId}' is not an active participant of this run's play session.");
+
+        session.TurnOrder.Add(participantId);
+        Touch(session);
+        await _db.SaveChangesAsync(ct);
+
+        var position = session.TurnOrder.Count - 1;
+        _logger.LogInformation(
+            "Participant {ParticipantId} joined adventure session {AdventureSessionId} at turn position {Position}",
+            participantId, sessionId, position);
+
+        await AppendEventAsync(session, "Adventure:ParticipantJoined",
+            new { adventureSessionId = sessionId, participantId, turnPosition = position }, ct);
+
+        await NotifyAsync(session, hub => hub.NotifyParticipantJoinedAdventureAsync(
+            playSessionId,
+            new ParticipantJoinedAdventureNotification(sessionId, participantId, participantName, position),
+            ct));
 
         return session;
     }
@@ -158,8 +296,9 @@ public sealed class AdventureSessionService : IAdventureSessionService
         var session = await _db.AdventureSessions.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sessionId, ct)
             ?? throw new KeyNotFoundException($"Adventure session '{sessionId}' not found.");
         var adventure = await LoadAdventureAsync(session, ct);
+        var names = await LoadParticipantNamesAsync(session, ct);
 
-        return BuildState(session, adventure);
+        return BuildState(session, adventure, names);
     }
 
     /// <inheritdoc />
@@ -552,11 +691,31 @@ public sealed class AdventureSessionService : IAdventureSessionService
         if (adventure?.Scenes is not { Count: > 0 })
             return null;
 
-        return new AdventureContext(session.Id, BuildAdventureContext(session, adventure), session.CurrentSceneId);
+        // A group run also tells the AI who is playing and whose turn it is.
+        var turnOrder = session.IsGroup
+            ? BuildTurnOrder(session, await LoadParticipantNamesAsync(session, ct))
+            : null;
+
+        return new AdventureContext(
+            session.Id, BuildAdventureContext(session, adventure, turnOrder), session.CurrentSceneId);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Knows only the run's participant IDs, not their names, so a group run's group-play block is
+    /// left out. <see cref="BuildActiveAdventureContextAsync"/> includes it.
+    /// </remarks>
     public string BuildAdventureContext(AdventureSession session, GeneratedAdventureDto adventure)
+        => BuildAdventureContext(session, adventure, turnOrder: null);
+
+    /// <summary>
+    /// Renders the adventure context block; for a group run given its <paramref name="turnOrder"/>,
+    /// also the group-play block (players, whose turn it is, the round).
+    /// </summary>
+    public string BuildAdventureContext(
+        AdventureSession session,
+        GeneratedAdventureDto adventure,
+        IReadOnlyList<ParticipantTurnDto>? turnOrder)
     {
         var scenes = adventure.Scenes ?? [];
         var scene = FindScene(adventure, session.CurrentSceneId);
@@ -572,6 +731,12 @@ public sealed class AdventureSessionService : IAdventureSessionService
                 $"PENDING ROLL: The player was previously asked to roll {session.PendingRollLabel}{dc}. " +
                 "Their current message is the result of that roll - do NOT ask them to clarify what the roll was for. " +
                 "Assume it is this pending roll. Narrate the outcome of the roll before continuing the scene.");
+            sb.AppendLine();
+        }
+
+        if (session.IsGroup && turnOrder is { Count: > 0 })
+        {
+            sb.AppendLine(BuildGroupContext(session, turnOrder));
             sb.AppendLine();
         }
 
@@ -630,6 +795,26 @@ public sealed class AdventureSessionService : IAdventureSessionService
 
         AppendProgress(sb, session, scenes.Count);
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// The group-play block of the AI prompt: who is playing, whose turn it is, and how to narrate for
+    /// a table of players rather than one.
+    /// </summary>
+    public static string BuildGroupContext(AdventureSession session, IReadOnlyList<ParticipantTurnDto> turnOrder)
+    {
+        var active = turnOrder.FirstOrDefault(t => t.IsActive)?.ParticipantName ?? turnOrder[0].ParticipantName;
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"GROUP PLAY — {turnOrder.Count} players are in this session.");
+        sb.AppendLine($"Turn order: {string.Join(", ", turnOrder.Select(t => t.ParticipantName))}.");
+        sb.AppendLine($"Currently acting: {active}.");
+        sb.AppendLine($"Round: {session.CurrentRound}.");
+        sb.AppendLine();
+        sb.Append("Address narration to the whole group. When the acting player's action affects or involves other players, " +
+                  "describe their reactions and involvement. " +
+                  $"End each narration by asking {active} what they do, or posing a clear choice to them.");
+        return sb.ToString();
     }
 
     private static void AppendProgress(StringBuilder sb, AdventureSession session, int totalScenes)
@@ -719,7 +904,10 @@ public sealed class AdventureSessionService : IAdventureSessionService
 
     // ── State DTO building ────────────────────────────────────────────────────
 
-    private static AdventureSessionStateDto BuildState(AdventureSession session, GeneratedAdventureDto adventure)
+    private static AdventureSessionStateDto BuildState(
+        AdventureSession session,
+        GeneratedAdventureDto adventure,
+        IReadOnlyDictionary<Guid, string> participantNames)
     {
         var scenes = adventure.Scenes ?? [];
         var scene = RequireScene(adventure, session.CurrentSceneId);
@@ -770,8 +958,23 @@ public sealed class AdventureSessionService : IAdventureSessionService
                 .ToList(),
             StartedAt: session.StartedAt,
             CompletedAt: session.CompletedAt,
-            LastActivityAt: session.LastActivityAt);
+            LastActivityAt: session.LastActivityAt,
+            IsGroup: session.IsGroup,
+            ActiveParticipantId: session.ActiveParticipantId,
+            ActiveParticipantName: session.ActiveParticipantId is { } activeId ? NameOf(participantNames, activeId) : null,
+            CurrentRound: session.CurrentRound,
+            TurnOrder: BuildTurnOrder(session, participantNames));
     }
+
+    private static List<ParticipantTurnDto> BuildTurnOrder(
+        AdventureSession session,
+        IReadOnlyDictionary<Guid, string> participantNames)
+        => session.TurnOrder
+            .Select(id => new ParticipantTurnDto(id, NameOf(participantNames, id), id == session.ActiveParticipantId))
+            .ToList();
+
+    private static string NameOf(IReadOnlyDictionary<Guid, string> participantNames, Guid participantId)
+        => participantNames.TryGetValue(participantId, out var name) ? name : "Unknown player";
 
     private static AdventureNpcStateDto ToNpcDto(string id, GeneratedNpc npc, AdventureNpcState? state) => new(
         NpcId: id,
@@ -855,6 +1058,85 @@ public sealed class AdventureSessionService : IAdventureSessionService
 
         return adventure;
     }
+
+    /// <summary>The adventure must be approved and have scenes to play.</summary>
+    private static void RequirePlayable(GeneratedAdventureDto adventure)
+    {
+        if (adventure.Status is not ("Approved" or "Active"))
+        {
+            throw new InvalidOperationException(
+                $"Adventure is in '{adventure.Status}' status; only approved adventures can be played.");
+        }
+
+        if (adventure.Scenes is not { Count: > 0 })
+            throw new InvalidOperationException("This adventure has no scenes to play.");
+    }
+
+    /// <summary>A new in-progress run at the adventure's first scene, with every NPC unmet and alive.</summary>
+    private static AdventureSession NewRun(
+        GeneratedAdventureDto adventure,
+        Guid generatedAdventureId,
+        Guid campaignId,
+        Guid? characterId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new AdventureSession
+        {
+            Id = Guid.NewGuid(),
+            GeneratedAdventureId = generatedAdventureId,
+            CampaignId = campaignId,
+            CharacterId = characterId,
+            CurrentSceneId = adventure.Scenes![0].SceneId,
+            Status = AdventureSessionStatus.InProgress,
+            StartedAt = now,
+            LastActivityAt = now,
+            NpcStates = AdventureContentIds.ForNpcs(adventure.Npcs)
+                .Select(n => new AdventureNpcState
+                {
+                    NpcId = n.Id,
+                    NpcName = n.Npc.Name,
+                    HasBeenMet = false,
+                    IsAlive = true,
+                })
+                .ToList(),
+        };
+    }
+
+    private static void RequireGroup(AdventureSession session)
+    {
+        if (!session.IsGroup || session.TurnOrder.Count == 0)
+            throw new InvalidOperationException("This adventure run is not a group run.");
+    }
+
+    /// <summary>
+    /// Display names of the run's participants, by ID. Empty for a solo run.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, string>> LoadParticipantNamesAsync(
+        AdventureSession session, CancellationToken ct)
+    {
+        if (session.TurnOrder.Count == 0)
+            return new Dictionary<Guid, string>();
+
+        var ids = session.TurnOrder;
+        return await _db.SessionParticipants
+            .AsNoTracking()
+            .Where(p => ids.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
+    }
+
+    /// <summary>
+    /// Of <paramref name="participantIds"/>, those who are approved players (or the host) of the
+    /// play session, with their display names. Spectators and a human DM do not take turns.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, string>> FindActiveParticipantsAsync(
+        Guid playSessionId, IReadOnlyList<Guid> participantIds, CancellationToken ct)
+        => await _db.SessionParticipants
+            .AsNoTracking()
+            .Where(p => p.SessionId == playSessionId
+                        && p.IsApproved
+                        && (p.Role == ParticipantRole.Player || p.Role == ParticipantRole.Host)
+                        && participantIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
 
     private static void RequireInProgress(AdventureSession session)
     {

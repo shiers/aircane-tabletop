@@ -46,6 +46,21 @@ internal sealed class RecordingSessionHubNotifier : ISessionHubNotifier
         return Task.CompletedTask;
     }
 
+    public List<(Guid Group, TurnAdvancedNotification Event)> TurnsAdvanced { get; } = [];
+    public List<(Guid Group, ParticipantJoinedAdventureNotification Event)> ParticipantsJoinedAdventure { get; } = [];
+
+    public Task NotifyTurnAdvancedAsync(Guid sessionId, TurnAdvancedNotification notification, CancellationToken ct = default)
+    {
+        TurnsAdvanced.Add((sessionId, notification));
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyParticipantJoinedAdventureAsync(Guid sessionId, ParticipantJoinedAdventureNotification notification, CancellationToken ct = default)
+    {
+        ParticipantsJoinedAdventure.Add((sessionId, notification));
+        return Task.CompletedTask;
+    }
+
     public Task NotifyParticipantJoinedAsync(Guid sessionId, ParticipantDto participant, CancellationToken ct = default) => Task.CompletedTask;
     public Task NotifyParticipantLeftAsync(Guid sessionId, Guid participantId, string displayName, CancellationToken ct = default) => Task.CompletedTask;
     public Task NotifyChatMessageReceivedAsync(Guid sessionId, Guid participantId, string displayName, string text, DateTimeOffset sentAt, CancellationToken ct = default) => Task.CompletedTask;

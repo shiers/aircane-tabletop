@@ -351,13 +351,54 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
 
         var system = SystemPrompt();
         Assert.Contains("SCENE EXITS", system);
-        Assert.Contains("when a new scene begins", system);
+        Assert.Contains("whenever a new scene begins", system);
         Assert.Contains("where they can go", system);
-        Assert.Contains("describe each Available Exit in the narration with sensory detail", system);
-        Assert.Contains("Do not just list exit names", system);
-        Assert.Contains("meaningful choice", system);
-        Assert.Contains("Exits available: The Chamber of the Unrisen Sun", system);   // the WRONG example
-        Assert.Contains("a low archway opens onto a chamber where pale blue light filters through cracked stone", system);   // the CORRECT one
+        Assert.Contains("describe EVERY available exit", system);
+    }
+
+    [Fact]
+    public async Task AdventurePrompt_ExitDescriptionRule_RequiresSensoryDetail()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I look around"));
+
+        var system = SystemPrompt();
+        Assert.Contains("at least one sensory detail (sight, sound, smell, or feeling)", system);
+        Assert.Contains("whenever a choice between exits is relevant", system);
+        Assert.Contains("The player must be able to picture what lies ahead before choosing", system);
+        Assert.Contains("Exit descriptions must appear in the narration, not just as names", system);
+        // The wrong / correct examples.
+        Assert.Contains("WRONG: \"Two paths are available: Scavengers at the Threshold and The Chamber of the Unrisen Sun.\"", system);
+        Assert.Contains("CORRECT: \"Two paths lead onward. To your left, a low archway opens onto a chamber where pale blue light filters through cracked stone", system);
+        Assert.Contains("the air carries the faint smell of old incense and cold metal", system);
+        Assert.Contains("a wider passage echoes with the sound of something scraping rhythmically", system);
+        // Edge cases.
+        Assert.Contains("If the scene has only one exit, describe it", system);
+        Assert.Contains("If the scene has no exits, tell the player what must be done to progress", system);
+    }
+
+    [Fact]
+    public async Task AdventurePrompt_IncludesDetectionScenario_InMandatoryRollTriggers()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I walk into the guardroom"));
+
+        var system = SystemPrompt();
+        var triggers = system[system.IndexOf("MANDATORY ROLL TRIGGERS", StringComparison.Ordinal)..system.IndexOf("NARRATE THEN ROLL", StringComparison.Ordinal)];
+        // The detection trigger is one of the mandatory triggers, not floating elsewhere in the prompt.
+        Assert.Contains("Any awareness or detection scenario", triggers);
+        Assert.Contains("entering a space where NPCs are present", triggers);
+        Assert.Contains("checking whether you have been noticed", triggers);
+        Assert.Contains("attempting to observe someone without being seen", triggers);
+        Assert.Contains("hostile or wary creatures could detect you", triggers);
+        Assert.Contains("These require a Dexterity (Stealth) check", triggers);
+        Assert.Contains("distracted NPCs DC 8, alert NPCs DC 14, supernaturally aware entities DC 18", triggers);
+        Assert.Contains("NEVER narrate whether the player is noticed or unnoticed without a roll", triggers);
+        Assert.Contains("Ask for the Stealth check first", triggers);
+        // The combat trigger that follows it is intact.
+        Assert.Contains("Any combat action", triggers);
     }
 
     [Fact]

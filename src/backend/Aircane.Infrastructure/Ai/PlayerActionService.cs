@@ -548,9 +548,10 @@ public sealed class PlayerActionService : IPlayerActionService
     public static string BuildExitRules()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("SCENE EXITS - when a new scene begins, or when the player asks what they can see or where they can go, describe each Available Exit in the narration with sensory detail. Do not just list exit names. Give the player enough information to make a meaningful choice, then ask what they do.");
-        sb.AppendLine("WRONG: \"Exits available: The Chamber of the Unrisen Sun, Scavengers at the Threshold.\"");
-        sb.AppendLine("CORRECT: \"Two paths lead onward. To your left, a low archway opens onto a chamber where pale blue light filters through cracked stone - the air there smells of old incense and cold metal. To your right, the sound of movement echoes from a wider passage, and something scrapes rhythmically against the floor in the dark.\"");
+        sb.AppendLine("SCENE EXITS - whenever a new scene begins, whenever the player asks what they can see or where they can go, or whenever a choice between exits is relevant, describe EVERY available exit with at least one sensory detail (sight, sound, smell, or feeling). The player must be able to picture what lies ahead before choosing. Exit descriptions must appear in the narration, not just as names.");
+        sb.AppendLine("WRONG: \"Two paths are available: Scavengers at the Threshold and The Chamber of the Unrisen Sun.\"");
+        sb.AppendLine("CORRECT: \"Two paths lead onward. To your left, a low archway opens onto a chamber where pale blue light filters through cracked stone - the air carries the faint smell of old incense and cold metal. To your right, a wider passage echoes with the sound of something scraping rhythmically against the floor in the dark.\"");
+        sb.AppendLine("If the scene has only one exit, describe it. If the scene has no exits, tell the player what must be done to progress.");
         return sb.ToString();
     }
 
@@ -567,6 +568,7 @@ public sealed class PlayerActionService : IPlayerActionService
         sb.AppendLine("- Any social challenge against an unwilling target: persuasion, deception, intimidation.");
         sb.AppendLine("- Any search or investigation: finding hidden objects, detecting traps, reading ancient text.");
         sb.AppendLine("- Any magical challenge: resisting spells, identifying magic, arcane knowledge checks.");
+        sb.AppendLine("- Any awareness or detection scenario: entering a space where NPCs are present, checking whether you have been noticed, attempting to observe someone without being seen, or moving through an area where hostile or wary creatures could detect you. These require a Dexterity (Stealth) check. The DC is set by the situation - distracted NPCs DC 8, alert NPCs DC 14, supernaturally aware entities DC 18. NEVER narrate whether the player is noticed or unnoticed without a roll. Ask for the Stealth check first.");
         sb.AppendLine("- Any combat action.");
         sb.AppendLine("NEVER auto-succeed these actions, whatever the context. The player must roll, and the outcome depends on their result.");
         sb.AppendLine();

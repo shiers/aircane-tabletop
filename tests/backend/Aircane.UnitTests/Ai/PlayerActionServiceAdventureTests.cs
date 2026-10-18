@@ -564,7 +564,8 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         var (request, campaign, state, rag) = PromptInputs();
 
         var messages = PlayerActionService.BuildPromptMessages(
-            request, campaign, state, rag, combatContext: null, adventureContext: "Current Adventure: Test", isGroupRun: isGroupRun);
+            request, campaign, state, rag, combatContext: null,
+            adventure: new AdventureContext(Guid.NewGuid(), "Current Adventure: Test", IsGroup: isGroupRun));
 
         var system = messages.Where(m => m.Role == "system").Select(m => m.Content).ToList();
         var expected = isGroupRun ? PlayerActionService.BuildGroupAdventureInstructions() : PlayerActionService.BuildAdventureInstructions();
@@ -577,16 +578,22 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
     }
 
     [Fact]
-    public void BuildPromptMessages_NoAdventure_IgnoresTheGroupFlag()
+    public void BuildPromptMessages_NoAdventureText_IgnoresTheAdventureContext()
     {
         var (request, campaign, state, rag) = PromptInputs();
+        var emptyGroupRun = new AdventureContext(Guid.NewGuid(), " ", IsGroup: true, PlayersWithoutCharacter: ["Cara"]);
 
-        var messages = PlayerActionService.BuildPromptMessages(
-            request, campaign, state, rag, isGroupRun: true);
+        foreach (var adventure in new AdventureContext?[] { null, emptyGroupRun })
+        {
+            var messages = PlayerActionService.BuildPromptMessages(request, campaign, state, rag, adventure: adventure);
 
-        var system = string.Join("\n", messages.Select(m => m.Content));
-        Assert.DoesNotContain("GROUP ADVENTURE MODE", system);
-        Assert.DoesNotContain("SOLO ADVENTURE MODE", system);
+            var system = string.Join("\n", messages.Select(m => m.Content));
+            Assert.DoesNotContain("GROUP ADVENTURE MODE", system);
+            Assert.DoesNotContain("SOLO ADVENTURE MODE", system);
+            Assert.DoesNotContain("ACTIVE ADVENTURE", system);
+            // The group no-character list only applies to a group run that is actually in the prompt.
+            Assert.DoesNotContain("report results to you: Cara", system);
+        }
     }
 
     [Fact]
@@ -765,9 +772,9 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         var (request, campaign, state, rag) = PromptInputs();   // request has no character, as group runs do
 
         var none = PlayerActionService.BuildPromptMessages(request, campaign, state, rag,
-            adventureContext: "Current Adventure: Test", isGroupRun: true, playersWithoutCharacter: []);
+            adventure: new AdventureContext(Guid.NewGuid(), "Current Adventure: Test", IsGroup: true, PlayersWithoutCharacter: []));
         var some = PlayerActionService.BuildPromptMessages(request, campaign, state, rag,
-            adventureContext: "Current Adventure: Test", isGroupRun: true, playersWithoutCharacter: ["Cara"]);
+            adventure: new AdventureContext(Guid.NewGuid(), "Current Adventure: Test", IsGroup: true, PlayersWithoutCharacter: ["Cara"]));
 
         Assert.DoesNotContain(none, m => m.Content.Contains("NO CHARACTER ATTACHED", StringComparison.Ordinal));
         Assert.Single(some, m => m.Content == PlayerActionService.BuildGroupNoCharacterInstructions(["Cara"]));

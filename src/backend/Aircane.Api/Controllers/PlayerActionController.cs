@@ -16,15 +16,18 @@ public sealed class PlayerActionController : ControllerBase
 {
     private readonly IPlayerActionService _playerActionService;
     private readonly ISessionHostingService _sessionHostingService;
+    private readonly IAdventureSessionService _adventureSessions;
     private readonly ILogger<PlayerActionController> _logger;
 
     public PlayerActionController(
         IPlayerActionService playerActionService,
         ISessionHostingService sessionHostingService,
+        IAdventureSessionService adventureSessions,
         ILogger<PlayerActionController> logger)
     {
         _playerActionService = playerActionService;
         _sessionHostingService = sessionHostingService;
+        _adventureSessions = adventureSessions;
         _logger = logger;
     }
 
@@ -37,10 +40,16 @@ public sealed class PlayerActionController : ControllerBase
     /// <param name="body">The player action request body.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The AI DM response with narration and action results.</returns>
+    /// <remarks>
+    /// Not available while the campaign has a group adventure run in progress (409): that run is
+    /// played through <c>POST /api/adventure-sessions/{id}/player-action</c>, which enforces whose
+    /// turn it is. Solo runs and campaigns with no run are unaffected.
+    /// </remarks>
     [HttpPost("{id:guid}/ai/player-action")]
     [ProducesResponseType(typeof(PlayerActionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> SubmitPlayerAction(
         Guid id,
         [FromBody] PlayerActionBody body,
@@ -74,6 +83,20 @@ public sealed class PlayerActionController : ControllerBase
         var session = await _sessionHostingService.GetSessionAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
+
+        // The AI picks up the campaign's in-progress run whichever session id is used, so the check
+        // is keyed on the campaign too: otherwise any other session of it would sidestep the guard.
+        var run = await _adventureSessions.GetActiveByCampaignAsync(session.CampaignId, cancellationToken);
+        if (run is { IsGroup: true })
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Group adventure in progress",
+                Detail = "This campaign is running a group adventure, which is played through " +
+                         $"POST /api/adventure-sessions/{run.Id}/player-action so that only the acting player can act.",
+                Status = StatusCodes.Status409Conflict,
+            });
+        }
 
         var request = new PlayerActionRequest(
             SessionId: id,

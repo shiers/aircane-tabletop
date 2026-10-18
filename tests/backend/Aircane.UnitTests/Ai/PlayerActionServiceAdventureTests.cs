@@ -498,6 +498,186 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         Assert.Null(roll.ErrorMessage);
     }
 
+    // ── Solo vs group instruction blocks ──────────────────────────────────────
+
+    // The golden file was captured from the solo prompt before group runs got their own instruction
+    // block, so any change to what a solo run sends the AI fails here. GUIDs are masked (they are new
+    // each run) and line endings normalised (AppendLine uses the platform's); nothing else is touched.
+    [Fact]
+    public async Task SoloAdventurePrompt_IsByteForByteUnchanged()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+        var sut = CreateSut(_realAdventureService);
+        _aiProvider.NextOutput = AsksForStealthRoll();
+        await sut.ProcessActionAsync(Request(campaign, session, "I sneak past the guard"));
+        _aiProvider.NextOutput = Output();
+
+        await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 14"));
+
+        var golden = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Ai", "Golden", "solo-adventure-prompt.golden.txt"));
+        Assert.Equal(golden, RenderPrompt(_aiProvider.LastMessages));
+    }
+
+    [Fact]
+    public async Task GroupAdventurePrompt_SendsTheGroupBlock_AndNoSoloText()
+    {
+        var (campaign, session) = await SeedGroupRunAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I check the shelves"));
+
+        var system = SystemPrompt();
+        Assert.Contains("GROUP ADVENTURE MODE:", system);
+        Assert.Contains("TURN ROTATION", system);
+        Assert.Contains("OUT-OF-TURN INPUT", system);
+        Assert.Contains("PARTY-WIDE EVENTS", system);
+        Assert.Contains("GROUP PLAY — 2 players are in this session.", system);
+        Assert.DoesNotContain("SOLO ADVENTURE MODE", system);
+        Assert.DoesNotContain("single player", system);
+        foreach (var line in SoloOnlyLines())
+            Assert.DoesNotContain(line, system);
+    }
+
+    [Fact]
+    public async Task SoloAdventurePrompt_SendsTheSoloBlock_AndNoGroupText()
+    {
+        var (campaign, session, _) = await SeedRunAsync();
+
+        await CreateSut(_realAdventureService).ProcessActionAsync(Request(campaign, session, "I check the shelves"));
+
+        var system = SystemPrompt();
+        Assert.Contains("SOLO ADVENTURE MODE:", system);
+        Assert.DoesNotContain("GROUP ADVENTURE MODE", system);
+        Assert.DoesNotContain("GROUP PLAY", system);
+        Assert.DoesNotContain("TURN ROTATION", system);
+        Assert.DoesNotContain("OUT-OF-TURN INPUT", system);
+        Assert.DoesNotContain("PARTY-WIDE EVENTS", system);
+        foreach (var line in GroupOnlyLines())
+            Assert.DoesNotContain(line, system);
+    }
+
+    // The same selection at the prompt-assembly level, without a run behind it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPromptMessages_SendsExactlyOneAdventureBlock_ChosenByRunType(bool isGroupRun)
+    {
+        var (request, campaign, state, rag) = PromptInputs();
+
+        var messages = PlayerActionService.BuildPromptMessages(
+            request, campaign, state, rag, combatContext: null, adventureContext: "Current Adventure: Test", isGroupRun: isGroupRun);
+
+        var system = messages.Where(m => m.Role == "system").Select(m => m.Content).ToList();
+        var expected = isGroupRun ? PlayerActionService.BuildGroupAdventureInstructions() : PlayerActionService.BuildAdventureInstructions();
+        var other = isGroupRun ? PlayerActionService.BuildAdventureInstructions() : PlayerActionService.BuildGroupAdventureInstructions();
+        Assert.Single(system, m => m == expected);
+        Assert.DoesNotContain(other, system);
+        var all = string.Join("\n", system);
+        foreach (var line in isGroupRun ? SoloOnlyLines() : GroupOnlyLines())
+            Assert.DoesNotContain(line, all);
+    }
+
+    [Fact]
+    public void BuildPromptMessages_NoAdventure_IgnoresTheGroupFlag()
+    {
+        var (request, campaign, state, rag) = PromptInputs();
+
+        var messages = PlayerActionService.BuildPromptMessages(
+            request, campaign, state, rag, isGroupRun: true);
+
+        var system = string.Join("\n", messages.Select(m => m.Content));
+        Assert.DoesNotContain("GROUP ADVENTURE MODE", system);
+        Assert.DoesNotContain("SOLO ADVENTURE MODE", system);
+    }
+
+    [Fact]
+    public void GroupAdventureInstructions_CoverRotationAddressingOutOfTurnAndPartyEvents()
+    {
+        var block = PlayerActionService.BuildGroupAdventureInstructions();
+
+        // Turn rotation: the host passes the turn, the AI keeps the spotlight on the acting character.
+        Assert.Contains("The host passes the turn to the next player; you never do.", block);
+        Assert.Contains("never choose their actions, words or decisions for them", block);
+        // Addressing the acting player in character.
+        Assert.Contains("Address the acting player by their character's name", block);
+        Assert.Contains("handing the moment back to the acting character, by their character's name", block);
+        // Out-of-turn input.
+        Assert.Contains("Resolve only the acting character's action.", block);
+        Assert.Contains("Never let an out-of-turn action replace or cancel the acting character's turn.", block);
+        // Party-wide events: one shared roll request, consistent with the single pending roll per run.
+        Assert.Contains("emit ONE RequestRoll whose label names the check and every character who rolls", block);
+        Assert.Contains("never invent one", block);
+        // Consistent with the combat context block's heading and terms.
+        Assert.Contains("ACTIVE COMBAT ENCOUNTER", block);
+        Assert.Contains("Active turn", block);
+        // The shared rules ride along unchanged.
+        Assert.Contains(PlayerActionService.BuildSkillCheckRules(), block);
+        Assert.Contains(PlayerActionService.BuildExitRules(), block);
+        Assert.DoesNotContain(PlayerActionService.BuildEndOfNarrationRule(), block);
+    }
+
+    private static (PlayerActionRequest, CampaignDto, Application.DTOs.CampaignState.CampaignStateDto, Application.DTOs.Retrieval.RagContextResult) PromptInputs()
+    {
+        var campaign = new CampaignDto(
+            Id: Guid.NewGuid(), Name: "C", GameSystem: "D&D 5e", Ruleset: "2014", AiRole: AiRole.FullDm,
+            AiAuthority: AiAuthority.FullSessionControl, ActiveAdventureId: null,
+            CreatedAt: DateTimeOffset.UtcNow, UpdatedAt: DateTimeOffset.UtcNow);
+        var state = new Application.DTOs.CampaignState.CampaignStateDto(
+            CampaignId: campaign.Id, ActiveSessionId: Guid.NewGuid(), CurrentSceneJson: null, StateJson: null,
+            SnapshotAt: DateTimeOffset.UtcNow);
+        var rag = new Application.DTOs.Retrieval.RagContextResult(
+            ContextText: "", Citations: [], TotalChunksRetrieved: 0, ChunksIncluded: 0);
+        var request = new PlayerActionRequest(Guid.NewGuid(), campaign.Id, Guid.Empty, "I wait");
+        return (request, campaign, state, rag);
+    }
+
+    /// <summary>Lines of the solo block that the group block does not share (the shared rules are excluded).</summary>
+    private static IEnumerable<string> SoloOnlyLines() => UniqueLines(
+        PlayerActionService.BuildAdventureInstructions(), PlayerActionService.BuildGroupAdventureInstructions());
+
+    /// <summary>Lines of the group block that the solo block does not share.</summary>
+    private static IEnumerable<string> GroupOnlyLines() => UniqueLines(
+        PlayerActionService.BuildGroupAdventureInstructions(), PlayerActionService.BuildAdventureInstructions());
+
+    private static IEnumerable<string> UniqueLines(string block, string otherBlock)
+    {
+        var other = Lines(otherBlock).ToHashSet();
+        var unique = Lines(block).Where(l => !other.Contains(l)).ToList();
+        Assert.NotEmpty(unique);
+        return unique;
+    }
+
+    private static IEnumerable<string> Lines(string text) => text
+        .ReplaceLineEndings("\n")
+        .Split('\n')
+        .Select(l => l.Trim())
+        .Where(l => l.Length > 0);
+
+    /// <summary>A group run of two approved players, Alice up first; Alice plays Mira.</summary>
+    private async Task<(Campaign Campaign, Session Session)> SeedGroupRunAsync()
+    {
+        var (campaign, session) = await SeedCampaignAsync();
+        var mira = new Character("Mira", "D&D 5e", "2014", 3, "{}", "{}", campaign.Id);
+        var alice = new SessionParticipant(session.Id, "Alice", ParticipantRole.Player, isApproved: true, characterId: mira.Id);
+        var bob = new SessionParticipant(session.Id, "Bob", ParticipantRole.Player, isApproved: true);
+        var adventure = AdventureSessionTestData.CreateAdventure();
+        _db.Characters.Add(mira);
+        _db.SessionParticipants.AddRange(alice, bob);
+        _db.GeneratedAdventures.Add(adventure);
+        await _db.SaveChangesAsync();
+        await _realAdventureService.StartGroupSessionAsync(adventure.Id, campaign.Id, [alice.Id, bob.Id]);
+        return (campaign, session);
+    }
+
+    /// <summary>Every message the AI was sent, in order, with GUIDs masked and line endings normalised.</summary>
+    private static string RenderPrompt(IReadOnlyList<AiMessage> messages)
+    {
+        var text = string.Join("\n", messages.Select(m => $"===== {m.Role} =====\n{m.Content}"));
+        return System.Text.RegularExpressions.Regex.Replace(
+            text.ReplaceLineEndings("\n"),
+            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+            "<guid>");
+    }
+
     // ── Retrieval during an adventure ─────────────────────────────────────────
 
     private async Task<(Campaign Campaign, Session Session, Guid RunId)> SeedRunAsync()

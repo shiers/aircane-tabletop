@@ -122,7 +122,8 @@ public sealed class PlayerActionService : IPlayerActionService
         var combatContext = await BuildCombatContextAsync(request.CampaignId, state, cancellationToken);
 
         // 4. Build AI prompt with state + adventure + combat + context + player action
-        var messages = BuildPromptMessages(request, campaign, state, ragResult, combatContext, adventureContext?.Text);
+        var messages = BuildPromptMessages(
+            request, campaign, state, ragResult, combatContext, adventureContext?.Text, adventureContext?.IsGroup ?? false);
 
         // 5. Call AI provider for structured output
         var aiOutput = await _aiProvider.StructuredChatCompletionAsync(messages, cancellationToken);
@@ -428,13 +429,18 @@ public sealed class PlayerActionService : IPlayerActionService
     /// Builds the prompt messages for the AI DM, including system instructions,
     /// campaign state, RAG context, and the player's action.
     /// </summary>
+    /// <param name="isGroupRun">
+    /// True when <paramref name="adventureContext"/> belongs to a group run: the group instruction
+    /// block is sent instead of the solo one. Ignored when there is no adventure context.
+    /// </param>
     public static IReadOnlyList<AiMessage> BuildPromptMessages(
         PlayerActionRequest request,
         Application.DTOs.Campaigns.CampaignDto campaign,
         Application.DTOs.CampaignState.CampaignStateDto state,
         RagContextResult ragResult,
         string? combatContext = null,
-        string? adventureContext = null)
+        string? adventureContext = null,
+        bool isGroupRun = false)
     {
         var messages = new List<AiMessage>();
 
@@ -454,10 +460,11 @@ public sealed class PlayerActionService : IPlayerActionService
             messages.Add(AiMessage.System(BuildNoCharacterInstructions()));
         }
 
-        // Solo adventure: how to drive the adventure (action schema) + where the player is in it
+        // Adventure run: how to drive the adventure (action schema) + where the players are in it.
+        // Exactly one instruction block, chosen by run type: the solo and group blocks are never layered.
         if (!string.IsNullOrWhiteSpace(adventureContext))
         {
-            messages.Add(AiMessage.System(BuildAdventureInstructions()));
+            messages.Add(AiMessage.System(isGroupRun ? BuildGroupAdventureInstructions() : BuildAdventureInstructions()));
             messages.Add(AiMessage.System($"ACTIVE ADVENTURE:\n{adventureContext}"));
         }
 
@@ -501,7 +508,8 @@ public sealed class PlayerActionService : IPlayerActionService
     /// <summary>
     /// Instructions for running a solo adventure: what the AI DM must do and the exact
     /// <c>proposedActions</c> shapes that move the adventure forward. IDs in the examples are the
-    /// ones printed in square brackets in the adventure context.
+    /// ones printed in square brackets in the adventure context. Group runs get
+    /// <see cref="BuildGroupAdventureInstructions"/> instead.
     /// </summary>
     public static string BuildAdventureInstructions()
     {
@@ -523,6 +531,71 @@ public sealed class PlayerActionService : IPlayerActionService
         sb.AppendLine(BuildExitRules());
         sb.AppendLine();
         sb.AppendLine(BuildEndOfNarrationRule());
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Instructions for running a group adventure: the counterpart of
+    /// <see cref="BuildAdventureInstructions"/> for a party of players taking turns, sent instead of
+    /// it, never alongside. Covers turn rotation, addressing the acting player in character, input
+    /// from players whose turn it is not, and events that affect the whole party. Names and turn
+    /// order come from the GROUP PLAY section of the adventure context.
+    /// </summary>
+    public static string BuildGroupAdventureInstructions()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("GROUP ADVENTURE MODE:");
+        sb.AppendLine("You are running a party of several players through the ACTIVE ADVENTURE below, scene by scene. The GROUP PLAY section of the adventure context lists the turn order, who is currently acting, and the round.");
+        sb.AppendLine("- Every message you receive is sent by the currently acting player. Narrate the outcome of their character's action and steer the party toward the current scene's objectives.");
+        sb.AppendLine("- The whole table reads your narration: write it for everyone present, while resolving only the acting character's action.");
+        sb.AppendLine("- Never reveal DM-only text (DM notes, hidden secrets) until the party has earned it.");
+        sb.AppendLine("- Use the IDs in square brackets from the adventure context in proposedActions. Use these action shapes:");
+        sb.AppendLine("  - {\"type\":\"revealClue\",\"clueId\":\"clue-1\"} when a character finds a listed clue.");
+        sb.AppendLine("  - {\"type\":\"revealSecret\",\"secretId\":\"secret-1\"} when a character uncovers a listed secret.");
+        sb.AppendLine("  - {\"type\":\"updateNpc\",\"npcId\":\"npc-example\",\"hasBeenMet\":true,\"isAlive\":false,\"revealedInfoId\":\"short-label\",\"notes\":\"what the party learned\"} - include only the fields that changed.");
+        sb.AppendLine("  - {\"type\":\"advanceScene\",\"sceneId\":\"scene-2\",\"narration\":\"transition narration\"} - only after the scene's objectives are met (or the fail-forward rule applies) AND the acting player has chosen one of the Available Exits for the party. sceneId must be one of the Available Exits.");
+        sb.AppendLine("  - {\"type\":\"completeAdventure\",\"outcomeNotes\":\"how the adventure ended\"} - when the final scene's objectives are met and the story is resolved.");
+        sb.AppendLine("- Do not advance the scene or complete the adventure early; wait for the party to act.");
+        sb.AppendLine();
+        sb.AppendLine("TURN ROTATION - players act one at a time, in the turn order listed under GROUP PLAY:");
+        sb.AppendLine("- Only the character listed as Currently acting takes a turn. The host passes the turn to the next player; you never do. Do not announce that the turn has passed or narrate as if someone else is now acting.");
+        sb.AppendLine("- Keep the spotlight on the acting character. Other characters may react in small ways (a glance, a step back, a hand on a weapon), but never choose their actions, words or decisions for them.");
+        sb.AppendLine("- Over a round, give every character something to react to. When it fits the scene, leave an opening for the next character in the turn order (a sound only they would notice, an NPC turning toward them) without asking them to act yet.");
+        sb.AppendLine("- Address the acting player by their character's name: the name listed for them under GROUP PLAY, before \"played by\" (which gives the player's own name). When no character is listed for a player, use the name shown.");
+        sb.AppendLine("- If an ACTIVE COMBAT ENCOUNTER section is present, its initiative order and Active turn decide who acts in combat. Narrate attacks and other combat actions only for the combatant whose turn it is.");
+        sb.AppendLine();
+        sb.AppendLine("OUT-OF-TURN INPUT - a message may also describe what other characters do or say (another player calling out across the table, or the acting player speaking for the group):");
+        sb.AppendLine("- Resolve only the acting character's action. Do not request rolls, apply effects, or reveal clues or secrets for anyone else's out-of-turn action.");
+        sb.AppendLine("- Acknowledge the rest in a sentence and say it waits for that character's turn, e.g. \"Thorn reaches for the axe - that can wait for Thorn's turn.\"");
+        sb.AppendLine("- Instant reactions that need no roll and change nothing (shouting a warning, stepping aside) can be narrated as they happen.");
+        sb.AppendLine("- Never let an out-of-turn action replace or cancel the acting character's turn.");
+        sb.AppendLine();
+        sb.AppendLine("PARTY-WIDE EVENTS - when something affects everyone present (a trap, an ambush, a collapsing floor, arriving in a new scene):");
+        sb.AppendLine("- Narrate it for the whole party, naming each character it affects and how it lands on each one.");
+        sb.AppendLine("- When several characters must roll for the same event, emit ONE RequestRoll whose label names the check and every character who rolls, e.g. \"Dexterity saving throw - Mira, Thorn, Cara\", and ask for each character's result. When the results come in, resolve each character's outcome separately.");
+        sb.AppendLine("- State damage, healing and conditions for each affected character in the narration (e.g. \"Mira takes 7 piercing damage\"). Only emit ApplyDamage, ApplyHealing, ApplyCondition or RemoveCondition with a characterId you were given; never invent one.");
+        sb.AppendLine("- Read-aloud text and exit descriptions are for the whole party. The acting player chooses which exit the party takes.");
+        sb.AppendLine();
+        sb.AppendLine(BuildSkillCheckRules());
+        sb.AppendLine();
+        sb.AppendLine(BuildExitRules());
+        sb.AppendLine();
+        sb.AppendLine(BuildGroupEndOfNarrationRule());
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The group counterpart of <see cref="BuildEndOfNarrationRule"/>: every narration closes by
+    /// handing the moment back to the acting character, by name, so the table knows whose move it is.
+    /// </summary>
+    public static string BuildGroupEndOfNarrationRule()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("END OF NARRATION - always close your narration by handing the moment back to the acting character, by their character's name. This must be one of:");
+        sb.AppendLine("- A direct question: \"Mira, what do you do?\", \"How does Thorn respond?\"");
+        sb.AppendLine("- A presented choice: \"Mira, do you press forward or hold your ground?\"");
+        sb.AppendLine("- A clear tension statement: \"Every eye in the hall turns to Mira.\", \"The moment hangs in the air, waiting on Thorn.\"");
+        sb.AppendLine("Never end narration with description alone, and never close by addressing a character whose turn it is not. The acting player must always know it is still their move.");
         return sb.ToString();
     }
 

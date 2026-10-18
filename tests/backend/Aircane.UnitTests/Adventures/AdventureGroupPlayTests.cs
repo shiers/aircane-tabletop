@@ -441,11 +441,50 @@ public sealed class AdventureGroupPlayTests : IDisposable
         Assert.Contains("Turn order: Alice, Bob, Cara.", context.Text);
         Assert.Contains("Currently acting: Bob.", context.Text);
         Assert.Contains("Round: 1.", context.Text);
-        Assert.Contains("Address narration to the whole group.", context.Text);
-        Assert.Contains("End each narration by asking Bob what they do, or posing a clear choice to them.", context.Text);
+        Assert.True(context.IsGroup);
         // ...alongside, not instead of, the usual adventure context.
         Assert.Contains("Current Adventure: The Sunken Archive", context.Text);
         Assert.Contains("The Sunken Library", context.Text);
+    }
+
+    // How to run a table of players lives in the group instruction block, not in the context.
+    [Fact]
+    public async Task AdventureSession_GroupContext_CarriesFactsOnly_NoInstructions()
+    {
+        await StartGroupAsync();
+
+        var text = (await _sut.BuildActiveAdventureContextAsync(_campaign.Id))!.Text;
+
+        Assert.DoesNotContain("Address narration", text);
+        Assert.DoesNotContain("End each narration", text);
+    }
+
+    [Fact]
+    public async Task AdventureSession_GroupContext_NamesEachPlayersCharacter()
+    {
+        await SeedAsync();
+        var mira = new Character("Mira", "D&D 5e", "2014", 3, "{}", "{}", _campaign.Id);
+        var thorn = new Character("Thorn", "D&D 5e", "2014", 3, "{}", "{}", _campaign.Id);
+        _db.Characters.AddRange(mira, thorn);
+        await _db.SaveChangesAsync();
+        // Participants' characters are assigned after they join.
+        await AssignCharacterAsync(_alice.Id, mira.Id);
+        await AssignCharacterAsync(_bob.Id, thorn.Id);
+        var run = await _sut.StartGroupSessionAsync(_adventure.Id, _campaign.Id, [_alice.Id, _bob.Id, _cara.Id]);
+        await _sut.AdvanceTurnAsync(run.Id);   // Bob (Thorn) is up
+
+        var text = (await _sut.BuildActiveAdventureContextAsync(_campaign.Id))!.Text;
+
+        // Cara has no character in this app, so is listed by the player's own name.
+        Assert.Contains("Turn order: Mira (played by Alice), Thorn (played by Bob), Cara.", text);
+        Assert.Contains("Currently acting: Thorn (played by Bob).", text);
+    }
+
+    private async Task AssignCharacterAsync(Guid participantId, Guid characterId)
+    {
+        var participant = await _db.SessionParticipants.SingleAsync(p => p.Id == participantId);
+        participant.CharacterId = characterId;
+        await _db.SaveChangesAsync();
     }
 
     [Fact]
@@ -457,6 +496,7 @@ public sealed class AdventureGroupPlayTests : IDisposable
         var context = await _sut.BuildActiveAdventureContextAsync(_campaign.Id);
 
         Assert.NotNull(context);
+        Assert.False(context.IsGroup);
         Assert.DoesNotContain("GROUP PLAY", context.Text);
         Assert.DoesNotContain("Turn order", context.Text);
         Assert.Contains("Current Adventure: The Sunken Archive", context.Text);

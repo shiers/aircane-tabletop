@@ -1,0 +1,2 @@
+# Golden prompt snapshots are compared byte-for-byte (after normalising to LF); never convert them.
+*.golden.txt text eol=lf

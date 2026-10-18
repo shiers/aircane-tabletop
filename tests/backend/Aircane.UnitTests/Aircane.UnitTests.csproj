@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <None Include="Characters\Import\Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Ai\Golden\*.golden.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

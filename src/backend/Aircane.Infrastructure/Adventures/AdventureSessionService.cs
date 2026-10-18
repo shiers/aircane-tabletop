@@ -692,13 +692,20 @@ public sealed class AdventureSessionService : IAdventureSessionService
         if (adventure?.Scenes is not { Count: > 0 })
             return null;
 
-        // A group run also tells the AI who is playing and whose turn it is.
-        var turnOrder = session.IsGroup
-            ? BuildTurnOrder(session, await LoadParticipantNamesAsync(session, ct))
-            : null;
+        // A group run also tells the AI who is playing, as which character, and whose turn it is.
+        IReadOnlyList<ParticipantTurnDto>? turnOrder = null;
+        IReadOnlyDictionary<Guid, string>? characterNames = null;
+        if (session.IsGroup)
+        {
+            turnOrder = BuildTurnOrder(session, await LoadParticipantNamesAsync(session, ct));
+            characterNames = await LoadCharacterNamesAsync(session, ct);
+        }
 
         return new AdventureContext(
-            session.Id, BuildAdventureContext(session, adventure, turnOrder), session.CurrentSceneId);
+            session.Id,
+            BuildAdventureContext(session, adventure, turnOrder, characterNames),
+            session.CurrentSceneId,
+            session.IsGroup);
     }
 
     /// <inheritdoc />
@@ -711,12 +718,14 @@ public sealed class AdventureSessionService : IAdventureSessionService
 
     /// <summary>
     /// Renders the adventure context block; for a group run given its <paramref name="turnOrder"/>,
-    /// also the group-play block (players, whose turn it is, the round).
+    /// also the group-play block (players and their characters, whose turn it is, the round).
     /// </summary>
+    /// <param name="characterNames">Character name by participant ID, for participants who have one.</param>
     public string BuildAdventureContext(
         AdventureSession session,
         GeneratedAdventureDto adventure,
-        IReadOnlyList<ParticipantTurnDto>? turnOrder)
+        IReadOnlyList<ParticipantTurnDto>? turnOrder,
+        IReadOnlyDictionary<Guid, string>? characterNames = null)
     {
         var scenes = adventure.Scenes ?? [];
         var scene = FindScene(adventure, session.CurrentSceneId);
@@ -737,7 +746,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
 
         if (session.IsGroup && turnOrder is { Count: > 0 })
         {
-            sb.AppendLine(BuildGroupContext(session, turnOrder));
+            sb.AppendLine(BuildGroupContext(session, turnOrder, characterNames));
             sb.AppendLine();
         }
 
@@ -799,22 +808,31 @@ public sealed class AdventureSessionService : IAdventureSessionService
     }
 
     /// <summary>
-    /// The group-play block of the AI prompt: who is playing, whose turn it is, and how to narrate for
-    /// a table of players rather than one.
+    /// The group-play block of the adventure context: who is playing, as which character, whose turn
+    /// it is, and the round. Facts only; how to run a table of players is in the group instruction
+    /// block (<c>PlayerActionService.BuildGroupAdventureInstructions</c>).
     /// </summary>
-    public static string BuildGroupContext(AdventureSession session, IReadOnlyList<ParticipantTurnDto> turnOrder)
+    /// <remarks>
+    /// Each participant is listed by character name with the player's name after it ("Mira (played
+    /// by Alice)"), or by the player's name alone when they have no character in this app.
+    /// </remarks>
+    public static string BuildGroupContext(
+        AdventureSession session,
+        IReadOnlyList<ParticipantTurnDto> turnOrder,
+        IReadOnlyDictionary<Guid, string>? characterNames = null)
     {
-        var active = turnOrder.FirstOrDefault(t => t.IsActive)?.ParticipantName ?? turnOrder[0].ParticipantName;
+        string Label(ParticipantTurnDto t) =>
+            characterNames is not null && characterNames.TryGetValue(t.ParticipantId, out var character)
+                ? $"{character} (played by {t.ParticipantName})"
+                : t.ParticipantName;
+
+        var active = turnOrder.FirstOrDefault(t => t.IsActive) ?? turnOrder[0];
 
         var sb = new StringBuilder();
         sb.AppendLine($"GROUP PLAY — {turnOrder.Count} players are in this session.");
-        sb.AppendLine($"Turn order: {string.Join(", ", turnOrder.Select(t => t.ParticipantName))}.");
-        sb.AppendLine($"Currently acting: {active}.");
-        sb.AppendLine($"Round: {session.CurrentRound}.");
-        sb.AppendLine();
-        sb.Append("Address narration to the whole group. When the acting player's action affects or involves other players, " +
-                  "describe their reactions and involvement. " +
-                  $"End each narration by asking {active} what they do, or posing a clear choice to them.");
+        sb.AppendLine($"Turn order: {string.Join(", ", turnOrder.Select(Label))}.");
+        sb.AppendLine($"Currently acting: {Label(active)}.");
+        sb.Append($"Round: {session.CurrentRound}.");
         return sb.ToString();
     }
 
@@ -1123,6 +1141,36 @@ public sealed class AdventureSessionService : IAdventureSessionService
             .AsNoTracking()
             .Where(p => ids.Contains(p.Id))
             .ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
+    }
+
+    /// <summary>
+    /// Character name by participant ID for the run's participants who have a character assigned,
+    /// so the AI can address each player in character. Participants without one are left out.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, string>> LoadCharacterNamesAsync(
+        AdventureSession session, CancellationToken ct)
+    {
+        if (session.TurnOrder.Count == 0)
+            return new Dictionary<Guid, string>();
+
+        var ids = session.TurnOrder;
+        var assigned = await _db.SessionParticipants
+            .AsNoTracking()
+            .Where(p => ids.Contains(p.Id) && p.CharacterId != null)
+            .Select(p => new { p.Id, CharacterId = p.CharacterId!.Value })
+            .ToListAsync(ct);
+        if (assigned.Count == 0)
+            return new Dictionary<Guid, string>();
+
+        var characterIds = assigned.Select(a => a.CharacterId).ToList();
+        var names = await _db.Characters
+            .AsNoTracking()
+            .Where(c => characterIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+
+        return assigned
+            .Where(a => names.TryGetValue(a.CharacterId, out var name) && !string.IsNullOrWhiteSpace(name))
+            .ToDictionary(a => a.Id, a => names[a.CharacterId]);
     }
 
     /// <summary>

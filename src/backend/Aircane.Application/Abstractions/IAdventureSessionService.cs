@@ -172,4 +172,5 @@ public interface IAdventureSessionService
 /// <param name="SessionId">The adventure run's ID.</param>
 /// <param name="Text">The context block to include in the AI system prompt.</param>
 /// <param name="CurrentSceneId">The scene the run is in right now (null if unknown).</param>
-public sealed record AdventureContext(Guid SessionId, string Text, string? CurrentSceneId = null);
+/// <param name="IsGroup">True for a group run; selects the group instruction block instead of the solo one.</param>
+public sealed record AdventureContext(Guid SessionId, string Text, string? CurrentSceneId = null, bool IsGroup = false);

@@ -70,7 +70,7 @@ public sealed class AdventureSessionsControllerAuthorizationTests : IDisposable
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext { User = user ?? new ClaimsPrincipal(new ClaimsIdentity()) },
+                HttpContext = LocalHostHttpContext.Create(user),
             },
         };
         return controller;
@@ -125,15 +125,28 @@ public sealed class AdventureSessionsControllerAuthorizationTests : IDisposable
     }
 
     [Fact]
-    public async Task GetSession_Unauthenticated_IsAllowedBecauseThePolicyAlreadyGatedIt()
+    public async Task GetSession_UnauthenticatedLocalHost_IsAllowed()
     {
-        // Reaching the action unauthenticated only happens when the "Authenticated" policy is
-        // permissive (Development / TrustLocalHost), where the single local user is the host.
+        // Reaching the action unauthenticated only happens when the "Authenticated" policy lets the
+        // trusted local host through (desktop mode / Development); a direct loopback request is the host.
         await SeedRunAsync();
 
         var result = await CreateController(user: null).GetSession(_runId, default);
 
         Assert.IsType<OkObjectResult>(result);
+    }
+
+    // Defence in depth: even if a policy let a token-less remote caller through, it is not the host.
+    [Fact]
+    public async Task GetSession_UnauthenticatedRemoteCaller_IsForbidden()
+    {
+        await SeedRunAsync();
+        var controller = CreateController(user: null);
+        controller.ControllerContext.HttpContext = LocalHostHttpContext.From(System.Net.IPAddress.Parse("192.168.1.50"));
+
+        var result = await controller.GetSession(_runId, default);
+
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]
@@ -250,7 +263,7 @@ public sealed class AdventureSessionsControllerPlayerActionTests : IDisposable
             _service, new StubPlayerActionService(), sessionHosting: null!,
             NullLogger<AdventureSessionsController>.Instance)
         {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = user } },
+            ControllerContext = new ControllerContext { HttpContext = LocalHostHttpContext.Create(user) },
         };
         return (controller, run.Id, playSessionId);
     }

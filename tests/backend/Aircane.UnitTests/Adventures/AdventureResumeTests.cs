@@ -41,7 +41,7 @@ public sealed class AdventureResumeTests : IDisposable
         _controller = new AdventureSessionsController(
             _service, playerActionService: null!, sessionHosting: null!, NullLogger<AdventureSessionsController>.Instance)
         {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+            ControllerContext = new ControllerContext { HttpContext = LocalHostHttpContext.Create() },
         };
     }
 

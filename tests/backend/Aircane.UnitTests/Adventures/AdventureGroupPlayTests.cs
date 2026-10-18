@@ -85,7 +85,7 @@ public sealed class AdventureGroupPlayTests : IDisposable
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext { User = user ?? new ClaimsPrincipal(new ClaimsIdentity()) },
+                HttpContext = LocalHostHttpContext.Create(user),
             },
         };
 

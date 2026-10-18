@@ -255,3 +255,28 @@ public sealed record AdventureNpcUpdatedNotification(
 public sealed record AdventureCompletedNotification(
     Guid SessionId,
     string OutcomeNotes);
+
+// ── Group adventure events ───────────────────────────────────────────────────
+// SessionId is the ADVENTURE session id here too.
+
+/// <summary>
+/// Broadcast when the host passes the turn to the next participant of a group run.
+/// </summary>
+/// <param name="PreviousParticipantId">Who had the turn before; null if no one did.</param>
+/// <param name="CurrentRound">The round now in progress (goes up when the turn wraps to the first player).</param>
+public sealed record TurnAdvancedNotification(
+    Guid SessionId,
+    Guid? PreviousParticipantId,
+    Guid ActiveParticipantId,
+    string ActiveParticipantName,
+    int CurrentRound);
+
+/// <summary>
+/// Broadcast when a participant is added to the end of a group run's turn order.
+/// </summary>
+/// <param name="TurnPosition">Zero-based index of the participant in the run's turn order.</param>
+public sealed record ParticipantJoinedAdventureNotification(
+    Guid SessionId,
+    Guid ParticipantId,
+    string ParticipantName,
+    int TurnPosition);

@@ -408,6 +408,7 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.LastActivityAt).IsRequired();
             entity.Property(e => e.PendingRollLabel).HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.PendingRollDC).IsRequired(false);
+            entity.Property(e => e.ActiveParticipantId).IsRequired(false);
 
             // Per-run state is a handful of small lists keyed by content IDs that live inside the
             // adventure's JSON columns, so it is stored as jsonb rather than as child tables.
@@ -416,6 +417,7 @@ public class AircaneDbContext : DbContext
             ConfigureJsonList(entity.Property(e => e.RevealedClueIds));
             ConfigureJsonList(entity.Property(e => e.RevealedSecretIds));
             ConfigureJsonList(entity.Property(e => e.EncounterOutcomes));
+            ConfigureJsonList(entity.Property(e => e.TurnOrder));
 
             // Deleting an adventure or campaign removes its run history; deleting a character keeps the run.
             entity.HasOne<GeneratedAdventure>()

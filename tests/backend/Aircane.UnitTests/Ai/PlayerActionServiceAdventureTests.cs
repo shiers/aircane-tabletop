@@ -907,6 +907,9 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         }
 
         public Task<AdventureSession> StartAdventureSessionAsync(Guid generatedAdventureId, Guid campaignId, Guid? characterId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AdventureSession> StartGroupSessionAsync(Guid generatedAdventureId, Guid campaignId, IReadOnlyList<Guid> participantIds, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AdventureSession> AdvanceTurnAsync(Guid sessionId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AdventureSession> AddParticipantAsync(Guid sessionId, Guid participantId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task AttachPlaySessionAsync(Guid sessionId, Guid playSessionId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<AdventureSession?> GetByIdAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<AdventureSession?> GetActiveByCampaignAsync(Guid campaignId, CancellationToken ct = default) => throw new NotSupportedException();

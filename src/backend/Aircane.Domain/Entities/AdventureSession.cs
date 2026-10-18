@@ -68,6 +68,26 @@ public class AdventureSession
 
     /// <summary>How each encounter in the adventure was resolved.</summary>
     public List<AdventureEncounterOutcome> EncounterOutcomes { get; set; } = [];
+
+    // ── Group play ────────────────────────────────────────────────────────────
+    // Solo runs leave these at their defaults: IsGroup false, no turn order, no active participant.
+
+    /// <summary>False for solo play (the default), true when several players take turns.</summary>
+    public bool IsGroup { get; set; }
+
+    /// <summary>
+    /// <see cref="SessionParticipant"/> IDs in the order they take their turns. Empty for solo runs.
+    /// </summary>
+    public List<Guid> TurnOrder { get; set; } = [];
+
+    /// <summary>The participant who may act right now. Null for solo runs.</summary>
+    public Guid? ActiveParticipantId { get; set; }
+
+    /// <summary>
+    /// The round of play: starts at 1 for a group run and goes up each time the turn passes from the
+    /// last participant back to the first. 0 for solo runs.
+    /// </summary>
+    public int CurrentRound { get; set; }
 }
 
 /// <summary>

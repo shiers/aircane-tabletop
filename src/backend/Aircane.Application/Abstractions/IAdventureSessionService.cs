@@ -27,6 +27,43 @@ public interface IAdventureSessionService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Starts a group run: several participants of the campaign's current play session take turns,
+    /// in <paramref name="participantIds"/> order, with the first one acting first. The run uses
+    /// that play session as its SignalR group. Idempotent: if the campaign already has an in-progress
+    /// group run of the same adventure, that run is returned.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">The adventure or campaign does not exist.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The adventure is not approved, has no scenes, no participants were given (or one is listed twice
+    /// or is not an active participant of the campaign's current play session), or the campaign already
+    /// has a different adventure, or a solo run, in progress.
+    /// </exception>
+    Task<AdventureSession> StartGroupSessionAsync(
+        Guid generatedAdventureId,
+        Guid campaignId,
+        IReadOnlyList<Guid> participantIds,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Passes the turn of a group run to the next participant in the turn order, wrapping from the
+    /// last participant to the first (which starts the next round). Broadcasts <c>TurnAdvanced</c>.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">The run does not exist.</exception>
+    /// <exception cref="InvalidOperationException">The run is not a group run, or is no longer in progress.</exception>
+    Task<AdventureSession> AdvanceTurnAsync(Guid sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds a participant of the run's play session to the end of a group run's turn order.
+    /// Broadcasts <c>ParticipantJoinedAdventure</c>.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">The run does not exist.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The run is not an in-progress group run, the participant is already in it, or is not an active
+    /// participant of the run's play session.
+    /// </exception>
+    Task<AdventureSession> AddParticipantAsync(Guid sessionId, Guid participantId, CancellationToken ct = default);
+
+    /// <summary>
     /// Attaches the play <c>Session</c> whose SignalR group receives this run's live events.
     /// </summary>
     Task AttachPlaySessionAsync(Guid sessionId, Guid playSessionId, CancellationToken ct = default);

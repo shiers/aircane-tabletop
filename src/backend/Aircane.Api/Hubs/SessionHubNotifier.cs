@@ -140,6 +140,18 @@ public sealed class SessionHubNotifier : ISessionHubNotifier
         return SessionGroup(sessionId).SendAsync("AdventureCompleted", notification, ct);
     }
 
+    /// <inheritdoc />
+    public Task NotifyTurnAdvancedAsync(Guid sessionId, TurnAdvancedNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("TurnAdvanced", notification, ct);
+    }
+
+    /// <inheritdoc />
+    public Task NotifyParticipantJoinedAdventureAsync(Guid sessionId, ParticipantJoinedAdventureNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("ParticipantJoinedAdventure", notification, ct);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private IClientProxy SessionGroup(Guid sessionId)

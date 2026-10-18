@@ -521,6 +521,23 @@ public sealed class PlayerActionService : IPlayerActionService
         sb.AppendLine(BuildSkillCheckRules());
         sb.AppendLine();
         sb.AppendLine(BuildExitRules());
+        sb.AppendLine();
+        sb.AppendLine(BuildEndOfNarrationRule());
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Every narration closes by handing the turn back, so the player never wonders whether the AI is
+    /// finished or whether they are expected to act.
+    /// </summary>
+    public static string BuildEndOfNarrationRule()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("END OF NARRATION - always close your narration with a clear signal that it is the player's turn to act. This must be one of:");
+        sb.AppendLine("- A direct question: \"What do you do?\", \"How do you respond?\", \"What is your next move?\"");
+        sb.AppendLine("- A presented choice: \"Do you press forward or hold your ground?\", \"Do you speak first, or wait for them to address you?\"");
+        sb.AppendLine("- A clear tension statement: \"Both figures wait in silence for your response.\", \"The moment hangs in the air.\"");
+        sb.AppendLine("Never end narration with description alone. The player must always know it is their turn.");
         return sb.ToString();
     }
 

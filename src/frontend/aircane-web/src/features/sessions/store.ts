@@ -13,6 +13,8 @@ import {
   type JoinSessionResult,
   type ParticipantDto,
 } from './api'
+import { clearParticipantSession, saveParticipantSession } from './participantSession'
+import { mapJoinError } from './playerErrors'
 
 function extractMessage(err: unknown): string {
   if (err instanceof Error) return err.message
@@ -63,7 +65,11 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   }
 
-  /** Join a session with a display name and invite code. Stores the participant token. */
+  /**
+   * Join a session with a display name and invite code. Remembers the participant (token, id, name,
+   * session) so a reload resumes instead of joining again; see participantSession.ts.
+   * Failures are stored as a message a player can act on, not "Request failed with status code 401".
+   */
   async function joinSessionAction(
     sessionId: string,
     request: JoinSessionRequest,
@@ -71,12 +77,19 @@ export const useSessionStore = defineStore('sessions', () => {
     loading.value = true
     error.value = null
     try {
+      // A token left over from an earlier visit must not ride along with a fresh join (the API client
+      // attaches whatever is stored), and a stale one must never get in its way.
+      clearParticipantSession()
       const result = await joinSession(sessionId, request)
-      // Persist the participant token for subsequent API calls
-      sessionStorage.setItem('participant_token', result.participantToken)
+      saveParticipantSession({
+        sessionId,
+        participantId: result.participantId,
+        displayName: result.displayName,
+        token: result.participantToken,
+      })
       return result
     } catch (err) {
-      error.value = extractMessage(err)
+      error.value = mapJoinError(err)
       throw err
     } finally {
       loading.value = false

@@ -112,6 +112,20 @@ npm run dev:lan
 devices cannot reach it (it works in Git Bash, cmd and most other shells). If Vite prints only a
 `Local:` address and no `Network:` address, the flag did not get through.
 
+**Testing on a phone: use a production build.** The dev server's client keeps a WebSocket open to the
+dev server for hot reload. A phone that is switched to another app has that socket cut, and when the
+player comes back the client reloads the whole page. The app remembers a joined player across such a
+reload, but a reload is still a reload, so for anything but editing the UI serve the built app instead:
+
+```bash
+cd src/frontend/aircane-web
+npm run build
+npx vite preview --host --port 4173
+```
+
+`vite preview` serves the same proxy settings (`vite.config.ts`) as the dev server, has no hot-reload
+client, and never reloads the page by itself.
+
 Players then load the app from the dev server, which forwards their requests to the backend. The
 dev server is configured (`xfwd` in `vite.config.ts`) to pass each browser's address on, which is
 how the backend tells your own browser on the host machine (the host, no token) from a player's

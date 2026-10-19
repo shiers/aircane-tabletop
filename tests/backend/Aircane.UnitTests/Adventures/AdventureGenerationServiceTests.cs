@@ -65,6 +65,17 @@ public sealed class AdventureGenerationServiceTests : IDisposable
         Weaknesses = [],
     };
 
+    /// <summary>The scenes the fake provider's NPC/encounter/treasure/clue responses refer to.</summary>
+    private static readonly IReadOnlyList<GeneratedScene> FakeProviderScenes =
+        Enumerable.Range(1, 4).Select(n => new GeneratedScene
+        {
+            SceneId = $"scene-{n}",
+            Title = $"Scene {n}",
+            Description = "d",
+            SceneType = "combat",
+            ConnectsTo = [],
+        }).ToList();
+
     // ── Full Pipeline Tests ───────────────────────────────────────────────────
 
     [Fact]
@@ -269,10 +280,7 @@ public sealed class AdventureGenerationServiceTests : IDisposable
     {
         var request = CreateRequest();
         var pitch = new AdventurePitch { Title = "Test", Hook = "Hook", Summary = "Summary" };
-        var scenes = new List<GeneratedScene>
-        {
-            new() { SceneId = "scene-1", Title = "Tavern", Description = "A tavern", SceneType = "roleplay", ConnectsTo = ["scene-2"] }
-        };
+        var scenes = FakeProviderScenes;
 
         var npcs = await _service.RegenerateNpcsAsync(request, null, pitch, scenes);
 
@@ -285,10 +293,7 @@ public sealed class AdventureGenerationServiceTests : IDisposable
     {
         var request = CreateRequest();
         var pitch = new AdventurePitch { Title = "Test", Hook = "Hook", Summary = "Summary" };
-        var scenes = new List<GeneratedScene>
-        {
-            new() { SceneId = "scene-1", Title = "Ambush", Description = "An ambush", SceneType = "combat", ConnectsTo = [] }
-        };
+        var scenes = FakeProviderScenes;
 
         var encounters = await _service.RegenerateEncountersAsync(request, null, pitch, scenes);
 
@@ -301,10 +306,7 @@ public sealed class AdventureGenerationServiceTests : IDisposable
     {
         var request = CreateRequest();
         var pitch = new AdventurePitch { Title = "Test", Hook = "Hook", Summary = "Summary" };
-        var scenes = new List<GeneratedScene>
-        {
-            new() { SceneId = "scene-1", Title = "Vault", Description = "A vault", SceneType = "exploration", ConnectsTo = [] }
-        };
+        var scenes = FakeProviderScenes;
         var encounters = new List<GeneratedEncounter>();
 
         var treasure = await _service.RegenerateTreasureAsync(request, null, pitch, scenes, encounters);
@@ -318,10 +320,7 @@ public sealed class AdventureGenerationServiceTests : IDisposable
     {
         var request = CreateRequest();
         var pitch = new AdventurePitch { Title = "Test", Hook = "Hook", Summary = "Summary" };
-        var scenes = new List<GeneratedScene>
-        {
-            new() { SceneId = "scene-1", Title = "Library", Description = "A library", SceneType = "exploration", ConnectsTo = [] }
-        };
+        var scenes = FakeProviderScenes;
         var npcs = new List<GeneratedNpc>
         {
             new() { Name = "Sage", Role = "informant", Personality = "Wise", StatsSummary = "Commoner", SceneIds = ["scene-1"] }

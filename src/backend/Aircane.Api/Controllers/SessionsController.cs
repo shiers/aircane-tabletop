@@ -11,10 +11,15 @@ namespace Aircane.Api.Controllers;
 
 /// <summary>
 /// Session management - create sessions under a campaign and retrieve session state.
+/// <para>
+/// Authorization is declared per action, not on the class: ASP.NET Core requires every
+/// <c>[Authorize]</c> on an endpoint, so a class-level HostOnly would also apply to the player
+/// actions marked <see cref="AuthorizationPolicies.Authenticated"/> (reconnect, session and
+/// participant reads) and lock players out of them.
+/// </para>
 /// </summary>
 [ApiController]
 [Produces("application/json")]
-[Authorize(Policy = AuthorizationPolicies.HostOnly)]
 public sealed class SessionsController : ControllerBase
 {
     private readonly ISessionHostingService _sessions;
@@ -42,6 +47,7 @@ public sealed class SessionsController : ControllerBase
     /// Returns the session details including the plain-text invite code (returned once only).
     /// </summary>
     [HttpPost("api/campaigns/{campaignId:guid}/start-session")]
+    [Authorize(Policy = AuthorizationPolicies.HostOnly)]
     [ProducesResponseType(typeof(SessionDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -232,6 +238,7 @@ public sealed class SessionsController : ControllerBase
     /// Ends the session, saves an optional summary, and invalidates all participant tokens.
     /// </summary>
     [HttpPost("api/sessions/{id:guid}/end")]
+    [Authorize(Policy = AuthorizationPolicies.HostOnly)]
     [ProducesResponseType(typeof(EndSessionResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -281,6 +288,7 @@ public sealed class SessionsController : ControllerBase
     /// Approves a pending participant, granting them access to the session.
     /// </summary>
     [HttpPost("api/sessions/{id:guid}/approve-participant")]
+    [Authorize(Policy = AuthorizationPolicies.HostOnly)]
     [EnableRateLimiting(RateLimitingSettings.JoinPolicy)]
     [ProducesResponseType(typeof(ParticipantDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -315,6 +323,7 @@ public sealed class SessionsController : ControllerBase
     /// Assigns a character to a participant in the session.
     /// </summary>
     [HttpPost("api/sessions/{id:guid}/assign-character")]
+    [Authorize(Policy = AuthorizationPolicies.HostOnly)]
     [ProducesResponseType(typeof(ParticipantDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -359,6 +368,7 @@ public sealed class SessionsController : ControllerBase
     /// The role and authority are read from the campaign configuration.
     /// </summary>
     [HttpPost("api/sessions/{id:guid}/resume-ai")]
+    [Authorize(Policy = AuthorizationPolicies.HostOnly)]
     [ProducesResponseType(typeof(ResumeAiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

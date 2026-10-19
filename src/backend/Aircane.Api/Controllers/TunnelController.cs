@@ -1,3 +1,4 @@
+using Aircane.Api.Authorization;
 using Aircane.Application.Abstractions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,8 +17,10 @@ namespace Aircane.Api.Controllers;
 /// </para>
 /// <para>
 /// <b>Security:</b> because this endpoint controls a process-wide security switch, it only
-/// accepts requests from the loopback interface (the local desktop wrapper). Remote clients
-/// reaching the backend through the tunnel cannot toggle internet mode.
+/// accepts direct requests from the local desktop wrapper (<see cref="Aircane.Api.Authorization.LocalHostTrust"/>).
+/// Tunnel traffic also arrives from loopback (cloudflared runs on this machine), so a loopback
+/// remote address alone is not trusted; clients reaching the backend through the tunnel cannot
+/// toggle internet mode.
 /// </para>
 /// </summary>
 [ApiController]
@@ -91,16 +94,11 @@ public sealed class TunnelController : ControllerBase
     }
 
     /// <summary>
-    /// True when the request originated from the loopback interface (the local desktop
-    /// wrapper). Requests forwarded through the tunnel carry a non-loopback remote address.
+    /// True when the request is a direct loopback request from the local desktop wrapper. A loopback
+    /// remote address alone is not enough: <c>cloudflared</c> runs on this machine and forwards
+    /// tunnel traffic from 127.0.0.1, so <see cref="LocalHostTrust"/> also rejects proxied requests.
     /// </summary>
-    private bool IsLoopbackCaller()
-    {
-        var remoteIp = HttpContext.Connection.RemoteIpAddress;
-        if (remoteIp is null)
-            return false;
-        return System.Net.IPAddress.IsLoopback(remoteIp);
-    }
+    private bool IsLoopbackCaller() => LocalHostTrust.IsTrustedLocalCaller(HttpContext);
 
     private IActionResult LoopbackOnly()
     {

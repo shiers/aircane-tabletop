@@ -34,11 +34,17 @@ are unchanged and continue to work when run directly (see
 > [known-limitations.md](../known-limitations.md).
 
 > **Local host is trusted.** The sidecar runs the backend in Production but sets
-> `Aircane:TrustLocalHost=true`, which makes the host-only authorization policies
-> permissive — the single user running the app on their own machine *is* the
-> host, so they can open AI settings and create sessions without first joining
-> one. LAN players still authenticate with an invite code as normal. A shared or
-> hosted deployment must **never** set this flag.
+> `Aircane:TrustLocalHost=true`, which lets a *direct loopback request* act as the
+> host without a token — the single user running the app on their own machine *is*
+> the host, so they can open AI settings and create sessions without first joining
+> one. Everyone else needs a participant token, exactly as in a hosted deployment:
+> LAN players authenticate with an invite code and act as Players. Because the
+> backend binds every interface and the Cloudflare tunnel forwards internet traffic
+> from `127.0.0.1`, "direct" is checked strictly: a loopback peer, a `localhost`
+> host name, and no proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`, …), so
+> tunnel traffic is never trusted. Opening the app via the machine's LAN address
+> (`http://192.168.x.x:<port>`) on the host itself is not trusted either; use
+> `http://localhost:<port>`. A shared or hosted deployment must **never** set this flag.
 
 ---
 

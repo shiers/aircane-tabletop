@@ -8,6 +8,7 @@ using Aircane.Application;
 using Aircane.Application.Abstractions;
 using Aircane.Infrastructure;
 using Aircane.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -113,7 +114,11 @@ else
 {
     // No signing key configured - add a no-op authentication scheme so the pipeline doesn't break.
     // This allows the app to start without auth in environments where it hasn't been configured yet.
-    builder.Services.AddAuthentication();
+    // The scheme authenticates nobody but lets a rejected request end in a clean 401/403.
+    builder.Services
+        .AddAuthentication(NoCredentialsAuthenticationHandler.SchemeName)
+        .AddScheme<AuthenticationSchemeOptions, NoCredentialsAuthenticationHandler>(
+            NoCredentialsAuthenticationHandler.SchemeName, configureOptions: null);
 }
 
 // Register participant-based authorization policies (HostOnly, DmOrHost, Authenticated).

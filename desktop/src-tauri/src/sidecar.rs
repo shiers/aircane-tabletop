@@ -14,6 +14,7 @@ use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
 use crate::config::DesktopConfig;
+use crate::signing_key::{self, KeySource};
 
 /// Holds the running sidecar child so it can be killed on shutdown.
 #[derive(Default)]
@@ -33,11 +34,33 @@ pub enum ReadyResult {
 
 /// Spawns the backend sidecar. Environment variables from the host process are
 /// inherited automatically, so OS-level API keys pass through. We additionally
-/// pin the environment name and the URL the server binds to.
+/// pin the environment name and the URL the server binds to, and supply the key the
+/// backend signs participant tokens with (see `signing_key`).
 pub fn start_sidecar(app: &tauri::AppHandle, config: &DesktopConfig) -> Result<(), String> {
     // If a previous child is somehow still tracked, kill it before starting a new one
     // so a Retry never leaves two servers fighting over the port.
     stop_sidecar(app);
+
+    // Without a signing key the backend cannot issue participant tokens, so LAN players cannot
+    // join. The key is random, kept in the app data directory so tokens survive a restart, and
+    // never logged. An explicit Jwt__SigningKey in the app's own environment wins.
+    let data_dir = app.path().app_data_dir().ok();
+    let existing = std::env::var("Jwt__SigningKey").ok();
+    let signing_key = signing_key::resolve(
+        data_dir.as_deref(),
+        existing.as_deref(),
+        &mut |buf| getrandom::fill(buf).map_err(|e| e.to_string()),
+    )?;
+    match signing_key.source {
+        KeySource::Environment => log::info!("Participant-token signing key: using Jwt__SigningKey from the environment."),
+        KeySource::LoadedFromFile => log::info!("Participant-token signing key: loaded from the app data directory."),
+        KeySource::CreatedFile => log::info!("Participant-token signing key: created and saved to the app data directory."),
+        KeySource::ReplacedFile => log::warn!("Participant-token signing key: the saved key was unusable and was replaced; existing player tokens are no longer valid."),
+        KeySource::InMemoryOnly => log::warn!(
+            "Participant-token signing key: could not be saved ({}); using a key for this launch only, so players must rejoin after a restart.",
+            signing_key.warning.as_deref().unwrap_or("unknown reason")
+        ),
+    }
 
     let command = app
         .shell()
@@ -51,6 +74,13 @@ pub fn start_sidecar(app: &tauri::AppHandle, config: &DesktopConfig) -> Result<(
         // to the Aircane:TrustLocalHost config key. NEVER set this for a shared
         // or hosted backend.
         .env("Aircane__TrustLocalHost", "true");
+
+    // Pass the key to the backend (ASP.NET Core maps Jwt__SigningKey to Jwt:SigningKey). It is
+    // not logged anywhere; the environment-provided case needs nothing added.
+    let command = match &signing_key.key {
+        Some(key) => command.env("Jwt__SigningKey", key.expose()),
+        None => command,
+    };
 
     // Point the backend at the bundled OCR assets so OCR works with zero user
     // setup under the desktop app. The tessdata model and optional native libs
@@ -201,6 +231,21 @@ fn is_aircane_health(body: &serde_json::Value) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The real operating-system random source, as `start_sidecar` uses it: two keys are valid
+    /// 64-character hex strings and differ.
+    #[test]
+    fn os_randomness_gives_distinct_valid_signing_keys() {
+        let mut os_random = |buf: &mut [u8]| getrandom::fill(buf).map_err(|e| e.to_string());
+
+        let a = signing_key::generate(&mut os_random).unwrap();
+        let b = signing_key::generate(&mut os_random).unwrap();
+
+        assert_eq!(a.expose().len(), 64);
+        assert!(a.expose().bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
+        assert_ne!(a, b);
+        assert_ne!(a.expose(), "0".repeat(64));
+    }
 
     #[test]
     fn recognises_aircane_health_shape() {

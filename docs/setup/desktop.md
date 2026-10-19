@@ -41,10 +41,23 @@ are unchanged and continue to work when run directly (see
 > LAN players authenticate with an invite code and act as Players. Because the
 > backend binds every interface and the Cloudflare tunnel forwards internet traffic
 > from `127.0.0.1`, "direct" is checked strictly: a loopback peer, a `localhost`
-> host name, and no proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`, …), so
-> tunnel traffic is never trusted. Opening the app via the machine's LAN address
-> (`http://192.168.x.x:<port>`) on the host itself is not trusted either; use
-> `http://localhost:<port>`. A shared or hosted deployment must **never** set this flag.
+> host name, and no proxy header naming another client (`X-Forwarded-For`,
+> `CF-Connecting-IP`, …), so tunnel traffic is never trusted. Opening the app via the
+> machine's LAN address (`http://192.168.x.x:<port>`) on the host itself is not trusted
+> either; use `http://localhost:<port>`. The same rule applies in the Development
+> environment and in a hosted deployment's host-only checks (see
+> [LAN hosting](./lan-hosting.md#security-model) and
+> [Internet play](./internet-play.md#who-counts-as-the-host)). A shared or hosted
+> deployment must **never** set this flag.
+>
+> **Player tokens.** The backend signs LAN and internet players' tokens with a key the app
+> generates itself: 256 random bits from the operating system, saved once as `jwt-signing-key`
+> in the app data directory (owner-only on Linux/macOS; per-user on Windows) and never logged.
+> It is kept across restarts so players with a valid token reconnect after you restart the app;
+> deleting the file rotates it and signs everyone out. To use your own key instead, set the
+> `Jwt__SigningKey` environment variable (at least 32 characters) before launching the app.
+> If the file cannot be saved, the app logs a warning and uses a key for that launch only
+> (players would have to rejoin after a restart).
 
 ---
 

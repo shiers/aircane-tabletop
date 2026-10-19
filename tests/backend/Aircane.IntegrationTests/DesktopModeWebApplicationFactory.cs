@@ -31,6 +31,16 @@ public class DesktopModeWebApplicationFactory : AircaneWebApplicationFactory
     /// </summary>
     protected virtual bool WithParticipantTokens => true;
 
+    /// <summary>
+    /// Registers the authorization policies as a Development environment would. Development itself
+    /// cannot be selected here: it also runs the startup database migrations, which the in-memory
+    /// test database cannot apply.
+    /// </summary>
+    protected virtual bool DevelopmentMode => false;
+
+    /// <summary>Registers the policies with <c>Aircane:TrustLocalHost</c> (desktop mode).</summary>
+    protected virtual bool TrustLocalHostMode => true;
+
     /// <summary>Test-only header: the remote address the request should appear to come from.</summary>
     public const string RemoteIpHeader = "X-Test-Remote-Ip";
 
@@ -60,7 +70,7 @@ public class DesktopModeWebApplicationFactory : AircaneWebApplicationFactory
 
         builder.ConfigureServices(services =>
         {
-            services.AddParticipantAuthorization(isDevelopment: false, trustLocalHost: true);
+            services.AddParticipantAuthorization(isDevelopment: DevelopmentMode, trustLocalHost: TrustLocalHostMode);
 
             // Program registers the JWT bearer scheme only when it sees Jwt:SigningKey, which it
             // reads before the factory's configuration is applied, so register it here with the
@@ -142,4 +152,15 @@ public class DesktopModeWebApplicationFactory : AircaneWebApplicationFactory
 public sealed class DesktopModeWithoutSigningKeyFactory : DesktopModeWebApplicationFactory
 {
     protected override bool WithParticipantTokens => false;
+}
+
+/// <summary>
+/// The backend as a developer runs it with <c>dotnet run</c>: the Development environment, no
+/// <c>Aircane:TrustLocalHost</c>. docs/setup/lan-hosting.md has people add
+/// <c>--urls http://0.0.0.0:5000</c>, so LAN devices can reach it.
+/// </summary>
+public sealed class DevelopmentModeWebApplicationFactory : DesktopModeWebApplicationFactory
+{
+    protected override bool DevelopmentMode => true;
+    protected override bool TrustLocalHostMode => false;
 }

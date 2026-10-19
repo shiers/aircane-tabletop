@@ -74,7 +74,7 @@ Two policies are configured (tunable via the `RateLimiting` section of `appsetti
 
 | Policy | Type | Default | Applies to |
 |--------|------|---------|-----------|
-| `join` | Fixed window | 10 / minute | `POST /api/sessions/{id}/join`, `POST /api/sessions/{id}/approve-participant`, `POST /api/sessions/{id}/reconnect` (any invite-code / token endpoint) |
+| `join` | Fixed window | 10 / minute | `POST /api/sessions/{id}/join`, `POST /api/sessions/{id}/approve-participant`, `POST /api/sessions/{id}/deny-participant`, `POST /api/sessions/{id}/reconnect` (any invite-code / token endpoint) |
 | `api`  | Sliding window | 200 / minute (6 segments) | Every other API endpoint (global limiter) |
 
 The `join` policy prevents brute-forcing invite codes; the `api` policy prevents the API from

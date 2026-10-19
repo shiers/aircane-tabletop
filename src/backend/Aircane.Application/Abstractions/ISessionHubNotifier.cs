@@ -80,4 +80,13 @@ public interface ISessionHubNotifier
     /// <c>turnPosition</c> is zero-based (0 = first to act).
     /// </summary>
     Task NotifyParticipantJoinedAdventureAsync(Guid sessionId, ParticipantJoinedAdventureNotification notification, CancellationToken ct = default);
+
+    /// <summary>A join request was approved (by the host, or automatically on joining).</summary>
+    Task NotifyParticipantApprovedAsync(Guid sessionId, ParticipantApprovedNotification notification, CancellationToken ct = default);
+
+    /// <summary>A join request was denied by the host.</summary>
+    Task NotifyParticipantDeniedAsync(Guid sessionId, ParticipantDeniedNotification notification, CancellationToken ct = default);
+
+    /// <summary>An adventure run changed in a way players can see; a signal to re-read it, with no content.</summary>
+    Task NotifyAdventureStateChangedAsync(Guid sessionId, AdventureStateChangedNotification notification, CancellationToken ct = default);
 }

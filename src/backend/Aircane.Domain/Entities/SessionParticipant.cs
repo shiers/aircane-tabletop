@@ -17,6 +17,13 @@ public class SessionParticipant : EntityBase
     public bool IsApproved { get; set; }
 
     /// <summary>
+    /// The host declined this join request. A denied participant is never approved, takes no part in the
+    /// session, and their token is revoked. The record is kept (rather than deleted) so the server can tell
+    /// a denied token from an expired one and refuse it with a clear reason.
+    /// </summary>
+    public bool IsDenied { get; set; }
+
+    /// <summary>
     /// The <c>jti</c> of the participant token last issued to this participant, if any.
     /// Recorded so the host can revoke this exact token when the session ends.
     /// </summary>

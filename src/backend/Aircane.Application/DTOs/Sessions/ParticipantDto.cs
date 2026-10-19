@@ -13,4 +13,5 @@ public sealed record ParticipantDto(
     Guid? CharacterId,
     bool IsApproved,
     DateTimeOffset JoinedAt,
-    DateTimeOffset LastSeenAt);
+    DateTimeOffset LastSeenAt,
+    bool IsDenied = false);

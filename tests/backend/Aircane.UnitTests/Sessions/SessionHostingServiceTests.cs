@@ -796,4 +796,82 @@ public class SessionHostingServiceTests : IDisposable
         Assert.Equal("Thorin", dto.DisplayName);
         Assert.Equal(characterId, dto.CharacterId);
     }
+
+    // ── RequireHostApproval / DenyParticipant ─────────────────────────────────
+
+    private async Task<(SessionDto Session, string InviteCode)> CreateAsync(bool requireHostApproval) =>
+        await _svc.CreateSessionAsync(new CreateSessionRequest(
+            CampaignId: Guid.NewGuid(),
+            Name: "Session",
+            AccessMode: SessionAccessMode.LocalLan,
+            RequireHostApproval: requireHostApproval));
+
+    [Fact]
+    public async Task JoinSessionAsync_WithoutHostApproval_ApprovesOnJoin()
+    {
+        var (created, inviteCode) = await CreateAsync(requireHostApproval: false);
+
+        var joined = await _svc.JoinSessionAsync(new JoinSessionRequest(created.Id, "Thorin", inviteCode));
+
+        Assert.True(joined.IsApproved);
+        Assert.True((await _db.Sessions.SingleAsync(s => s.Id == created.Id)).RequireHostApproval == false);
+    }
+
+    [Fact]
+    public async Task DenyParticipantAsync_MarksDenied_RevokesTheToken_AndDropsThemFromTheRoster()
+    {
+        var (created, inviteCode) = await CreateAsync(requireHostApproval: true);
+        var joined = await _svc.JoinSessionAsync(new JoinSessionRequest(created.Id, "Mallory", inviteCode));
+        var tokenId = (await _db.SessionParticipants.SingleAsync(p => p.Id == joined.ParticipantId)).TokenId;
+        Assert.NotNull(tokenId);
+
+        var denied = await _svc.DenyParticipantAsync(created.Id, joined.ParticipantId);
+
+        Assert.True(denied.IsDenied);
+        Assert.False(denied.IsApproved);
+        Assert.True(await _tokenRevocation.IsTokenRevokedAsync(tokenId!));
+        Assert.DoesNotContain(await _svc.GetParticipantsAsync(created.Id), p => p.Id == joined.ParticipantId);
+    }
+
+    [Fact]
+    public async Task DenyParticipantAsync_IsIdempotent()
+    {
+        var (created, inviteCode) = await CreateAsync(requireHostApproval: true);
+        var joined = await _svc.JoinSessionAsync(new JoinSessionRequest(created.Id, "Mallory", inviteCode));
+
+        await _svc.DenyParticipantAsync(created.Id, joined.ParticipantId);
+        var again = await _svc.DenyParticipantAsync(created.Id, joined.ParticipantId);
+
+        Assert.True(again.IsDenied);
+    }
+
+    [Fact]
+    public async Task DenyParticipantAsync_ThrowsForAnApprovedParticipant()
+    {
+        var (created, inviteCode) = await CreateAsync(requireHostApproval: false);
+        var joined = await _svc.JoinSessionAsync(new JoinSessionRequest(created.Id, "Thorin", inviteCode));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _svc.DenyParticipantAsync(created.Id, joined.ParticipantId));
+    }
+
+    [Fact]
+    public async Task DenyParticipantAsync_ThrowsForUnknownParticipant()
+    {
+        var (created, _) = await CreateAsync(requireHostApproval: true);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => _svc.DenyParticipantAsync(created.Id, Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task ApproveParticipantAsync_ThrowsForADeniedParticipant()
+    {
+        var (created, inviteCode) = await CreateAsync(requireHostApproval: true);
+        var joined = await _svc.JoinSessionAsync(new JoinSessionRequest(created.Id, "Mallory", inviteCode));
+        await _svc.DenyParticipantAsync(created.Id, joined.ParticipantId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _svc.ApproveParticipantAsync(created.Id, joined.ParticipantId));
+    }
 }

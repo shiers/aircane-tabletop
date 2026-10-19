@@ -68,46 +68,8 @@ if (!string.IsNullOrWhiteSpace(jwtSigningKey))
                 ClockSkew = TimeSpan.FromSeconds(30),
             };
 
-            // Allow SignalR connections to pass the token as a query parameter (?access_token=...)
-            // because browsers cannot set Authorization headers on WebSocket connections.
-            options.Events = new JwtBearerEvents
-            {
-                OnMessageReceived = context =>
-                {
-                    var accessToken = context.Request.Query["access_token"];
-                    var path = context.HttpContext.Request.Path;
-                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
-                    {
-                        context.Token = accessToken;
-                    }
-                    return Task.CompletedTask;
-                },
-
-                // Enforce token revocation on every [Authorize] request and hub connection, not
-                // just the manual reconnect path. Checks the in-memory session fast path and the
-                // persistent per-token store so a revoked token is rejected even after a restart.
-                OnTokenValidated = async context =>
-                {
-                    var revocation = context.HttpContext.RequestServices
-                        .GetRequiredService<ITokenRevocationService>();
-
-                    var sessionIdClaim = context.Principal?.FindFirst("sid")?.Value;
-                    if (Guid.TryParse(sessionIdClaim, out var sessionId)
-                        && revocation.IsSessionRevoked(sessionId))
-                    {
-                        context.Fail("Session has been revoked.");
-                        return;
-                    }
-
-                    var jti = context.Principal?.FindFirst(
-                        System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
-                    if (!string.IsNullOrEmpty(jti)
-                        && await revocation.IsTokenRevokedAsync(jti, context.HttpContext.RequestAborted))
-                    {
-                        context.Fail("Token has been revoked.");
-                    }
-                },
-            };
+            // SignalR token passing, per-request revocation and the clear refusal for a denied participant.
+            options.Events = ParticipantJwtEvents.Create();
         });
 }
 else

@@ -152,6 +152,21 @@ public sealed class SessionHubNotifier : ISessionHubNotifier
         return SessionGroup(sessionId).SendAsync("ParticipantJoinedAdventure", notification, ct);
     }
 
+    public Task NotifyParticipantApprovedAsync(Guid sessionId, ParticipantApprovedNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("ParticipantApproved", notification, ct);
+    }
+
+    public Task NotifyParticipantDeniedAsync(Guid sessionId, ParticipantDeniedNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("ParticipantDenied", notification, ct);
+    }
+
+    public Task NotifyAdventureStateChangedAsync(Guid sessionId, AdventureStateChangedNotification notification, CancellationToken ct = default)
+    {
+        return SessionGroup(sessionId).SendAsync("AdventureStateChanged", notification, ct);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private IClientProxy SessionGroup(Guid sessionId)

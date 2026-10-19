@@ -32,15 +32,24 @@ vi.mock('@/features/adventure-generation/api', async (importOriginal) => ({
   deleteAdventure: vi.fn(),
   generateAdventure: vi.fn(),
   getAdventureDraft: vi.fn(),
+  // The review screen reads the mode through this; the real one would call the unmocked list endpoints.
+  lookupAdventureMode: vi.fn(),
 }))
 vi.mock('@/features/adventures/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/adventures/api')>()),
   getActiveAdventureSession: vi.fn(),
+  getAdventureSession: vi.fn(),
+}))
+vi.mock('@/features/sessions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/sessions/api')>()),
+  startSession: vi.fn(),
 }))
 
 import * as campaignApi from '../api'
 import * as genApi from '@/features/adventure-generation/api'
 import * as soloApi from '@/features/adventures/api'
+import * as sessionsApi from '@/features/sessions/api'
+import { makeState, groupRunState } from '@/features/adventures/__tests__/fixtures'
 
 const CAMPAIGN_ID = 'campaign-1'
 
@@ -71,6 +80,7 @@ async function mountDetail(adventures: CampaignAdventure[]) {
       { path: '/adventures/generate', name: 'adventure-generate', component: AdventureGenerateView },
       { path: '/adventures/:adventureId/review', name: 'adventure-review', component: AdventureReviewView, props: true },
       { path: '/adventures/solo/:sessionId', name: 'adventure-solo', component: Stub },
+      { path: '/sessions/:sessionId/host', name: 'host-session', component: Stub, props: true },
     ],
   })
   await router.push(`/campaigns/${CAMPAIGN_ID}`)
@@ -84,6 +94,7 @@ const cards = (w: ReturnType<typeof mount>) => w.findAll('[data-testid="adventur
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(genApi.lookupAdventureMode).mockResolvedValue(null)
   hub.connection.start.mockResolvedValue(undefined)
   hub.connection.invoke.mockResolvedValue(undefined)
 })
@@ -195,11 +206,62 @@ describe('CampaignDetail', () => {
     expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(false)
 
     // Resume opens the existing run: it does not start a new one.
+    vi.mocked(soloApi.getAdventureSession).mockResolvedValue(makeState({ id: 'run-7' }))
     const start = vi.spyOn(useAdventureSessionStore(), 'startSession')
     await card.find('[data-testid="resume-adventure-button"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/adventures/solo/run-7')
     expect(start).not.toHaveBeenCalled()
+  })
+
+  it('CampaignDetail_Resume_OpensAGroupRunOnTheHostScreen', async () => {
+    const { wrapper, router } = await mountDetail([running({ mode: 'Group' })])
+    vi.mocked(soloApi.getAdventureSession).mockResolvedValue(groupRunState({ id: 'run-7', sessionId: 'play-55' }))
+
+    await cards(wrapper)[0].find('[data-testid="resume-adventure-button"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/sessions/play-55/host')
+  })
+
+  // ── Button branching by adventure mode ────────────────────────────────────
+
+  it('CampaignDetail_GroupAdventure_OffersStartGroupSession_NotPlaySolo', async () => {
+    const { wrapper } = await mountDetail([adventure({ mode: 'Group' })])
+    const card = cards(wrapper)[0]
+
+    expect(card.findAll('button').map((b) => b.text())).toEqual(['Review', '👥 Start Group Session', 'Delete'])
+    expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(false)
+  })
+
+  it('CampaignDetail_SoloAdventure_OffersPlaySolo_NotStartGroupSession', async () => {
+    const { wrapper } = await mountDetail([adventure({ mode: 'Solo' })])
+    const card = cards(wrapper)[0]
+
+    expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(true)
+    expect(card.find('[data-testid="start-group-button"]').exists()).toBe(false)
+  })
+
+  it('CampaignDetail_AdventureWithNoMode_IsOfferedAsSolo', async () => {
+    const { wrapper } = await mountDetail([adventure({ mode: null })])
+
+    expect(cards(wrapper)[0].find('[data-testid="play-solo-button"]').exists()).toBe(true)
+  })
+
+  it('CampaignDetail_StartGroupSession_UsesTheCampaignWithoutAsking', async () => {
+    vi.mocked(soloApi.getActiveAdventureSession).mockResolvedValue(null)
+    vi.mocked(sessionsApi.startSession).mockResolvedValue({
+      id: 'play-1', campaignId: CAMPAIGN_ID, name: 'Group: x', accessMode: 1, status: 1, startedAt: null,
+      endedAt: null, createdAt: '', participantCount: 0, inviteCode: 'ABCD1234', joinUrl: '/join/play-1',
+    })
+    const { wrapper, router } = await mountDetail([adventure({ mode: 'Group' })])
+
+    await cards(wrapper)[0].find('[data-testid="start-group-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="start-group-panel"]').exists()).toBe(false) // no campaign picker
+    expect(sessionsApi.startSession).toHaveBeenCalledWith(CAMPAIGN_ID, expect.objectContaining({ accessMode: 1 }))
+    expect(router.currentRoute.value.fullPath).toBe('/sessions/play-1/host?adventure=adv-1')
   })
 
   it('CampaignDetail_ShowsSceneProgress_WhenSessionInProgress', async () => {
@@ -236,6 +298,75 @@ describe('CampaignDetail', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/adventures/adv-1/review')
+  })
+})
+
+describe('Review screen: play button by adventure mode', () => {
+  const draft = (over = {}) => ({
+    id: 'adv-1', title: 'The Sunken Archive', status: 'Approved', campaignId: CAMPAIGN_ID, createdAt: '', updatedAt: '', ...over,
+  })
+
+  it('offers Start Group Session for a group adventure', async () => {
+    const { wrapper, router } = await mountDetail([])
+    vi.mocked(genApi.getAdventureDraft).mockResolvedValue(draft())
+    vi.mocked(genApi.lookupAdventureMode).mockResolvedValue('Group')
+    await router.push('/adventures/adv-1/review')
+    await flushPromises()
+
+    expect(genApi.lookupAdventureMode).toHaveBeenCalledWith('adv-1', CAMPAIGN_ID)
+    expect(wrapper.find('[data-testid="start-group-button"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="play-solo-button"]').exists()).toBe(false)
+  })
+
+  it('offers Play Solo for a solo adventure', async () => {
+    const { wrapper, router } = await mountDetail([])
+    vi.mocked(genApi.getAdventureDraft).mockResolvedValue(draft())
+    vi.mocked(genApi.lookupAdventureMode).mockResolvedValue('Solo')
+    await router.push('/adventures/adv-1/review')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="play-solo-button"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="start-group-button"]').exists()).toBe(false)
+  })
+
+  it('offers Play Solo when the mode cannot be determined', async () => {
+    const { wrapper, router } = await mountDetail([])
+    vi.mocked(genApi.getAdventureDraft).mockResolvedValue(draft())
+    vi.mocked(genApi.lookupAdventureMode).mockResolvedValue(null)
+    await router.push('/adventures/adv-1/review')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="play-solo-button"]').exists()).toBe(true)
+  })
+
+  it('offers no play button for a draft', async () => {
+    const { wrapper, router } = await mountDetail([])
+    vi.mocked(genApi.getAdventureDraft).mockResolvedValue(draft({ status: 'Draft' }))
+    vi.mocked(genApi.lookupAdventureMode).mockResolvedValue('Group')
+    await router.push('/adventures/adv-1/review')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="start-group-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="play-solo-button"]').exists()).toBe(false)
+  })
+
+  it('starts the group session in the adventures own campaign without asking', async () => {
+    vi.mocked(soloApi.getActiveAdventureSession).mockResolvedValue(null)
+    vi.mocked(sessionsApi.startSession).mockResolvedValue({
+      id: 'play-2', campaignId: CAMPAIGN_ID, name: 'Group: x', accessMode: 1, status: 1, startedAt: null,
+      endedAt: null, createdAt: '', participantCount: 0, inviteCode: 'ABCD1234', joinUrl: '/join/play-2',
+    })
+    const { wrapper, router } = await mountDetail([])
+    vi.mocked(genApi.getAdventureDraft).mockResolvedValue(draft())
+    vi.mocked(genApi.lookupAdventureMode).mockResolvedValue('Group')
+    await router.push('/adventures/adv-1/review')
+    await flushPromises()
+
+    await wrapper.find('[data-testid="start-group-button"]').trigger('click')
+    await flushPromises()
+
+    expect(sessionsApi.startSession).toHaveBeenCalledWith(CAMPAIGN_ID, expect.anything())
+    expect(router.currentRoute.value.fullPath).toBe('/sessions/play-2/host?adventure=adv-1')
   })
 })
 

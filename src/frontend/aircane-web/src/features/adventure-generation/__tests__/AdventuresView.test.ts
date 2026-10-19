@@ -37,6 +37,16 @@ vi.mock('../api', async (importOriginal) => ({
 
 import * as api from '../api'
 
+// Resume reads the run first (a group run goes to the host screen, a solo run to the solo screen).
+vi.mock('@/features/adventures/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/adventures/api')>()),
+  getAdventureSession: vi.fn(),
+  getActiveAdventureSession: vi.fn(),
+}))
+
+import * as runApi from '@/features/adventures/api'
+import { makeState, groupRunState } from '@/features/adventures/__tests__/fixtures'
+
 const campaign = (id: string, name: string): CampaignDto => ({
   id, name, gameSystem: 'D&D 5e', ruleset: '2014', gameSystemDefinitionId: null,
   aiRole: AiRole.FullDm, aiAuthority: AiAuthority.FullSessionControl, activeAdventureId: null,
@@ -74,6 +84,7 @@ async function mountPage(unassigned: CampaignAdventure[]) {
       { path: '/adventures/generate', name: 'adventure-generate', component: Stub },
       { path: '/adventures/:adventureId/review', name: 'adventure-review', component: Stub, props: true },
       { path: '/adventures/solo/:sessionId', name: 'adventure-solo', component: Stub },
+      { path: '/sessions/:sessionId/host', name: 'host-session', component: Stub, props: true },
       { path: '/campaigns', name: 'campaigns', component: Stub },
       { path: '/campaigns/:campaignId', name: 'campaign-detail', component: Stub, props: true },
     ],
@@ -222,11 +233,139 @@ describe('Adventure Forge: unassigned adventures', () => {
     expect(first.find('[data-testid="play-solo-button"]').exists()).toBe(false)
     expect(buttons(second)).toContain('▶ Play Solo')   // an idle one is unchanged
 
+    vi.mocked(runApi.getAdventureSession).mockResolvedValue(makeState({ id: 'run-3' }))
     await first.find('[data-testid="resume-adventure-button"]').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/adventures/solo/run-3')
     expect(start).not.toHaveBeenCalled()
+  })
+
+  it('AdventureForge_Resume_OpensAGroupRunOnTheHostScreen', async () => {
+    const running = adventure({
+      mode: 'Group',
+      activeSession: { sessionId: 'run-4', currentSceneNumber: 3, totalScenes: 6, status: 'InProgress' },
+    })
+    const { wrapper, router } = await mountPage([running])
+    vi.mocked(runApi.getAdventureSession).mockResolvedValue(groupRunState({ id: 'run-4', sessionId: 'play-77' }))
+
+    await cards(wrapper)[0].find('[data-testid="resume-adventure-button"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/sessions/play-77/host')
+  })
+
+  it('AdventureForge_Resume_FallsBackToTheSoloScreenWhenTheRunCannotBeRead', async () => {
+    const running = adventure({
+      activeSession: { sessionId: 'run-5', currentSceneNumber: 1, totalScenes: 4, status: 'InProgress' },
+    })
+    const { wrapper, router } = await mountPage([running])
+    vi.mocked(runApi.getAdventureSession).mockRejectedValue(new Error('offline'))
+
+    await cards(wrapper)[0].find('[data-testid="resume-adventure-button"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/adventures/solo/run-5')
+  })
+
+  // ── Button branching by adventure mode ────────────────────────────────────
+
+  it('AdventureForge_GroupAdventure_OffersStartGroupSession_NotPlaySolo', async () => {
+    const { wrapper } = await mountPage([adventure({ mode: 'Group' })])
+    const [card] = cards(wrapper)
+
+    expect(buttons(card)).toEqual(['Assign to Campaign', 'Review', '👥 Start Group Session', 'Delete'])
+    expect(card.find('[data-testid="start-group-button"]').exists()).toBe(true)
+    expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(false)
+  })
+
+  it('AdventureForge_SoloAdventure_OffersPlaySolo_NotStartGroupSession', async () => {
+    const { wrapper } = await mountPage([adventure({ mode: 'Solo' })])
+    const [card] = cards(wrapper)
+
+    expect(buttons(card)).toContain('▶ Play Solo')
+    expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(true)
+    expect(card.find('[data-testid="start-group-button"]').exists()).toBe(false)
+  })
+
+  it('AdventureForge_AdventureWithNoMode_IsOfferedAsSolo', async () => {
+    const { wrapper } = await mountPage([adventure({ mode: null })])
+
+    expect(cards(wrapper)[0].find('[data-testid="play-solo-button"]').exists()).toBe(true)
+    expect(cards(wrapper)[0].find('[data-testid="start-group-button"]').exists()).toBe(false)
+  })
+
+  it('AdventureForge_ModeMatchingIgnoresCase', async () => {
+    const { wrapper } = await mountPage([adventure({ mode: 'group' })])
+
+    expect(cards(wrapper)[0].find('[data-testid="start-group-button"]').exists()).toBe(true)
+  })
+
+  it('AdventureForge_GroupAdventure_IsNotPlayableUntilApproved', async () => {
+    const { wrapper } = await mountPage([adventure({ mode: 'Group', status: 'Draft' })])
+    const [card] = cards(wrapper)
+
+    expect(card.find('[data-testid="start-group-button"]').exists()).toBe(false)
+    expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(false)
+  })
+
+  it('AdventureForge_GroupAdventure_WithARunInProgress_ShowsResumeInsteadOfStart', async () => {
+    const running = adventure({
+      mode: 'Group',
+      activeSession: { sessionId: 'run-4', currentSceneNumber: 3, totalScenes: 6, status: 'InProgress' },
+    })
+    const { wrapper } = await mountPage([running])
+
+    expect(buttons(cards(wrapper)[0])).toEqual(['Assign to Campaign', 'Review', 'Resume', 'Delete'])
+  })
+
+  // ── The assign picker must tell "no campaigns" from "could not load them" ──
+
+  it('AdventureForge_AssignPicker_SaysWhenCampaignsCouldNotBeLoaded_NotThatThereAreNone', async () => {
+    const { wrapper, pinia } = await mountPage([adventure()])
+    vi.spyOn(useCampaignStore(pinia), 'fetchCampaigns').mockRejectedValue(new Error('boom'))
+    useCampaignStore(pinia).campaigns = []
+
+    await cards(wrapper)[0].find('[data-testid="assign-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="assign-load-failed"]').text()).toContain('Could not load your campaigns')
+    expect(wrapper.find('[data-testid="assign-no-campaigns"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('You have no campaigns yet')
+  })
+
+  it('AdventureForge_AssignPicker_RetryRecoversFromALoadFailure', async () => {
+    const { wrapper, pinia } = await mountPage([adventure()])
+    const campaigns = useCampaignStore(pinia)
+    campaigns.campaigns = []
+    vi.spyOn(campaigns, 'fetchCampaigns')
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockImplementationOnce(async () => {
+        campaigns.campaigns = CAMPAIGNS
+      })
+
+    await cards(wrapper)[0].find('[data-testid="assign-button"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="assign-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="assign-load-failed"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="assign-select"]').exists()).toBe(true)
+  })
+
+  it('AdventureForge_AssignPicker_StillSaysNoCampaignsWhenThereReallyAreNone', async () => {
+    const { wrapper, pinia } = await mountPage([adventure()])
+    const campaigns = useCampaignStore(pinia)
+    campaigns.campaigns = []
+    vi.spyOn(campaigns, 'fetchCampaigns').mockImplementation(async () => {
+      campaigns.campaigns = []
+    })
+
+    await cards(wrapper)[0].find('[data-testid="assign-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="assign-no-campaigns"]').text()).toContain('You have no campaigns yet')
+    expect(wrapper.find('[data-testid="assign-load-failed"]').exists()).toBe(false)
   })
 
   it('Review opens the adventure review screen', async () => {

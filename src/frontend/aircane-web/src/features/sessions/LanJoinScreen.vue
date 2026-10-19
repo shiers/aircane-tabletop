@@ -94,11 +94,11 @@ const statusClass = computed(() => {
 <template>
   <section
     aria-labelledby="lan-join-heading"
-    class="rounded-xl border border-gray-800 bg-gray-900 p-6"
+    class="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-6"
   >
     <!-- Session name and status -->
     <div class="mb-6 flex items-start justify-between gap-4">
-      <div>
+      <div class="min-w-0">
         <h2 id="lan-join-heading" class="text-lg font-semibold text-white">
           {{ session.name }}
         </h2>
@@ -127,7 +127,7 @@ const statusClass = computed(() => {
       </div>
 
       <!-- Join details -->
-      <div class="flex-1 space-y-4">
+      <div class="min-w-0 flex-1 space-y-4">
         <!-- Join URL -->
         <div>
           <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -135,7 +135,7 @@ const statusClass = computed(() => {
           </label>
           <div class="flex items-center gap-2">
             <code
-              class="flex-1 overflow-x-auto rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-aircane-300 whitespace-nowrap"
+              class="min-w-0 flex-1 overflow-x-auto rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-aircane-300 whitespace-nowrap"
             >
               {{ joinUrl }}
             </code>
@@ -158,7 +158,7 @@ const statusClass = computed(() => {
           </label>
           <div class="flex items-center gap-2">
             <code
-              class="flex-1 rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-center text-2xl font-bold tracking-[0.3em] text-white"
+              class="min-w-0 flex-1 break-all rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-center text-xl font-bold tracking-[0.2em] text-white sm:text-2xl sm:tracking-[0.3em]"
             >
               {{ inviteCode }}
             </code>

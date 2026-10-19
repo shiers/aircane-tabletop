@@ -37,7 +37,11 @@ function isActive(to: string): boolean {
 <template>
   <aside
     class="flex h-full shrink-0 flex-col border-r border-surface-800/60 bg-surface-900 transition-all duration-300"
-    :class="collapsed ? 'w-16' : 'sidebar-expanded'"
+    :class="
+      collapsed
+        ? 'w-16 max-lg:hidden'
+        : 'sidebar-expanded max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:shadow-2xl'
+    "
     v-bg-asset="{ url: '/assets/ui/side-nav-background.png', fallback: '#0a0a1a' }"
   >
     <!-- Logo area -->

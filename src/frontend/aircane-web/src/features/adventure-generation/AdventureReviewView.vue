@@ -4,9 +4,12 @@ import { useRouter } from 'vue-router'
 import {
   getAdventureDraft,
   approveAdventure,
+  isGroupAdventure,
+  lookupAdventureMode,
   type AdventureDraft,
 } from './api'
 import PlaySoloLauncher from '@/features/adventures/components/PlaySoloLauncher.vue'
+import StartGroupLauncher from '@/features/adventures/components/StartGroupLauncher.vue'
 
 const props = defineProps<{
   adventureId: string
@@ -19,6 +22,9 @@ const error = ref<string | null>(null)
 const approving = ref(false)
 const approveSuccess = ref(false)
 const activeSection = ref<string>('pitch')
+/** "Solo" / "Group", read from the adventure lists (the draft carries the campaign but not the mode). */
+const adventureMode = ref<string | null>(null)
+const isGroup = computed(() => isGroupAdventure(adventureMode.value))
 
 const sections = computed(() => {
   if (!draft.value) return []
@@ -48,6 +54,8 @@ async function loadDraft() {
   error.value = null
   try {
     draft.value = await getAdventureDraft(props.adventureId)
+    // Only decides which play button to show, so a failure here just means "offer solo".
+    adventureMode.value = await lookupAdventureMode(props.adventureId, draft.value.campaignId)
   } catch (e: any) {
     const status = e?.response?.status
     if (status === 404) {
@@ -150,8 +158,14 @@ function getSceneTypeColor(sceneType: string): string {
           </span>
           <span v-else>✓ Approve Adventure</span>
         </button>
-        <!-- Play Solo: the AI DM runs the player through the approved adventure -->
-        <PlaySoloLauncher v-if="isPlayable" :adventure-id="props.adventureId" />
+        <!-- Group adventures open a lobby; solo adventures run the AI DM for one player -->
+        <StartGroupLauncher
+          v-if="isPlayable && isGroup"
+          :adventure-id="props.adventureId"
+          :adventure-title="draft?.title"
+          :campaign-id="draft?.campaignId"
+        />
+        <PlaySoloLauncher v-else-if="isPlayable" :adventure-id="props.adventureId" />
       </div>
     </div>
 

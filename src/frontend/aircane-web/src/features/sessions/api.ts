@@ -18,10 +18,12 @@ export enum SessionStatus {
   Ended = 3,
 }
 
+/** Mirrors Aircane.Domain.Enums.ParticipantRole, which the API sends as a number. */
 export enum ParticipantRole {
-  Player = 0,
+  Host = 0,
   HumanDm = 1,
-  Host = 2,
+  Player = 2,
+  Spectator = 3,
 }
 
 // ---------------------------------------------------------------------------

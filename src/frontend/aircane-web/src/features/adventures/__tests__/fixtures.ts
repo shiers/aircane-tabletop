@@ -61,8 +61,32 @@ export function makeState(overrides: Partial<AdventureSessionStateDto> = {}): Ad
     startedAt: '2026-10-12T10:00:00.000Z',
     completedAt: null,
     lastActivityAt: '2026-10-12T10:05:00.000Z',
+    // A solo run has none of the group-play state.
+    isGroup: false,
+    activeParticipantId: null,
+    activeParticipantName: null,
+    currentRound: 0,
+    turnOrder: [],
     ...overrides,
   }
+}
+
+/** Alice, Bob and Cara in that order, Alice acting, round 1. */
+export function groupRunState(overrides: Partial<AdventureSessionStateDto> = {}): AdventureSessionStateDto {
+  const names = ['Alice', 'Bob', 'Cara']
+  const activeIndex = names.findIndex((n) => n === (overrides.activeParticipantName ?? 'Alice'))
+  return makeState({
+    isGroup: true,
+    activeParticipantId: `p-${names[activeIndex].toLowerCase()}`,
+    activeParticipantName: names[activeIndex],
+    currentRound: 1,
+    turnOrder: names.map((name, i) => ({
+      participantId: `p-${name.toLowerCase()}`,
+      participantName: name,
+      isActive: i === activeIndex,
+    })),
+    ...overrides,
+  })
 }
 
 /** A state one step later in time, so it is not discarded as stale. */

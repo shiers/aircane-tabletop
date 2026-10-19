@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import HealthStatus from './HealthStatus.vue'
 import AppSidebar from './AppSidebar.vue'
@@ -7,7 +7,24 @@ import FeedbackModal from '@/features/feedback/FeedbackModal.vue'
 import { useFeedbackModal } from '@/features/feedback/useFeedbackModal'
 
 const route = useRoute()
-const sidebarCollapsed = ref(false)
+
+/** Below Tailwind's `lg` breakpoint the sidebar is a drawer behind the hamburger button. */
+const NARROW_QUERY = '(max-width: 1023px)'
+
+function isNarrowScreen(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(NARROW_QUERY).matches
+}
+
+// On a phone the sidebar starts closed so the page gets the full width.
+const sidebarCollapsed = ref(isNarrowScreen())
+
+// Choosing a page on a narrow screen closes the drawer.
+watch(
+  () => route.fullPath,
+  () => {
+    if (isNarrowScreen()) sidebarCollapsed.value = true
+  },
+)
 
 /**
  * Routes that drop their full-page art and must show a solid #0a0a1a fill.
@@ -37,6 +54,15 @@ function toggleSidebar() {
 
 <template>
   <div class="flex h-screen overflow-hidden bg-surface-950">
+    <!-- Backdrop behind the open drawer (narrow screens only); tapping it closes the drawer -->
+    <div
+      v-if="!sidebarCollapsed"
+      class="fixed inset-0 z-30 bg-black/60 lg:hidden"
+      data-testid="sidebar-backdrop"
+      aria-hidden="true"
+      @click="toggleSidebar"
+    />
+
     <!-- Sidebar -->
     <AppSidebar :collapsed="sidebarCollapsed" @toggle="toggleSidebar" />
 
@@ -44,7 +70,7 @@ function toggleSidebar() {
     <div class="flex flex-1 flex-col overflow-hidden">
       <!-- Top bar -->
       <header
-        class="flex h-14 shrink-0 items-center justify-between border-b border-surface-800/60 bg-surface-900/50 px-6 backdrop-blur-sm"
+        class="flex h-14 shrink-0 items-center justify-between border-b border-surface-800/60 bg-surface-900/50 px-4 backdrop-blur-sm sm:px-6"
         v-bg-asset="{ url: '/assets/ui/topbar-background.png', fallback: '#0a0a1a' }"
       >
         <div class="flex items-center gap-3">
@@ -52,6 +78,7 @@ function toggleSidebar() {
           <button
             class="rounded-md p-1.5 text-gray-400 hover:bg-surface-800 hover:text-white lg:hidden"
             aria-label="Toggle sidebar"
+            :aria-expanded="!sidebarCollapsed"
             @click="toggleSidebar"
           >
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

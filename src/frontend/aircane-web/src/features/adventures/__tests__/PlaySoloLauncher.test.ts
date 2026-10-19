@@ -35,11 +35,12 @@ function campaign(overrides: Partial<CampaignDto> = {}): CampaignDto {
   }
 }
 
-async function mountLauncher(campaigns: CampaignDto[]) {
+async function mountLauncher(campaigns: CampaignDto[], loadFails = false) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const campaignStore = useCampaignStore(pinia)
   vi.spyOn(campaignStore, 'fetchCampaigns').mockImplementation(async () => {
+    if (loadFails) throw new Error('Network Error') // like the real store: it now rethrows
     campaignStore.campaigns = campaigns
   })
   const sessionStore = useAdventureSessionStore(pinia)
@@ -82,6 +83,33 @@ describe('PlaySoloLauncher', () => {
     expect(wrapper.find('[data-testid="no-campaigns"]').text()).toContain('You need a campaign')
     expect(wrapper.findComponent(RouterLinkStub).props('to')).toBe('/campaigns')
     expect(wrapper.find('[data-testid="start-button"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('when the campaigns cannot be loaded, says so instead of "you need a campaign"', async () => {
+    const { wrapper } = await mountLauncher([], true)
+
+    await wrapper.find('[data-testid="play-solo-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="campaigns-load-failed"]').text()).toContain('Could not load your campaigns')
+    expect(wrapper.find('[data-testid="no-campaigns"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('You need a campaign')
+  })
+
+  it('offers a retry after a failed campaign load', async () => {
+    const { wrapper } = await mountLauncher([], true)
+    await wrapper.find('[data-testid="play-solo-button"]').trigger('click')
+    await flushPromises()
+    const fetch = vi.mocked(useCampaignStore().fetchCampaigns)
+    fetch.mockImplementation(async () => {
+      useCampaignStore().campaigns = [campaign()]
+    })
+
+    await wrapper.find('[data-testid="retry-campaigns"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="campaigns-load-failed"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="campaign-select"]').exists()).toBe(true)
   })
 
   it('with several campaigns, asks which to use and starts only after one is chosen', async () => {

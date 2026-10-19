@@ -11,9 +11,16 @@ const store = useCampaignStore()
 const editingCampaign = ref<CampaignDto | null>(null)
 const showForm = ref(false)
 
-onMounted(() => {
-  store.fetchCampaigns()
-})
+/** Load the list. A failure is shown from `store.error`, so it is not rethrown here. */
+async function loadCampaigns(): Promise<void> {
+  try {
+    await store.fetchCampaigns()
+  } catch {
+    // store.error is displayed in the error banner.
+  }
+}
+
+onMounted(loadCampaigns)
 
 function openCreateForm(): void {
   editingCampaign.value = null
@@ -119,7 +126,7 @@ async function handleFormSubmit(payload: CreateCampaignRequest | UpdateCampaignR
               type="button"
               class="continue-button"
               v-bg-asset="{ url: '/assets/campaigns/continue-button-art.png', fallback: 'transparent', size: '100% 100%' }"
-              @click="store.fetchCampaigns"
+              @click="loadCampaigns"
             >
               <span class="continue-label">Continue</span>
             </button>

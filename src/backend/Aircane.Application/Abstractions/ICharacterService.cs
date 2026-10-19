@@ -54,6 +54,16 @@ public interface ICharacterService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The characters of a campaign a Player may see: player characters (never NPCs) that the participant
+    /// owns or has been assigned. Empty when there are none.
+    /// </summary>
+    Task<IReadOnlyList<CharacterDto>> ListForPlayerAsync(
+        Guid campaignId,
+        Guid participantId,
+        Guid? assignedCharacterId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists characters scoped to a campaign.
     /// Hosts see all characters; players see only their own.
     /// </summary>

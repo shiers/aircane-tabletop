@@ -20,7 +20,7 @@ namespace Aircane.Api.Controllers;
 [ApiController]
 [Route("api/sessions/{sessionId:guid}")]
 [Produces("application/json")]
-[Authorize(Policy = AuthorizationPolicies.Authenticated)]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
 public sealed class SessionAdventureRunController : ControllerBase
 {
     private const string ParticipantIdClaim = "pid";

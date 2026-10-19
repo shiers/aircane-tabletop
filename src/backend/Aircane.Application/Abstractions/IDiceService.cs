@@ -29,11 +29,14 @@ public interface IDiceService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns the roll log for a session, ordered by most recent first.
+    /// Returns the roll log for a session, ordered by most recent first. A private roll is included only for
+    /// a <paramref name="viewer"/> who sees private rolls or rolled it; with no viewer, everything (for the
+    /// server's own use).
     /// </summary>
     Task<IReadOnlyList<RollDto>> GetRollLogAsync(
         Guid sessionId,
         int page = 1,
         int pageSize = 50,
+        RollLogViewer? viewer = null,
         CancellationToken cancellationToken = default);
 }

@@ -13,14 +13,22 @@ namespace Aircane.Api.Controllers;
 /// <summary>
 /// Session management - create sessions under a campaign and retrieve session state.
 /// <para>
-/// Authorization is declared per action, not on the class: ASP.NET Core requires every
+/// Role checks are declared per action, not on the class: ASP.NET Core requires every
 /// <c>[Authorize]</c> on an endpoint, so a class-level HostOnly would also apply to the player
 /// actions marked <see cref="AuthorizationPolicies.Authenticated"/> (reconnect, session and
 /// participant reads) and lock players out of them.
 /// </para>
+/// <para>
+/// The session scope is on the class (<see cref="AuthorizationPolicies.SessionMember"/>), which every
+/// player action needs too: a token is good for its own session only, held by an approved participant.
+/// Reconnect also takes a participant still waiting (it is how they learn their status); join and
+/// join-info are anonymous.
+/// </para>
 /// </summary>
 [ApiController]
 [Produces("application/json")]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
+[SessionScopedRoute(SessionScopeKind.Session)]
 public sealed class SessionsController : ControllerBase
 {
     private readonly ISessionHostingService _sessions;
@@ -188,6 +196,7 @@ public sealed class SessionsController : ControllerBase
     /// </summary>
     [HttpPost("api/sessions/{id:guid}/reconnect")]
     [Authorize(Policy = AuthorizationPolicies.Authenticated)]
+    [AllowPendingParticipant]
     [EnableRateLimiting(RateLimitingSettings.JoinPolicy)]
     [ProducesResponseType(typeof(ReconnectResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -301,7 +310,9 @@ public sealed class SessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Returns all participants in the session.
+    /// Returns all participants in the session. The host and a human DM get every detail; a Player gets
+    /// the approved participants as they are, and of those still waiting only their name (no join time,
+    /// character or other detail). Denied people are on nobody's list.
     /// </summary>
     [HttpGet("api/sessions/{id:guid}/participants")]
     [Authorize(Policy = AuthorizationPolicies.Authenticated)]
@@ -314,7 +325,15 @@ public sealed class SessionsController : ControllerBase
             return NotFound();
 
         var participants = await _sessions.GetParticipantsAsync(id, cancellationToken);
-        return Ok(participants);
+        if (this.IsHostOrDm())
+            return Ok(participants);
+
+        return Ok(participants
+            .Select(p => p.IsApproved
+                ? p
+                : new ParticipantDto(p.Id, p.SessionId, p.DisplayName, p.Role, CharacterId: null, IsApproved: false,
+                    JoinedAt: default, LastSeenAt: default))
+            .ToList());
     }
 
     /// <summary>

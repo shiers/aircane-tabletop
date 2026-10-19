@@ -56,6 +56,10 @@ public static class PlayerSeat
     /// one thing to look for.
     /// </summary>
     public static ObjectResult Refusal(SeatStatus status)
+        => new(ProblemFor(status)) { StatusCode = StatusCodes.Status403Forbidden };
+
+    /// <summary>The problem body for a seat that is not <see cref="SeatStatus.Allowed"/>.</summary>
+    public static ProblemDetails ProblemFor(SeatStatus status)
     {
         var problem = status switch
         {
@@ -79,6 +83,6 @@ public static class PlayerSeat
         if (status == SeatStatus.Denied)
             problem.Extensions["code"] = "participant-denied";
 
-        return new ObjectResult(problem) { StatusCode = StatusCodes.Status403Forbidden };
+        return problem;
     }
 }

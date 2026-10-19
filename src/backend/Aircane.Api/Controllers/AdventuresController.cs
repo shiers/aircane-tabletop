@@ -19,6 +19,7 @@ namespace Aircane.Api.Controllers;
 [Route("api/adventures")]
 [Produces("application/json")]
 [Authorize(Policy = AuthorizationPolicies.HostOnly)]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
 public sealed class AdventuresController : ControllerBase
 {
     private readonly IValidator<GenerateAdventureRequest> _validator;

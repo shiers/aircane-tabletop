@@ -20,6 +20,7 @@ namespace Aircane.Api.Controllers;
 [Route("api/sessions/{sessionId:guid}/combat")]
 [Produces("application/json")]
 [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
 public sealed class CombatController : ControllerBase
 {
     private static readonly JsonSerializerOptions CamelCase =
@@ -237,7 +238,7 @@ public sealed class CombatController : ControllerBase
         Status = StatusCodes.Status400BadRequest,
     };
 
-    private static EncounterState? ReadEncounter(string? stateJson)
+    internal static EncounterState? ReadEncounter(string? stateJson)
     {
         if (string.IsNullOrWhiteSpace(stateJson))
             return null;
@@ -257,7 +258,7 @@ public sealed class CombatController : ControllerBase
         }
     }
 
-    private static EncounterStateDto ToDto(EncounterState e) => new(
+    internal static EncounterStateDto ToDto(EncounterState e) => new(
         EncounterId: e.EncounterId,
         IsActive: e.IsActive,
         Round: e.Round,

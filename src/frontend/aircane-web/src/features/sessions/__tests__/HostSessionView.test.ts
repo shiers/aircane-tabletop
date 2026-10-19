@@ -131,6 +131,43 @@ describe('HostSessionView', () => {
     vi.clearAllMocks()
   })
 
+  it('adds a recorded roll to the roll log from the payload the server sends ({ sessionId, roll })', async () => {
+    const signalR = await import('@microsoft/signalr')
+    const dice = await import('../../dice/api')
+    // Its own empty log: the shared mock returns one array instance, which the view adds to.
+    vi.mocked(dice.getRollLog).mockResolvedValueOnce([])
+    const wrapper = await mountView()
+    const connection = (signalR.HubConnectionBuilder as unknown as () => { build: () => { on: { mock: { calls: unknown[][] } } } })().build()
+    // The view connects to the hub after its other start-up reads.
+    const handler = await vi.waitFor(() => {
+      const found = connection.on.mock.calls.filter((c) => c[0] === 'RollRecorded').at(-1)?.[1]
+      if (!found) throw new Error('RollRecorded handler not registered yet')
+      return found as (n: unknown) => void
+    })
+
+    handler({
+      sessionId: 'session-1',
+      roll: {
+        id: 'roll-7',
+        sessionId: 'session-1',
+        characterId: null,
+        rollerParticipantId: 'participant-1',
+        rollerName: 'Thorin',
+        formula: '1d20+5',
+        dieResults: [12],
+        modifier: 5,
+        total: 17,
+        isManual: false,
+        visibility: 1,
+        context: 'secret insight',
+        createdAt: '2024-01-01T10:08:00Z',
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Thorin: 1d20+5 = 17 (secret insight)')
+  })
+
   it('renders the session name in the header', async () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('Friday Night Game')

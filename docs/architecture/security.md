@@ -54,6 +54,35 @@ The desktop sidecar also supplies the key participant tokens are signed with
 (`desktop/src-tauri/src/signing_key.rs`): 256 random bits, generated once and kept in the app
 data directory, never logged. Tokens therefore survive an app restart.
 
+## Session scope
+
+A participant token is good for **its own session only**. The `SessionMember` policy (`SessionScopeRequirement`,
+next to the role handlers) is on every controller with a session-keyed route, at class level, so a new action
+inherits it; a test fails if a session-keyed route lacks it (only `join` and `join-info` may be anonymous).
+
+- The token's `sid` must be the session the request is about: the session in the route, or the session that owns
+  what the route names. A **campaign** must be the campaign of the token's session; a **character** belongs to its
+  campaign (`Character.CampaignId`), so to every session of that campaign; an **adventure run** must be running in
+  the token's session (a run with no play session: its campaign); an **AI proposal** must have been made in it. A
+  `campaignId` query parameter is checked the same way. An id that does not exist passes, so the endpoint answers
+  404 as it would for anyone.
+- The participant must be approved and not denied (the roster check of `PlayerSeat`). A participant still waiting
+  may only reconnect. Refusals are 403 with the same problem bodies as the adventure endpoints: "Not in this
+  session", "Waiting for approval", or `code: "participant-denied"`.
+- The trusted local host is exempt where the role policies exempt it. A Host token needs only the session match.
+- HumanDm is treated like the host by the role policy (DmOrHost), within its own session only.
+
+What a Player reads in their own session:
+
+| Read | Player | Host / HumanDm |
+| --- | --- | --- |
+| Roll log | public rolls, and their own private ones (filtered in the query) | everything |
+| Roll broadcast (`RollRecorded`) | public rolls; private ones only their own | everything |
+| Rolling | always as themselves (the token's `pid`; the body's roller is ignored) | may roll for someone else |
+| Characters | player characters they own or were assigned; never NPCs; 404 by id otherwise; an empty list when none | the campaign's characters |
+| Combat | `GET .../combat/public`: names, initiative, turn, round, conditions, whether someone is down, and player characters' HP and death saves; never NPC HP | the full encounter |
+| Participants | approved participants; waiting ones by name only | every detail |
+
 ## Anonymous join lookup
 
 The join page needs a little information before the player has a token, so

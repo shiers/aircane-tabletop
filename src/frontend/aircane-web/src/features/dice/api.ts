@@ -26,6 +26,17 @@ export interface RollDto {
   visibility: RollVisibility
   context: string | null
   createdAt: string
+  /** The roller's display name; null when the roller is not a participant (the host). */
+  rollerName?: string | null
+}
+
+/**
+ * The `RollRecorded` hub event: the roll, wrapped with the session it belongs to. A private roll is sent
+ * only to the person who rolled it and the host.
+ */
+export interface RollRecordedEvent {
+  sessionId: string
+  roll: RollDto
 }
 
 export interface RollDiceRequest {

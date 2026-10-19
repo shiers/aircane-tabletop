@@ -15,7 +15,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from './store'
 import { SessionStatus, reconnectSession } from './api'
-import { rollDice, RollVisibility, type RollDto } from '../dice/api'
+import { rollDice, RollVisibility, type RollDto, type RollRecordedEvent } from '../dice/api'
 import ManualRollForm from '../dice/ManualRollForm.vue'
 import ChatPanel from './ChatPanel.vue'
 import type { ChatMessage } from './ChatPanel.vue'
@@ -187,7 +187,9 @@ async function connectHub(): Promise<void> {
           })
         },
 
-        RollRecorded: (roll: RollDto) => {
+        // The hub sends { sessionId, roll }; someone else's private roll never arrives here.
+        RollRecorded: (n: RollRecordedEvent) => {
+          const roll = n.roll
           pushEvent({
             actor: 'Player',
             eventType: 'RollRecorded',
@@ -389,9 +391,10 @@ function formatRollTime(timestamp: string): string {
 }
 
 function rollSummary(roll: RollDto): string {
+  const who = roll.rollerName ? `${roll.rollerName}: ` : ''
   const formula = roll.formula ? `${roll.formula} = ` : ''
   const context = roll.context ? ` (${roll.context})` : ''
-  return `${formula}${roll.total}${context}`
+  return `${who}${formula}${roll.total}${context}`
 }
 
 // ---------------------------------------------------------------------------

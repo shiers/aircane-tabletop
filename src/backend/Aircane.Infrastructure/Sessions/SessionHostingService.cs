@@ -23,17 +23,24 @@ public sealed class SessionHostingService : ISessionHostingService
     private readonly ITokenRevocationService _tokenRevocation;
     private readonly IParticipantTokenService _tokenService;
     private readonly ILogger<SessionHostingService> _logger;
+    private readonly ISessionHubNotifier? _hubNotifier;
 
+    /// <param name="hubNotifier">
+    /// Announces joins, approvals and denials to the session's SignalR group. Optional so the service
+    /// still works where no hub is registered (a failure to broadcast never fails the request).
+    /// </param>
     public SessionHostingService(
         AircaneDbContext db,
         ITokenRevocationService tokenRevocation,
         IParticipantTokenService tokenService,
-        ILogger<SessionHostingService> logger)
+        ILogger<SessionHostingService> logger,
+        ISessionHubNotifier? hubNotifier = null)
     {
         _db = db;
         _tokenRevocation = tokenRevocation;
         _tokenService = tokenService;
         _logger = logger;
+        _hubNotifier = hubNotifier;
     }
 
     /// <inheritdoc />
@@ -51,7 +58,8 @@ public sealed class SessionHostingService : ISessionHostingService
             name: request.Name,
             accessMode: request.AccessMode,
             inviteCodeHash: inviteCodeHash,
-            status: SessionStatus.Active);
+            status: SessionStatus.Active,
+            requireHostApproval: request.RequireHostApproval);
 
         session.StartedAt = DateTimeOffset.UtcNow;
 
@@ -94,7 +102,7 @@ public sealed class SessionHostingService : ISessionHostingService
     {
         var participants = await _db.SessionParticipants
             .AsNoTracking()
-            .Where(p => p.SessionId == sessionId)
+            .Where(p => p.SessionId == sessionId && !p.IsDenied)
             .OrderBy(p => p.JoinedAt)
             .ToListAsync(cancellationToken);
 
@@ -119,11 +127,13 @@ public sealed class SessionHostingService : ISessionHostingService
         if (!string.Equals(session.InviteCodeHash, expectedHash, StringComparison.Ordinal))
             throw new UnauthorizedAccessException("Invalid invite code.");
 
+        // The host asked to approve each joiner (the default), or let anyone with the code straight in.
+        var autoApproved = !session.RequireHostApproval;
         var participant = new SessionParticipant(
             sessionId: request.SessionId,
             displayName: request.DisplayName,
             role: ParticipantRole.Player,
-            isApproved: false);
+            isApproved: autoApproved);
 
         _db.SessionParticipants.Add(participant);
         await _db.SaveChangesAsync(cancellationToken);
@@ -141,8 +151,19 @@ public sealed class SessionHostingService : ISessionHostingService
         await _db.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Participant joined session {SessionId}: {DisplayName} ({ParticipantId})",
-            request.SessionId, request.DisplayName, participant.Id);
+            "Participant joined session {SessionId}: {DisplayName} ({ParticipantId}), approved: {IsApproved}",
+            request.SessionId, request.DisplayName, participant.Id, participant.IsApproved);
+
+        // Tell the host (and the table) someone joined; the roster DTO carries no token or invite code.
+        await NotifyAsync(hub => hub.NotifyParticipantJoinedAsync(
+            request.SessionId, ToParticipantDto(participant), cancellationToken));
+        if (autoApproved)
+        {
+            await NotifyAsync(hub => hub.NotifyParticipantApprovedAsync(
+                request.SessionId,
+                new ParticipantApprovedNotification(request.SessionId, participant.Id, participant.DisplayName, AutoApproved: true),
+                cancellationToken));
+        }
 
         return new JoinSessionResult(
             ParticipantId: participant.Id,
@@ -162,12 +183,72 @@ public sealed class SessionHostingService : ISessionHostingService
             .FirstOrDefaultAsync(p => p.SessionId == sessionId && p.Id == participantId, cancellationToken)
             ?? throw new KeyNotFoundException($"Participant '{participantId}' not found in session '{sessionId}'.");
 
+        // A denied request has no valid token any more; approving it would bring back a participant
+        // who cannot act. They must join again.
+        if (participant.IsDenied)
+        {
+            throw new InvalidOperationException(
+                "That join request was denied. The person has to join again with the invite code before they can be approved.");
+        }
+
+        var wasApproved = participant.IsApproved;
         participant.IsApproved = true;
         await _db.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
             "Participant approved: {ParticipantId} in session {SessionId}",
             participantId, sessionId);
+
+        if (!wasApproved)
+        {
+            await NotifyAsync(hub => hub.NotifyParticipantApprovedAsync(
+                sessionId,
+                new ParticipantApprovedNotification(sessionId, participant.Id, participant.DisplayName, AutoApproved: false),
+                cancellationToken));
+        }
+
+        return ToParticipantDto(participant);
+    }
+
+    /// <inheritdoc />
+    public async Task<ParticipantDto> DenyParticipantAsync(
+        Guid sessionId,
+        Guid participantId,
+        CancellationToken cancellationToken = default)
+    {
+        var participant = await _db.SessionParticipants
+            .FirstOrDefaultAsync(p => p.SessionId == sessionId && p.Id == participantId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Participant '{participantId}' not found in session '{sessionId}'.");
+
+        if (participant.IsDenied)
+            return ToParticipantDto(participant);
+
+        if (participant.IsApproved)
+        {
+            throw new InvalidOperationException(
+                "That player is already approved and taking part. Only a pending join request can be denied.");
+        }
+
+        // Mark first, so a request that arrives while the token is being revoked is already explained.
+        participant.IsDenied = true;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        // Stop the token working for this session. Every request is checked against the revoked list
+        // (see the JWT bearer events in Program.cs), so this takes effect on the next request.
+        if (!string.IsNullOrWhiteSpace(participant.TokenId))
+        {
+            var expiresAt = participant.TokenExpiresAt ?? DateTimeOffset.UtcNow.AddDays(7);
+            await _tokenRevocation.RevokeTokensAsync(
+                [new RevokedTokenRecord(participant.TokenId, sessionId, expiresAt)], cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "Participant denied: {ParticipantId} in session {SessionId}", participantId, sessionId);
+
+        await NotifyAsync(hub => hub.NotifyParticipantDeniedAsync(
+            sessionId,
+            new ParticipantDeniedNotification(sessionId, participant.Id, participant.DisplayName),
+            cancellationToken));
 
         return ToParticipantDto(participant);
     }
@@ -219,6 +300,7 @@ public sealed class SessionHostingService : ISessionHostingService
         var activeTokens = await _db.SessionParticipants
             .AsNoTracking()
             .Where(p => p.SessionId == sessionId
+                && !p.IsDenied   // already revoked when they were denied
                 && p.TokenId != null
                 && p.TokenExpiresAt != null
                 && p.TokenExpiresAt > DateTimeOffset.UtcNow)
@@ -340,5 +422,22 @@ public sealed class SessionHostingService : ISessionHostingService
         CharacterId: p.CharacterId,
         IsApproved: p.IsApproved,
         JoinedAt: p.JoinedAt,
-        LastSeenAt: p.LastSeenAt);
+        LastSeenAt: p.LastSeenAt,
+        IsDenied: p.IsDenied);
+
+    /// <summary>Broadcasts to the play session's group. Best effort: a hub failure never fails the request.</summary>
+    private async Task NotifyAsync(Func<ISessionHubNotifier, Task> send)
+    {
+        if (_hubNotifier is null)
+            return;
+
+        try
+        {
+            await send(_hubNotifier);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast a session lobby event");
+        }
+    }
 }

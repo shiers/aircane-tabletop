@@ -25,18 +25,26 @@ public class Session : EntityBase
     /// </summary>
     public string? Summary { get; set; }
 
+    /// <summary>
+    /// True (the default) when the host must approve each joiner before they can take part. When false
+    /// a joiner is approved the moment they join. Sessions created before this setting existed are true.
+    /// </summary>
+    public bool RequireHostApproval { get; set; } = true;
+
     public Session(
         Guid campaignId,
         string name,
         SessionAccessMode accessMode,
         string inviteCodeHash,
-        SessionStatus status = SessionStatus.Pending)
+        SessionStatus status = SessionStatus.Pending,
+        bool requireHostApproval = true)
     {
         CampaignId = campaignId;
         Name = name;
         AccessMode = accessMode;
         InviteCodeHash = inviteCodeHash;
         Status = status;
+        RequireHostApproval = requireHostApproval;
     }
 
     // EF Core constructor

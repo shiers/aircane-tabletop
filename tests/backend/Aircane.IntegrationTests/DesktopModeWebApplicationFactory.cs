@@ -102,6 +102,10 @@ public class DesktopModeWebApplicationFactory : AircaneWebApplicationFactory
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromSeconds(30),
                 };
+
+                // The events Program gives the scheme: per-request revocation, and the clear refusal for
+                // a participant the host denied.
+                options.Events = ParticipantJwtEvents.Create();
             });
 
             // Undo the base factory's always-Host test scheme: authenticate with the app's own

@@ -112,9 +112,12 @@ public sealed class AdventureSessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Starts a group run of an approved adventure: the listed participants of the campaign's
-    /// current play session take turns, in the order given. 201 when a run is created; 200 with the
-    /// existing run when the campaign is already running this adventure as a group (idempotent).
+    /// Starts a group run of an approved adventure: the listed participants of a play session take turns,
+    /// in the order given. The play session is <c>playSessionId</c> when the request names one (it must belong
+    /// to the campaign and not have ended: 404 if it does not exist, 400 otherwise), and otherwise the
+    /// campaign's most recent play session that has not ended. 201 when a run is created; 200 with the
+    /// existing run when the campaign is already running this adventure as a group (idempotent); 409 when
+    /// that existing run belongs to a different play session than the one named.
     /// </summary>
     [HttpPost("start-group")]
     [ProducesResponseType(typeof(AdventureSessionStateDto), StatusCodes.Status201Created)]
@@ -134,6 +137,8 @@ public sealed class AdventureSessionsController : ControllerBase
             return Problem400("generatedAdventureId and campaignId are required.");
         if (request.ParticipantIds is null || request.ParticipantIds.Count == 0)
             return Problem400("participantIds must list at least one participant.");
+        if (request.PlaySessionId == Guid.Empty)
+            return Problem400("playSessionId must be a play session id, or left out.");
 
         try
         {
@@ -153,8 +158,21 @@ public sealed class AdventureSessionsController : ControllerBase
                 });
             }
 
+            // Resuming returns the run as it is, and that run belongs to one play session. If the host named a
+            // different one, the players waiting there are not in it: say so instead of handing back a run
+            // they cannot join.
+            if (resuming && request.PlaySessionId is { } named && active!.SessionId != named)
+            {
+                return Conflict(new ProblemDetails
+                {
+                    Title = "Adventure already running in another session",
+                    Detail = "This campaign is already running this adventure in a different play session, so the players in the session you named are not in it. End or finish that run first.",
+                    Status = StatusCodes.Status409Conflict,
+                });
+            }
+
             var session = await _adventureSessions.StartGroupSessionAsync(
-                request.GeneratedAdventureId, request.CampaignId, request.ParticipantIds, cancellationToken);
+                request.GeneratedAdventureId, request.CampaignId, request.ParticipantIds, request.PlaySessionId, cancellationToken);
             var state = await _adventureSessions.GetSessionStateAsync(session.Id, cancellationToken);
 
             return resuming

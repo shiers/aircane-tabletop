@@ -117,6 +117,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
         Guid generatedAdventureId,
         Guid campaignId,
         IReadOnlyList<Guid> participantIds,
+        Guid? playSessionId = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(participantIds);
@@ -152,13 +153,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
         if (participantIds.Distinct().Count() != participantIds.Count)
             throw new InvalidOperationException("A participant can appear in the turn order only once.");
 
-        var playSession = await _db.Sessions
-            .AsNoTracking()
-            .Where(s => s.CampaignId == campaignId && s.Status != SessionStatus.Ended)
-            .OrderByDescending(s => s.CreatedAt)
-            .FirstOrDefaultAsync(ct)
-            ?? throw new InvalidOperationException(
-                "This campaign has no play session in progress. Start a session and let the players join before starting a group run.");
+        var playSession = await ResolvePlaySessionAsync(campaignId, playSessionId, ct);
 
         var eligible = await FindActiveParticipantsAsync(playSession.Id, participantIds, ct);
         var ineligible = participantIds.Where(id => !eligible.ContainsKey(id)).ToList();
@@ -193,6 +188,36 @@ public sealed class AdventureSessionService : IAdventureSessionService
             }, ct);
 
         return session;
+    }
+
+    /// <summary>
+    /// The play session a new group run belongs to: the one the host named, which must belong to the
+    /// campaign and not have ended, or, when none was named, the campaign's most recent one that has not ended.
+    /// </summary>
+    private async Task<Session> ResolvePlaySessionAsync(Guid campaignId, Guid? playSessionId, CancellationToken ct)
+    {
+        if (playSessionId is not { } id)
+        {
+            return await _db.Sessions
+                .AsNoTracking()
+                .Where(s => s.CampaignId == campaignId && s.Status != SessionStatus.Ended)
+                .OrderByDescending(s => s.CreatedAt)
+                .FirstOrDefaultAsync(ct)
+                ?? throw new InvalidOperationException(
+                    "This campaign has no play session in progress. Start a session and let the players join before starting a group run.");
+        }
+
+        var named = await _db.Sessions.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct)
+            ?? throw new KeyNotFoundException($"Play session '{id}' not found.");
+
+        if (named.CampaignId != campaignId)
+            throw new InvalidOperationException("That play session belongs to a different campaign.");
+
+        if (named.Status == SessionStatus.Ended)
+            throw new InvalidOperationException(
+                "That play session has ended. Start a new session and let the players join before starting a group run.");
+
+        return named;
     }
 
     /// <inheritdoc />
@@ -234,6 +259,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
             session.SessionId!.Value,
             new TurnAdvancedNotification(sessionId, previousId, nextId, NameOf(names, nextId), session.CurrentRound),
             ct));
+        await NotifyStateChangedAsync(session.SessionId, sessionId, "TurnAdvanced", ct);
 
         return session;
     }
@@ -286,6 +312,71 @@ public sealed class AdventureSessionService : IAdventureSessionService
     /// <inheritdoc />
     public Task<AdventureSession?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => _db.AdventureSessions.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
+
+    /// <summary>How many of the latest exchanges the player view carries.</summary>
+    private const int PlayerViewNarrationEntries = 20;
+
+    /// <inheritdoc />
+    public async Task<PlayerAdventureRunDto?> GetPlayerRunViewAsync(
+        Guid playSessionId, Guid? callerParticipantId, CancellationToken ct = default)
+    {
+        var session = await _db.AdventureSessions
+            .AsNoTracking()
+            .Where(s => s.SessionId == playSessionId && s.Status == AdventureSessionStatus.InProgress)
+            .OrderByDescending(s => s.LastActivityAt)
+            .FirstOrDefaultAsync(ct);
+        if (session is null)
+            return null;
+
+        var adventure = await LoadAdventureAsync(session, ct);
+        var scenes = adventure.Scenes ?? [];
+        var scene = FindScene(adventure, session.CurrentSceneId);
+        var sceneNumber = scenes.ToList().FindIndex(s => SameId(s.SceneId, session.CurrentSceneId)) + 1;
+
+        var turnOrder = session.IsGroup
+            ? BuildTurnOrder(session, await LoadParticipantNamesAsync(session, ct))
+            : [];
+        var activeName = turnOrder.FirstOrDefault(t => t.IsActive)?.ParticipantName;
+
+        // A pending roll is owed by whoever holds the turn (it is cleared when the turn passes), so only
+        // that player is told about it.
+        var pending = !string.IsNullOrWhiteSpace(session.PendingRollLabel)
+                      && callerParticipantId is { } caller
+                      && session.ActiveParticipantId == caller
+            ? new PlayerPendingRollDto(session.PendingRollLabel!, session.PendingRollDC)
+            : null;
+
+        // The saved conversation is the public story: narration the AI DM gave the table and the actions
+        // players typed. The AI's private DM note is never stored.
+        var latest = await _db.AdventureSessionEntries
+            .AsNoTracking()
+            .Where(e => e.AdventureSessionId == session.Id)
+            .OrderByDescending(e => e.CreatedAt)
+            .ThenByDescending(e => e.EntryType)
+            .Take(PlayerViewNarrationEntries)
+            .ToListAsync(ct);
+        latest.Reverse();
+
+        return new PlayerAdventureRunDto(
+            RunId: session.Id,
+            AdventureTitle: adventure.Pitch?.Title ?? "Untitled adventure",
+            Status: session.Status.ToString(),
+            IsGroup: session.IsGroup,
+            // Only the read-aloud text: the scene's Description is a synopsis of what happens and can spoil it.
+            Scene: new PlayerSceneDto(scene?.Title ?? "Unknown scene", NullIfBlank(scene?.ReadAloudText)),
+            CurrentSceneNumber: sceneNumber,
+            TotalScenes: scenes.Count,
+            ActiveParticipantId: session.IsGroup ? session.ActiveParticipantId : null,
+            ActiveParticipantName: activeName,
+            CurrentRound: session.CurrentRound,
+            TurnOrder: turnOrder,
+            PendingRoll: pending,
+            RecentNarration: latest
+                .Select(e => new PlayerNarrationEntryDto(e.EntryType.ToString(), e.Content, e.CreatedAt))
+                .ToList());
+    }
+
+    private static string? NullIfBlank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
 
     /// <inheritdoc />
     public Task<AdventureSession?> GetActiveByCampaignAsync(Guid campaignId, CancellationToken ct = default)
@@ -362,6 +453,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
             session.SessionId!.Value,
             new AdventureSceneAdvancedNotification(sessionId, previousSceneId, target.SceneId, transitionNarration),
             ct));
+        await NotifyStateChangedAsync(session.SessionId, sessionId, "SceneAdvanced", ct);
 
         return session;
     }
@@ -568,12 +660,13 @@ public sealed class AdventureSessionService : IAdventureSessionService
         string? sceneIdAtStart,
         CancellationToken ct = default)
     {
-        var currentSceneId = await _db.AdventureSessions
+        var run = await _db.AdventureSessions
             .AsNoTracking()
             .Where(s => s.Id == sessionId)
-            .Select(s => s.CurrentSceneId)
+            .Select(s => new { s.CurrentSceneId, s.SessionId })
             .FirstOrDefaultAsync(ct)
             ?? throw new KeyNotFoundException($"Adventure session '{sessionId}' not found.");
+        var currentSceneId = run.CurrentSceneId;
 
         // Entries are read back by time, so keep it strictly increasing per run: the action before its
         // answer, and each exchange after the previous one, even when the clock has not ticked.
@@ -606,6 +699,9 @@ public sealed class AdventureSessionService : IAdventureSessionService
         });
 
         await _db.SaveChangesAsync(ct);
+
+        // The table can now read the answer: tell the other players to look (a signal only, no text).
+        await NotifyStateChangedAsync(run.SessionId, sessionId, "PlayerAction", ct);
     }
 
     /// <inheritdoc />
@@ -1255,9 +1351,12 @@ public sealed class AdventureSessionService : IAdventureSessionService
         }
     }
 
-    private async Task NotifyAsync(AdventureSession session, Func<ISessionHubNotifier, Task> send)
+    private Task NotifyAsync(AdventureSession session, Func<ISessionHubNotifier, Task> send)
+        => NotifyAsync(session.SessionId, session.Id, send);
+
+    private async Task NotifyAsync(Guid? playSessionId, Guid runId, Func<ISessionHubNotifier, Task> send)
     {
-        if (_hubNotifier is null || session.SessionId is null)
+        if (_hubNotifier is null || playSessionId is null)
             return;
 
         try
@@ -1267,7 +1366,18 @@ public sealed class AdventureSessionService : IAdventureSessionService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex,
-                "Failed to broadcast adventure event for adventure session {AdventureSessionId}", session.Id);
+                "Failed to broadcast adventure event for adventure session {AdventureSessionId}", runId);
         }
     }
+
+    /// <summary>
+    /// Tells the play session's group that something players can see changed. A signal only: it carries the
+    /// run id and a reason, never scene text, narration or notes, so it cannot leak hidden content. Clients
+    /// respond by reading the player view.
+    /// </summary>
+    private Task NotifyStateChangedAsync(Guid? playSessionId, Guid runId, string reason, CancellationToken ct)
+        => NotifyAsync(playSessionId, runId, hub => hub.NotifyAdventureStateChangedAsync(
+            playSessionId!.Value,
+            new AdventureStateChangedNotification(runId, reason, DateTimeOffset.UtcNow),
+            ct));
 }

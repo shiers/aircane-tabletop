@@ -36,13 +36,18 @@ public sealed record AdventureSessionActionRequest(string ActionText);
 /// <param name="GeneratedAdventureId">The approved adventure to play.</param>
 /// <param name="CampaignId">The campaign the run belongs to.</param>
 /// <param name="ParticipantIds">
-/// Participants of the campaign's current play session, in the order they take their turns.
-/// The first one acts first.
+/// Participants of the play session, in the order they take their turns. The first one acts first.
+/// </param>
+/// <param name="PlaySessionId">
+/// Optional. The play session the run belongs to (the one the players joined). It must belong to the
+/// campaign and not have ended. When omitted the campaign's most recent play session that has not ended is
+/// used, which is only right if the host has one open at a time.
 /// </param>
 public sealed record StartGroupAdventureSessionRequest(
     Guid GeneratedAdventureId,
     Guid CampaignId,
-    IReadOnlyList<Guid> ParticipantIds);
+    IReadOnlyList<Guid> ParticipantIds,
+    Guid? PlaySessionId = null);
 
 /// <summary>
 /// Request body for adding a participant to the end of a group run's turn order.
@@ -180,3 +185,44 @@ public sealed record AdventureSessionActionResponse(
     string? PrivateDmNote,
     IReadOnlyList<AdventureActionOutcomeDto> Actions,
     AdventureSessionStateDto State);
+
+/// <summary>
+/// The player-safe view of an adventure run: what a Player at the table may be told. Everything here is
+/// something the table already knows or the acting player was shown.
+/// <para>
+/// <b>Included:</b> the adventure title, the current scene's title and read-aloud text, how far through
+/// the adventure it is, the acting participant, the turn order, the round, a pending roll (only to the
+/// player who owes it), and the recent public narration (what the AI DM said to the table and what
+/// players typed).
+/// </para>
+/// <para>
+/// <b>Excluded:</b> DM notes, the scene's full description (a synopsis that can spoil what happens),
+/// hidden secrets and clues, NPC details, encounters, exits and objectives, the AI's private DM note
+/// (it is never stored), and internal ids (adventure, campaign, character).
+/// </para>
+/// </summary>
+public sealed record PlayerAdventureRunDto(
+    Guid RunId,
+    string AdventureTitle,
+    string Status,
+    bool IsGroup,
+    PlayerSceneDto Scene,
+    int CurrentSceneNumber,
+    int TotalScenes,
+    Guid? ActiveParticipantId,
+    string? ActiveParticipantName,
+    int CurrentRound,
+    IReadOnlyList<ParticipantTurnDto> TurnOrder,
+    PlayerPendingRollDto? PendingRoll,
+    IReadOnlyList<PlayerNarrationEntryDto> RecentNarration);
+
+/// <summary>The current scene as a Player sees it: its title and the text meant to be read to the table.</summary>
+/// <param name="Description">The read-aloud text; null when the scene has none.</param>
+public sealed record PlayerSceneDto(string Title, string? Description);
+
+/// <summary>A roll the AI DM asked the acting player for and that has not been answered yet.</summary>
+public sealed record PlayerPendingRollDto(string Label, int? Dc);
+
+/// <summary>One line of the public story so far.</summary>
+/// <param name="Kind">"PlayerAction" (what a player typed) or "AiNarration" (what the AI DM narrated).</param>
+public sealed record PlayerNarrationEntryDto(string Kind, string Text, DateTimeOffset CreatedAt);

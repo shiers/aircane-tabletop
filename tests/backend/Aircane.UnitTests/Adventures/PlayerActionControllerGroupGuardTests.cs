@@ -252,6 +252,7 @@ public sealed class PlayerActionControllerGroupGuardTests : IDisposable
         public Task<(SessionDto Session, string InviteCode)> CreateSessionAsync(CreateSessionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<JoinSessionResult> JoinSessionAsync(JoinSessionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ParticipantDto> ApproveParticipantAsync(Guid sessionId, Guid participantId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<ParticipantDto> DenyParticipantAsync(Guid sessionId, Guid participantId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ParticipantDto> AssignCharacterAsync(Guid sessionId, Guid participantId, Guid characterId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ParticipantDto>> GetParticipantsAsync(Guid sessionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<EndSessionResponse> EndSessionAsync(Guid sessionId, string? summary, CancellationToken cancellationToken = default) => throw new NotSupportedException();

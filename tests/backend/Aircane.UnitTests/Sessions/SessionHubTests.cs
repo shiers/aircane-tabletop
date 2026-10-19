@@ -258,6 +258,44 @@ public class SessionHubNotifierTests
         Assert.Equal("ImportStatusUpdated", _fakeContext.LastMethod);
     }
 
+    // ── Group lobby events ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task NotifyParticipantApprovedAsync_UsesCorrectGroupAndEvent()
+    {
+        var sessionId = NewSession();
+
+        await _notifier.NotifyParticipantApprovedAsync(
+            sessionId, new ParticipantApprovedNotification(sessionId, Guid.NewGuid(), "Alice", AutoApproved: true));
+
+        Assert.Equal(SessionHub.SessionGroupName(sessionId), _fakeContext.LastGroupName);
+        Assert.Equal("ParticipantApproved", _fakeContext.LastMethod);
+    }
+
+    [Fact]
+    public async Task NotifyParticipantDeniedAsync_UsesCorrectGroupAndEvent()
+    {
+        var sessionId = NewSession();
+
+        await _notifier.NotifyParticipantDeniedAsync(
+            sessionId, new ParticipantDeniedNotification(sessionId, Guid.NewGuid(), "Mallory"));
+
+        Assert.Equal(SessionHub.SessionGroupName(sessionId), _fakeContext.LastGroupName);
+        Assert.Equal("ParticipantDenied", _fakeContext.LastMethod);
+    }
+
+    [Fact]
+    public async Task NotifyAdventureStateChangedAsync_UsesCorrectGroupAndEvent()
+    {
+        var sessionId = NewSession();
+
+        await _notifier.NotifyAdventureStateChangedAsync(
+            sessionId, new AdventureStateChangedNotification(Guid.NewGuid(), "TurnAdvanced", DateTimeOffset.UtcNow));
+
+        Assert.Equal(SessionHub.SessionGroupName(sessionId), _fakeContext.LastGroupName);
+        Assert.Equal("AdventureStateChanged", _fakeContext.LastMethod);
+    }
+
     // ── Group isolation ───────────────────────────────────────────────────────
 
     [Fact]

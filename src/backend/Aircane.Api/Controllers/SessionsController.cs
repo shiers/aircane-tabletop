@@ -240,11 +240,17 @@ public sealed class SessionsController : ControllerBase
             "Participant {ParticipantId} reconnected to session {SessionId}",
             claims.ParticipantId, claims.SessionId);
 
+        // Reconnecting never needs approval: a participant who is still waiting reconnects fine, but is not
+        // yet allowed to act. Say which, so a waiting page that was reloaded knows where it stands.
+        var roster = await _sessions.GetParticipantsAsync(id, cancellationToken);
+        var isApproved = roster.Any(p => p.Id == claims.ParticipantId && p.IsApproved);
+
         return Ok(new ReconnectResult(
             SessionId: claims.SessionId,
             ParticipantId: claims.ParticipantId,
             DisplayName: claims.DisplayName,
-            Role: claims.Role));
+            Role: claims.Role,
+            IsApproved: isApproved));
     }
 
     /// <summary>
@@ -343,6 +349,64 @@ public sealed class SessionsController : ControllerBase
         catch (KeyNotFoundException)
         {
             return NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Cannot approve",
+                Detail = ex.Message,
+                Status = StatusCodes.Status409Conflict,
+            });
+        }
+    }
+
+    /// <summary>
+    /// Denies a pending join request (Host only). The participant is marked denied and dropped from the
+    /// roster, their token is revoked so every later request with it is refused (403, "join request
+    /// declined"), and the session's group is told (<c>ParticipantDenied</c>). Only a pending request can
+    /// be denied (409 for someone already approved). Denying twice is harmless. A denied person may join
+    /// again with the invite code; that is a new request.
+    /// </summary>
+    [HttpPost("api/sessions/{id:guid}/deny-participant")]
+    [Authorize(Policy = AuthorizationPolicies.HostOnly)]
+    [EnableRateLimiting(RateLimitingSettings.JoinPolicy)]
+    [ProducesResponseType(typeof(ParticipantDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> DenyParticipant(
+        Guid id,
+        [FromBody] DenyParticipantBody body,
+        CancellationToken cancellationToken)
+    {
+        if (body is null || body.ParticipantId == Guid.Empty)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation failed",
+                Detail = "ParticipantId is required.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+
+        try
+        {
+            var dto = await _sessions.DenyParticipantAsync(id, body.ParticipantId, cancellationToken);
+            return Ok(dto);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Cannot deny",
+                Detail = ex.Message,
+                Status = StatusCodes.Status409Conflict,
+            });
         }
     }
 
@@ -541,6 +605,10 @@ public sealed record JoinSessionBody(
 public sealed record ApproveParticipantBody(
     Guid ParticipantId);
 
+/// <summary>Request body for denying a pending join request. The session ID comes from the route.</summary>
+public sealed record DenyParticipantBody(
+    Guid ParticipantId);
+
 /// <summary>
 /// Request body for assigning a character to a participant.
 /// </summary>
@@ -555,4 +623,5 @@ public sealed record ReconnectResult(
     Guid SessionId,
     Guid ParticipantId,
     string DisplayName,
-    string Role);
+    string Role,
+    bool IsApproved = false);

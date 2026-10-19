@@ -61,7 +61,35 @@ internal sealed class RecordingSessionHubNotifier : ISessionHubNotifier
         return Task.CompletedTask;
     }
 
-    public Task NotifyParticipantJoinedAsync(Guid sessionId, ParticipantDto participant, CancellationToken ct = default) => Task.CompletedTask;
+    public List<(Guid Group, ParticipantDto Participant)> ParticipantsJoined { get; } = [];
+    public List<(Guid Group, ParticipantApprovedNotification Event)> ParticipantsApproved { get; } = [];
+    public List<(Guid Group, ParticipantDeniedNotification Event)> ParticipantsDenied { get; } = [];
+    public List<(Guid Group, AdventureStateChangedNotification Event)> StateChanges { get; } = [];
+
+    public Task NotifyParticipantJoinedAsync(Guid sessionId, ParticipantDto participant, CancellationToken ct = default)
+    {
+        ParticipantsJoined.Add((sessionId, participant));
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyParticipantApprovedAsync(Guid sessionId, ParticipantApprovedNotification notification, CancellationToken ct = default)
+    {
+        ParticipantsApproved.Add((sessionId, notification));
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyParticipantDeniedAsync(Guid sessionId, ParticipantDeniedNotification notification, CancellationToken ct = default)
+    {
+        ParticipantsDenied.Add((sessionId, notification));
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyAdventureStateChangedAsync(Guid sessionId, AdventureStateChangedNotification notification, CancellationToken ct = default)
+    {
+        StateChanges.Add((sessionId, notification));
+        return Task.CompletedTask;
+    }
+
     public Task NotifyParticipantLeftAsync(Guid sessionId, Guid participantId, string displayName, CancellationToken ct = default) => Task.CompletedTask;
     public Task NotifyChatMessageReceivedAsync(Guid sessionId, Guid participantId, string displayName, string text, DateTimeOffset sentAt, CancellationToken ct = default) => Task.CompletedTask;
     public Task NotifyRollRecordedAsync(Guid sessionId, RollDto roll, CancellationToken ct = default) => Task.CompletedTask;

@@ -806,6 +806,9 @@ namespace Aircane.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<bool>("RequireHostApproval")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTimeOffset?>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -841,6 +844,9 @@ namespace Aircane.Infrastructure.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<bool>("IsApproved")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDenied")
                         .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset>("JoinedAt")

@@ -27,21 +27,35 @@ public interface IAdventureSessionService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Starts a group run: several participants of the campaign's current play session take turns,
-    /// in <paramref name="participantIds"/> order, with the first one acting first. The run uses
-    /// that play session as its SignalR group. Idempotent: if the campaign already has an in-progress
-    /// group run of the same adventure, that run is returned.
+    /// Starts a group run: several participants of a play session take turns, in
+    /// <paramref name="participantIds"/> order, with the first one acting first. The run uses that play
+    /// session as its SignalR group. The play session is <paramref name="playSessionId"/> when given
+    /// (it must belong to the campaign and not be ended); otherwise the campaign's most recent play
+    /// session that has not ended. Idempotent: if the campaign already has an in-progress group run of
+    /// the same adventure, that run is returned.
     /// </summary>
-    /// <exception cref="KeyNotFoundException">The adventure or campaign does not exist.</exception>
+    /// <exception cref="KeyNotFoundException">The adventure, campaign or given play session does not exist.</exception>
     /// <exception cref="InvalidOperationException">
     /// The adventure is not approved, has no scenes, no participants were given (or one is listed twice
-    /// or is not an active participant of the campaign's current play session), or the campaign already
-    /// has a different adventure, or a solo run, in progress.
+    /// or is not an active participant of the play session), the given play session belongs to another
+    /// campaign or has ended, or the campaign already has a different adventure, or a solo run, in progress.
     /// </exception>
     Task<AdventureSession> StartGroupSessionAsync(
         Guid generatedAdventureId,
         Guid campaignId,
         IReadOnlyList<Guid> participantIds,
+        Guid? playSessionId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// What a Player may see of the in-progress adventure run attached to a play session, or null when
+    /// there is none. Contains no DM notes, hidden secrets, unrevealed content or DM-only AI notes; see
+    /// <see cref="PlayerAdventureRunDto"/>. <paramref name="callerParticipantId"/> is the asking
+    /// participant (null for the host), used to include a pending roll only for the player who owes it.
+    /// </summary>
+    Task<PlayerAdventureRunDto?> GetPlayerRunViewAsync(
+        Guid playSessionId,
+        Guid? callerParticipantId,
         CancellationToken ct = default);
 
     /// <summary>

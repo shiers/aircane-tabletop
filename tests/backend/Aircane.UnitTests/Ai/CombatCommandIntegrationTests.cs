@@ -302,6 +302,9 @@ public class CombatCommandIntegrationTests : IDisposable
         public Task NotifyAdventureSecretRevealedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AdventureSecretRevealedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
         public Task NotifyAdventureNpcUpdatedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AdventureNpcUpdatedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
         public Task NotifyAdventureCompletedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AdventureCompletedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyParticipantApprovedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.ParticipantApprovedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyParticipantDeniedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.ParticipantDeniedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NotifyAdventureStateChangedAsync(Guid sessionId, Aircane.Application.DTOs.Sessions.AdventureStateChangedNotification notification, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     // ── Death saves ────────────────────────────────────────────────────────────

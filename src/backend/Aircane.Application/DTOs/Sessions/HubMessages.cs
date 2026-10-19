@@ -282,3 +282,37 @@ public sealed record ParticipantJoinedAdventureNotification(
     Guid ParticipantId,
     string ParticipantName,
     int TurnPosition);
+
+// ── Lobby events ─────────────────────────────────────────────────────────────
+// Broadcast to the play session's group. None of these carries an invite code, a token or anything
+// else the recipient could use to act as someone: only names and ids already shown in the roster.
+
+/// <summary>
+/// Broadcast when the host approves a join request, or when a joiner is approved on joining because the
+/// session does not require approval (SignalR event <c>ParticipantApproved</c>).
+/// </summary>
+/// <param name="AutoApproved">True when the session approved the joiner itself (no host action).</param>
+public sealed record ParticipantApprovedNotification(
+    Guid SessionId,
+    Guid ParticipantId,
+    string DisplayName,
+    bool AutoApproved);
+
+/// <summary>Broadcast when the host denies a join request (SignalR event <c>ParticipantDenied</c>).</summary>
+public sealed record ParticipantDeniedNotification(
+    Guid SessionId,
+    Guid ParticipantId,
+    string DisplayName);
+
+/// <summary>
+/// Broadcast when something about an adventure run that players can see has changed (SignalR event
+/// <c>AdventureStateChanged</c>): the turn passed, the scene changed, or a player action was answered.
+/// It is deliberately only a signal. It carries no scene, narration or notes, so it can never leak
+/// hidden content; clients react by reading <c>GET /api/sessions/{id}/adventure-run</c>.
+/// <c>SessionId</c> is the ADVENTURE session id (the run), as in the other adventure events.
+/// </summary>
+/// <param name="Reason">"TurnAdvanced", "SceneAdvanced" or "PlayerAction".</param>
+public sealed record AdventureStateChangedNotification(
+    Guid SessionId,
+    string Reason,
+    DateTimeOffset ChangedAt);

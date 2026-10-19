@@ -27,7 +27,25 @@ public interface ISessionHostingService
     /// <summary>
     /// Approves a pending participant, allowing them to participate in the session.
     /// </summary>
+    /// <exception cref="KeyNotFoundException">The participant is not in the session.</exception>
+    /// <exception cref="InvalidOperationException">The participant was denied; a denied request cannot be approved.</exception>
     Task<ParticipantDto> ApproveParticipantAsync(
+        Guid sessionId,
+        Guid participantId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Denies a pending join request. The participant is marked denied (the record is kept, so the server
+    /// can say why), dropped from the roster, and their token is revoked, so every later request with it is
+    /// refused. Idempotent: denying someone already denied returns them unchanged. A denied person may join
+    /// again with the invite code, which makes a new request (the invite code is for the session, not the person).
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">The participant is not in the session.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The participant is already approved. Removing someone who is playing is a different action
+    /// (they may hold the turn in an adventure) and is not supported here.
+    /// </exception>
+    Task<ParticipantDto> DenyParticipantAsync(
         Guid sessionId,
         Guid participantId,
         CancellationToken cancellationToken = default);

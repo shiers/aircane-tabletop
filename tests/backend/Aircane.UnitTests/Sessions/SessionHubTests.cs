@@ -68,14 +68,14 @@ public class SessionHubNotifierTests
     // ── ParticipantJoined ─────────────────────────────────────────────────────
 
     [Fact]
-    public async Task NotifyParticipantJoinedAsync_UsesCorrectGroupAndEvent()
+    public async Task NotifyParticipantJoinedAsync_GoesToTheHostOnly()
     {
         var sessionId = NewSession();
         var participant = MakeParticipant(sessionId);
 
         await _notifier.NotifyParticipantJoinedAsync(sessionId, participant);
 
-        Assert.Equal(SessionHub.SessionGroupName(sessionId), _fakeContext.LastGroupName);
+        Assert.Equal(SessionHub.HostGroupName(sessionId), _fakeContext.LastGroupName);   // host only
         Assert.Equal("ParticipantJoined", _fakeContext.LastMethod);
     }
 
@@ -173,7 +173,7 @@ public class SessionHubNotifierTests
     // ── AIProposalCreated ─────────────────────────────────────────────────────
 
     [Fact]
-    public async Task NotifyAIProposalCreatedAsync_UsesCorrectGroupAndEvent()
+    public async Task NotifyAIProposalCreatedAsync_GoesToTheHostOnly()
     {
         var sessionId = NewSession();
         var notification = new AIProposalCreatedNotification(
@@ -181,20 +181,20 @@ public class SessionHubNotifierTests
 
         await _notifier.NotifyAIProposalCreatedAsync(sessionId, notification);
 
-        Assert.Equal(SessionHub.SessionGroupName(sessionId), _fakeContext.LastGroupName);
+        Assert.Equal(SessionHub.HostGroupName(sessionId), _fakeContext.LastGroupName);   // host only
         Assert.Equal("AIProposalCreated", _fakeContext.LastMethod);
     }
 
     // ── StateUpdated ──────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task NotifyStateUpdatedAsync_UsesCorrectGroupAndEvent()
+    public async Task NotifyStateUpdatedAsync_GoesToTheHostOnly()
     {
         var sessionId = NewSession();
 
         await _notifier.NotifyStateUpdatedAsync(sessionId, "{}", DateTimeOffset.UtcNow);
 
-        Assert.Equal(SessionHub.SessionGroupName(sessionId), _fakeContext.LastGroupName);
+        Assert.Equal(SessionHub.HostGroupName(sessionId), _fakeContext.LastGroupName);   // host only
         Assert.Equal("StateUpdated", _fakeContext.LastMethod);
     }
 
@@ -246,7 +246,7 @@ public class SessionHubNotifierTests
     // ── ImportStatusUpdated ───────────────────────────────────────────────────
 
     [Fact]
-    public async Task NotifyImportStatusUpdatedAsync_UsesCorrectGroupAndEvent()
+    public async Task NotifyImportStatusUpdatedAsync_GoesToTheHostOnly()
     {
         var sessionId = NewSession();
         var notification = new ImportStatusUpdatedNotification(
@@ -254,7 +254,7 @@ public class SessionHubNotifierTests
 
         await _notifier.NotifyImportStatusUpdatedAsync(sessionId, notification);
 
-        Assert.Equal(SessionHub.SessionGroupName(sessionId), _fakeContext.LastGroupName);
+        Assert.Equal(SessionHub.HostGroupName(sessionId), _fakeContext.LastGroupName);   // host only
         Assert.Equal("ImportStatusUpdated", _fakeContext.LastMethod);
     }
 
@@ -273,14 +273,17 @@ public class SessionHubNotifierTests
     }
 
     [Fact]
-    public async Task NotifyParticipantDeniedAsync_UsesCorrectGroupAndEvent()
+    public async Task NotifyParticipantDeniedAsync_GoesToTheHostAndTheDeniedParticipantOnly()
     {
         var sessionId = NewSession();
 
-        await _notifier.NotifyParticipantDeniedAsync(
-            sessionId, new ParticipantDeniedNotification(sessionId, Guid.NewGuid(), "Mallory"));
+        var mallory = Guid.NewGuid();
 
-        Assert.Equal(SessionHub.SessionGroupName(sessionId), _fakeContext.LastGroupName);
+        await _notifier.NotifyParticipantDeniedAsync(
+            sessionId, new ParticipantDeniedNotification(sessionId, mallory, "Mallory"));
+
+        // The host, and the person denied; not the table.
+        Assert.Equal($"{SessionHub.HostGroupName(sessionId)}|{SessionHub.ParticipantGroupName(sessionId, mallory)}", _fakeContext.LastGroupName);
         Assert.Equal("ParticipantDenied", _fakeContext.LastMethod);
     }
 
@@ -294,6 +297,37 @@ public class SessionHubNotifierTests
 
         Assert.Equal(SessionHub.SessionGroupName(sessionId), _fakeContext.LastGroupName);
         Assert.Equal("AdventureStateChanged", _fakeContext.LastMethod);
+    }
+
+    // ── Who hears what ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task NotifyRollRecordedAsync_PrivateRoll_GoesToTheHostAndTheRollerOnly()
+    {
+        var sessionId = NewSession();
+        var roller = Guid.NewGuid();
+        var roll = MakeRoll(sessionId) with { RollerParticipantId = roller, Visibility = RollVisibility.Private };
+
+        await _notifier.NotifyRollRecordedAsync(sessionId, roll);
+
+        Assert.Equal($"{SessionHub.HostGroupName(sessionId)}|{SessionHub.ParticipantGroupName(sessionId, roller)}", _fakeContext.LastGroupName);
+        Assert.Equal("RollRecorded", _fakeContext.LastMethod);
+    }
+
+    [Fact]
+    public async Task AdventureDmFacingEvents_GoToTheHostOnly()
+    {
+        var sessionId = NewSession();
+        var run = Guid.NewGuid();
+
+        await _notifier.NotifyAdventureClueRevealedAsync(sessionId, new AdventureClueRevealedNotification(run, "clue-1", "Letter", "Meet me below."));
+        Assert.Equal(SessionHub.HostGroupName(sessionId), _fakeContext.LastGroupName);
+        await _notifier.NotifyAdventureSecretRevealedAsync(sessionId, new AdventureSecretRevealedNotification(run, "secret-1", "Cult", "The mayor leads it."));
+        Assert.Equal(SessionHub.HostGroupName(sessionId), _fakeContext.LastGroupName);
+        await _notifier.NotifyAdventureNpcUpdatedAsync(sessionId, new AdventureNpcUpdatedNotification(run, "npc-1", "Mayor", true, true));
+        Assert.Equal(SessionHub.HostGroupName(sessionId), _fakeContext.LastGroupName);
+        await _notifier.NotifyAdventureCompletedAsync(sessionId, new AdventureCompletedNotification(run, "The party won."));
+        Assert.Equal(SessionHub.HostGroupName(sessionId), _fakeContext.LastGroupName);
     }
 
     // ── Group isolation ───────────────────────────────────────────────────────
@@ -311,8 +345,8 @@ public class SessionHubNotifierTests
         var groupB = _fakeContext.LastGroupName;
 
         Assert.NotEqual(groupA, groupB);
-        Assert.Equal(SessionHub.SessionGroupName(sessionA), groupA);
-        Assert.Equal(SessionHub.SessionGroupName(sessionB), groupB);
+        Assert.Equal(SessionHub.HostGroupName(sessionA), groupA);
+        Assert.Equal(SessionHub.HostGroupName(sessionB), groupB);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -359,7 +393,7 @@ internal sealed class FakeHubClients : IHubClients
     public IClientProxy Clients(IReadOnlyList<string> connectionIds) => throw new NotImplementedException();
     public IClientProxy Group(string groupName) => new FakeClientProxy(_ctx, groupName);
     public IClientProxy GroupExcept(string groupName, IReadOnlyList<string> excludedConnectionIds) => throw new NotImplementedException();
-    public IClientProxy Groups(IReadOnlyList<string> groupNames) => throw new NotImplementedException();
+    public IClientProxy Groups(IReadOnlyList<string> groupNames) => new FakeClientProxy(_ctx, string.Join("|", groupNames));
     public IClientProxy User(string userId) => throw new NotImplementedException();
     public IClientProxy Users(IReadOnlyList<string> userIds) => throw new NotImplementedException();
 }

@@ -24,23 +24,30 @@ public sealed class SessionHostingService : ISessionHostingService
     private readonly IParticipantTokenService _tokenService;
     private readonly ILogger<SessionHostingService> _logger;
     private readonly ISessionHubNotifier? _hubNotifier;
+    private readonly ISessionHubMembership? _hubMembership;
 
     /// <param name="hubNotifier">
     /// Announces joins, approvals and denials to the session's SignalR group. Optional so the service
     /// still works where no hub is registered (a failure to broadcast never fails the request).
+    /// </param>
+    /// <param name="hubMembership">
+    /// Puts approvals, denials and the end of the session into effect on open hub connections. Optional
+    /// for the same reason.
     /// </param>
     public SessionHostingService(
         AircaneDbContext db,
         ITokenRevocationService tokenRevocation,
         IParticipantTokenService tokenService,
         ILogger<SessionHostingService> logger,
-        ISessionHubNotifier? hubNotifier = null)
+        ISessionHubNotifier? hubNotifier = null,
+        ISessionHubMembership? hubMembership = null)
     {
         _db = db;
         _tokenRevocation = tokenRevocation;
         _tokenService = tokenService;
         _logger = logger;
         _hubNotifier = hubNotifier;
+        _hubMembership = hubMembership;
     }
 
     /// <inheritdoc />
@@ -214,6 +221,8 @@ public sealed class SessionHostingService : ISessionHostingService
 
         if (!wasApproved)
         {
+            // Into the table's group first, so the approval itself reaches them there.
+            await ChangeMembershipAsync(m => m.AdmitParticipantAsync(sessionId, participant.Id, cancellationToken));
             await NotifyAsync(hub => hub.NotifyParticipantApprovedAsync(
                 sessionId,
                 new ParticipantApprovedNotification(sessionId, participant.Id, participant.DisplayName, AutoApproved: false),
@@ -262,6 +271,9 @@ public sealed class SessionHostingService : ISessionHostingService
             sessionId,
             new ParticipantDeniedNotification(sessionId, participant.Id, participant.DisplayName),
             cancellationToken));
+
+        // Then close their connections: told first, so a waiting page can say why it stopped.
+        await ChangeMembershipAsync(m => m.RemoveParticipantAsync(sessionId, participant.Id, cancellationToken));
 
         return ToParticipantDto(participant);
     }
@@ -321,6 +333,10 @@ public sealed class SessionHostingService : ISessionHostingService
             .ToListAsync(cancellationToken);
 
         await _tokenRevocation.RevokeTokensAsync(activeTokens, cancellationToken);
+
+        // Everyone's open connection to it, the host's included, is closed; the tokens are revoked, so no
+        // reconnect gets back in.
+        await ChangeMembershipAsync(m => m.CloseSessionAsync(sessionId, cancellationToken));
 
         _logger.LogInformation(
             "Session ended: {SessionId} at {EndedAt}. Revoked {TokenCount} participant token(s). Summary provided: {HasSummary}",
@@ -437,6 +453,22 @@ public sealed class SessionHostingService : ISessionHostingService
         JoinedAt: p.JoinedAt,
         LastSeenAt: p.LastSeenAt,
         IsDenied: p.IsDenied);
+
+    /// <summary>Applies a host decision to open hub connections. Best effort, like <see cref="NotifyAsync"/>.</summary>
+    private async Task ChangeMembershipAsync(Func<ISessionHubMembership, Task> change)
+    {
+        if (_hubMembership is null)
+            return;
+
+        try
+        {
+            await change(_hubMembership);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to update hub connections for a session");
+        }
+    }
 
     /// <summary>Broadcasts to the play session's group. Best effort: a hub failure never fails the request.</summary>
     private async Task NotifyAsync(Func<ISessionHubNotifier, Task> send)

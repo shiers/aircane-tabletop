@@ -94,6 +94,7 @@ public sealed record SceneSummary
 public sealed record GeneratedScene
 {
     /// <summary>Scene identifier (matches outline order).</summary>
+    [JsonConverter(typeof(IdStringConverter))]
     public required string SceneId { get; init; }
 
     /// <summary>Scene title.</summary>
@@ -107,6 +108,7 @@ public sealed record GeneratedScene
     public required string SceneType { get; init; }
 
     /// <summary>IDs of scenes that can be reached from this scene.</summary>
+    [JsonConverter(typeof(IdStringListConverter))]
     public required IReadOnlyList<string> ConnectsTo { get; init; }
 
     /// <summary>
@@ -145,6 +147,7 @@ public sealed record GeneratedNpc
     public required string StatsSummary { get; init; }
 
     /// <summary>Which scene(s) this NPC appears in.</summary>
+    [JsonConverter(typeof(IdStringListConverter))]
     public required IReadOnlyList<string> SceneIds { get; init; }
 
     /// <summary>Optional faction affiliation.</summary>
@@ -161,6 +164,7 @@ public sealed record GeneratedEncounter
     public required string Title { get; init; }
 
     /// <summary>Scene this encounter belongs to.</summary>
+    [JsonConverter(typeof(IdStringConverter))]
     public required string SceneId { get; init; }
 
     /// <summary>List of enemies/creatures in the encounter.</summary>
@@ -221,6 +225,7 @@ public sealed record TreasureItem
     public required string Description { get; init; }
 
     /// <summary>Which scene this item is found in.</summary>
+    [JsonConverter(typeof(IdStringConverter))]
     public required string SceneId { get; init; }
 
     /// <summary>Estimated value in gold pieces (0 if priceless or unknown).</summary>
@@ -255,6 +260,7 @@ public sealed record AdventureSecret
     public required string Content { get; init; }
 
     /// <summary>Scene where this secret can be discovered.</summary>
+    [JsonConverter(typeof(IdStringConverter))]
     public required string SceneId { get; init; }
 
     /// <summary>How the secret can be discovered (skill check, investigation, etc.).</summary>
@@ -275,6 +281,7 @@ public sealed record AdventureHandout
     public required string Content { get; init; }
 
     /// <summary>Scene where this handout is found.</summary>
+    [JsonConverter(typeof(IdStringConverter))]
     public required string SceneId { get; init; }
 }
 
@@ -292,5 +299,6 @@ public sealed record FailForwardPath
     public required string Resolution { get; init; }
 
     /// <summary>Scene this applies to.</summary>
+    [JsonConverter(typeof(IdStringConverter))]
     public required string SceneId { get; init; }
 }

@@ -137,8 +137,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         var systemPrompt = BuildSystemPrompt(request, partyAnalysis);
         var userPrompt = BuildPitchPrompt(request);
 
-        var response = await CallAiAsync(systemPrompt, userPrompt, cancellationToken);
-        return ParseJsonResponse<AdventurePitch>(response, "pitch");
+        return await RunStageAsync("pitch", systemPrompt, userPrompt,
+            response => ParseJsonResponse<AdventurePitch>(response, "pitch"), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -151,8 +151,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         var systemPrompt = BuildSystemPrompt(request, partyAnalysis);
         var userPrompt = BuildOutlinePrompt(request, pitch);
 
-        var response = await CallAiAsync(systemPrompt, userPrompt, cancellationToken);
-        return ParseJsonResponse<AdventureOutline>(response, "outline");
+        return await RunStageAsync("outline", systemPrompt, userPrompt,
+            response => ParseJsonResponse<AdventureOutline>(response, "outline"), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -166,8 +166,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         var systemPrompt = BuildSystemPrompt(request, partyAnalysis);
         var userPrompt = BuildScenesPrompt(request, pitch, outline);
 
-        var response = await CallAiAsync(systemPrompt, userPrompt, cancellationToken);
-        return ParseJsonResponse<List<GeneratedScene>>(response, "scenes");
+        return await RunStageAsync<IReadOnlyList<GeneratedScene>>("scenes", systemPrompt, userPrompt,
+            response => ResolveSceneIds(ParseJsonResponse<List<GeneratedScene>>(response, "scenes")), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -181,8 +181,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         var systemPrompt = BuildSystemPrompt(request, partyAnalysis);
         var userPrompt = BuildNpcsPrompt(request, pitch, scenes);
 
-        var response = await CallAiAsync(systemPrompt, userPrompt, cancellationToken);
-        return ParseJsonResponse<List<GeneratedNpc>>(response, "npcs");
+        return await RunStageAsync<IReadOnlyList<GeneratedNpc>>("npcs", systemPrompt, userPrompt,
+            response => ResolveNpcSceneIds(ParseJsonResponse<List<GeneratedNpc>>(response, "npcs"), scenes), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -196,8 +196,9 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         var systemPrompt = BuildSystemPrompt(request, partyAnalysis);
         var userPrompt = BuildEncountersPrompt(request, pitch, scenes);
 
-        var response = await CallAiAsync(systemPrompt, userPrompt, cancellationToken);
-        return ParseJsonResponse<List<GeneratedEncounter>>(response, "encounters");
+        return await RunStageAsync<IReadOnlyList<GeneratedEncounter>>("encounters", systemPrompt, userPrompt,
+            response => ResolveEncounterSceneIds(ParseJsonResponse<List<GeneratedEncounter>>(response, "encounters"), scenes),
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -212,8 +213,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         var systemPrompt = BuildSystemPrompt(request, partyAnalysis);
         var userPrompt = BuildTreasurePrompt(request, pitch, scenes, encounters);
 
-        var response = await CallAiAsync(systemPrompt, userPrompt, cancellationToken);
-        return ParseJsonResponse<AdventureTreasure>(response, "treasure");
+        return await RunStageAsync("treasure", systemPrompt, userPrompt,
+            response => ResolveTreasureSceneIds(ParseJsonResponse<AdventureTreasure>(response, "treasure"), scenes), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -228,19 +229,29 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
         var systemPrompt = BuildSystemPrompt(request, partyAnalysis);
         var userPrompt = BuildCluesPrompt(request, pitch, scenes, npcs);
 
-        var response = await CallAiAsync(systemPrompt, userPrompt, cancellationToken);
-        return ParseJsonResponse<AdventureClues>(response, "clues");
+        return await RunStageAsync("clues", systemPrompt, userPrompt,
+            response => ResolveClueSceneIds(ParseJsonResponse<AdventureClues>(response, "clues"), scenes), cancellationToken);
     }
 
     /// <summary>Reports that a stage is starting (stage name and the bar position for it).</summary>
     private static void Progress(Action<string, int>? onProgress, string stage)
         => onProgress?.Invoke(stage, AdventureGenerationStages.PercentFor(stage));
 
-    // ── AI Call Helper ─────────────────────────────────────────────────────────
+    // ── Stage runner ───────────────────────────────────────────────────────────
 
-    private async Task<string> CallAiAsync(
+    /// <summary>Attempts per stage: the first call plus one retry that feeds the error back to the model.</summary>
+    private const int MaxStageAttempts = 2;
+
+    /// <summary>
+    /// Calls the AI for one stage and parses/validates the response. If that fails, retries once with the
+    /// rejected response and the error appended so the model can correct itself; a second failure throws.
+    /// Provider errors are not retried here.
+    /// </summary>
+    private async Task<T> RunStageAsync<T>(
+        string stage,
         string systemPrompt,
         string userPrompt,
+        Func<string, T> parseAndValidate,
         CancellationToken cancellationToken)
     {
         var messages = new List<AiMessage>
@@ -249,7 +260,129 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
             AiMessage.User(userPrompt),
         };
 
-        return await _aiProvider.ChatCompletionAsync(messages, cancellationToken);
+        for (var attempt = 1; ; attempt++)
+        {
+            var response = await _aiProvider.ChatCompletionAsync(messages, cancellationToken);
+            try
+            {
+                return parseAndValidate(response);
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (attempt >= MaxStageAttempts)
+                {
+                    throw new InvalidOperationException(
+                        $"Stage '{stage}' failed after {attempt} attempts. Last error: {ex.Message}", ex);
+                }
+
+                _logger.LogWarning(ex, "Stage {Stage} response was rejected (attempt {Attempt}); retrying", stage, attempt);
+                messages =
+                [
+                    .. messages,
+                    AiMessage.Assistant(response),
+                    AiMessage.User(
+                        $"Your previous response was rejected: {ex.Message}\n\n" +
+                        "Respond again with the complete, corrected JSON only. Ids must be the exact string ids " +
+                        "given in the prompt, written as JSON strings."),
+                ];
+            }
+        }
+    }
+
+    // ── Scene id resolution ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// The scenes stage defines the ids. Numeric ids become "scene-N" by position (the format the prompt asks
+    /// for) and numeric connectsTo entries follow; ids must be present and unique. A non-numeric connectsTo
+    /// entry that matches no scene is left alone, as it always has been.
+    /// </summary>
+    private static IReadOnlyList<GeneratedScene> ResolveSceneIds(List<GeneratedScene> scenes)
+    {
+        var canonical = new Dictionary<string, string>(StringComparer.Ordinal);
+        var ids = new List<string>(scenes.Count);
+        for (var i = 0; i < scenes.Count; i++)
+        {
+            var raw = scenes[i].SceneId;
+            if (string.IsNullOrWhiteSpace(raw))
+                throw new InvalidOperationException($"Field 'scenes[{i}].sceneId' is null or empty.");
+
+            var id = SceneIdResolver.TryParseIndex(raw, out _) ? $"scene-{i + 1}" : raw;
+            if (ids.Contains(id, StringComparer.Ordinal))
+                throw new InvalidOperationException(
+                    $"Field 'scenes[{i}].sceneId' has the value '{raw}', which duplicates an earlier scene id.");
+
+            ids.Add(id);
+            canonical.TryAdd(raw, id);
+        }
+
+        var zeroBased = scenes.SelectMany(s => s.ConnectsTo).Any(c =>
+            c is not null && SceneIdResolver.TryParseIndex(c, out var n) && n == 0 && !canonical.ContainsKey(c));
+
+        return scenes.Select((scene, i) => scene with
+        {
+            SceneId = ids[i],
+            ConnectsTo = scene.ConnectsTo.Select((target, j) =>
+            {
+                if (string.IsNullOrWhiteSpace(target))
+                    throw new InvalidOperationException($"Field 'scenes[{i}].connectsTo[{j}]' is null or empty.");
+                if (canonical.TryGetValue(target, out var mapped))
+                    return mapped;
+                if (!SceneIdResolver.TryParseIndex(target, out var n))
+                    return target;
+
+                var index = zeroBased ? n : n - 1;
+                return index >= 0 && index < ids.Count
+                    ? ids[index]
+                    : throw new InvalidOperationException(
+                        $"Field 'scenes[{i}].connectsTo[{j}]' has the value '{target}', which is not a scene id. " +
+                        $"Valid scene ids are: {SceneIdResolver.Describe(ids)}.");
+            }).ToList(),
+        }).ToList();
+    }
+
+    private static IReadOnlyList<GeneratedNpc> ResolveNpcSceneIds(
+        List<GeneratedNpc> npcs, IReadOnlyList<GeneratedScene> scenes)
+    {
+        var resolver = SceneIdResolver.For(scenes, npcs.SelectMany(n => n.SceneIds));
+        return npcs.Select((npc, i) => npc with
+        {
+            SceneIds = npc.SceneIds.Select((id, j) => resolver.Resolve(id, $"npcs[{i}].sceneIds[{j}]")).ToList(),
+        }).ToList();
+    }
+
+    private static IReadOnlyList<GeneratedEncounter> ResolveEncounterSceneIds(
+        List<GeneratedEncounter> encounters, IReadOnlyList<GeneratedScene> scenes)
+    {
+        var resolver = SceneIdResolver.For(scenes, encounters.Select(e => e.SceneId));
+        return encounters.Select((e, i) => e with
+        {
+            SceneId = resolver.Resolve(e.SceneId, $"encounters[{i}].sceneId"),
+        }).ToList();
+    }
+
+    private static AdventureTreasure ResolveTreasureSceneIds(
+        AdventureTreasure treasure, IReadOnlyList<GeneratedScene> scenes)
+    {
+        var resolver = SceneIdResolver.For(scenes, treasure.Items.Concat(treasure.MagicItems).Select(t => t.SceneId));
+        IReadOnlyList<TreasureItem> Resolve(IReadOnlyList<TreasureItem> items, string list)
+            => items.Select((t, i) => t with { SceneId = resolver.Resolve(t.SceneId, $"treasure.{list}[{i}].sceneId") }).ToList();
+
+        return treasure with { Items = Resolve(treasure.Items, "items"), MagicItems = Resolve(treasure.MagicItems, "magicItems") };
+    }
+
+    private static AdventureClues ResolveClueSceneIds(AdventureClues clues, IReadOnlyList<GeneratedScene> scenes)
+    {
+        var resolver = SceneIdResolver.For(scenes,
+            clues.Secrets.Select(c => c.SceneId)
+                .Concat(clues.Handouts.Select(c => c.SceneId))
+                .Concat(clues.FailForwardPaths.Select(c => c.SceneId)));
+
+        return clues with
+        {
+            Secrets = clues.Secrets.Select((c, i) => c with { SceneId = resolver.Resolve(c.SceneId, $"clues.secrets[{i}].sceneId") }).ToList(),
+            Handouts = clues.Handouts.Select((c, i) => c with { SceneId = resolver.Resolve(c.SceneId, $"clues.handouts[{i}].sceneId") }).ToList(),
+            FailForwardPaths = clues.FailForwardPaths.Select((c, i) => c with { SceneId = resolver.Resolve(c.SceneId, $"clues.failForwardPaths[{i}].sceneId") }).ToList(),
+        };
     }
 
     // ── JSON Parsing ──────────────────────────────────────────────────────────
@@ -384,6 +517,14 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
             || normalized is "pf2e" or "pf2" or "pf2e remaster";
     }
 
+    /// <summary>
+    /// Tells the model that scene references must echo the scenes stage's ids exactly, and lists them.
+    /// </summary>
+    private static string SceneIdRule(IReadOnlyList<GeneratedScene> scenes)
+        => "Every \"sceneId\" / \"sceneIds\" value must be one of the exact string ids from the scenes stage, "
+         + "written as a JSON string in quotes (never a number, index or title). "
+         + $"Valid scene ids: {SceneIdResolver.Describe(scenes.Select(s => s.SceneId))}";
+
     private static string BuildPitchPrompt(GenerateAdventureRequest request)
     {
         return $"""
@@ -454,6 +595,9 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
 
             Ensure scenes connect logically and form a playable adventure graph.
 
+            Scene ids must be the exact string ids "scene-1", "scene-2", ... in outline order, written as JSON strings in quotes (never bare numbers).
+            Every entry of "connectsTo" must be one of those exact string ids.
+
             Every text field ("description", "readAloudText", "dmNotes", and each entry of "objectives") must be a plain string value, not an object or nested JSON.
             dmNotes must be a plain string value, not an object or nested JSON.
             Example: "dmNotes": "The players arrive at the castle gates."
@@ -474,6 +618,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
 
             Scenes:
             {sceneList}
+
+            {SceneIdRule(scenes)}
 
             Generate NPCs as a JSON array. Each NPC should have:
             - "name": NPC name
@@ -508,6 +654,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
                 Combat scenes:
                 {sceneList}
 
+                {SceneIdRule(scenes)}
+
                 Generate encounters as a JSON array (Pathfinder 2e). Each encounter should have:
                 - "title": encounter title
                 - "sceneId": which scene this encounter belongs to
@@ -534,6 +682,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
 
             Combat scenes:
             {sceneList}
+
+            {SceneIdRule(scenes)}
 
             Generate encounters as a JSON array. Each encounter should have:
             - "title": encounter title
@@ -563,6 +713,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
                 Party: {request.PartySize} level {request.AverageLevel} character(s)
                 Scenes: {sceneIds}
 
+                {SceneIdRule(scenes)}
+
                 Generate treasure as a JSON object (Pathfinder 2e) with:
                 - "goldTotal": total currency (in gp) appropriate for a level {request.AverageLevel}
                   party, following the PF2e treasure-by-level guidelines for a full adventure.
@@ -582,6 +734,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
             Title: {pitch.Title}
             Party: {request.PartySize} level {request.AverageLevel} character(s)
             Scenes: {sceneIds}
+
+            {SceneIdRule(scenes)}
 
             Generate treasure as a JSON object with:
             - "goldTotal": total gold pieces appropriate for level {request.AverageLevel} characters
@@ -611,6 +765,8 @@ public sealed class AdventureGenerationService : IAdventureGenerationService
 
             NPCs:
             {npcList}
+
+            {SceneIdRule(scenes)}
 
             Generate clues, secrets, and fail-forward paths as a JSON object with:
             - "secrets": array of objects with "title", "content", "sceneId", "discoveryMethod"

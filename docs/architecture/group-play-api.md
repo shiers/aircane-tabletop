@@ -58,20 +58,63 @@ blocking one person by name is not meaningful, and a mistaken denial is recovera
   rather than silently returning that run, whose players are not the ones the host named. Naming the session the run
   is really in is the usual idempotent resume (200).
 
-## Hub events
+## The live channel (SignalR, `/hubs/session`)
 
-All events go to the session's group (`session:{id}`). None carries an invite code, a token, or adventure text.
+### Who is connected, and to what
 
-| Event | Sent when | Payload |
+The caller is whoever the connection's token says: session (`sid`), participant (`pid`), role and display name.
+Nothing a client puts in a message changes that. With no token, a direct request from the host machine is the host
+(the same trust rule as the REST API); anything else without a token cannot connect. An expired or revoked token
+cannot connect either.
+
+| Group | Who is in it |
+| --- | --- |
+| `session:{id}` (the table) | approved participants and the host |
+| `session:{id}:host` | the host only |
+| `session:{id}:participant:{pid}` | every connection of that participant, approved or not |
+
+- A connection with a participant token is put in its groups as soon as it opens, so an automatic reconnect is back
+  where it was before the client does anything. `JoinSession` does the same on request, and is how the host's own
+  machine (no token) picks the session it is hosting. Its message's `sessionId` must be the token's session; the
+  participant id, name and role in it are ignored. It is refused for another session, an ended session, someone not
+  on the roster and someone denied.
+- A participant still waiting for approval is in their own group only: they hear their own approval or denial and
+  nothing of the table, and cannot chat.
+- **Approval:** the server adds the participant's open connections to the table's group, then announces the approval
+  there (so they hear it too).
+- **Denial:** the host and the person denied are told, then the person's connections leave every group and are closed.
+  Their token is revoked, so a reconnect is refused.
+- **End of session:** every connection to it is closed; all of its tokens are revoked.
+- **Chat:** the sender is the token's participant and name (the host's own messages carry the id the host's client
+  chose, so it can recognise them). Only the table may chat. `LeaveSession` announces the token's identity.
+
+### Who hears which event
+
+| Event | Audience | Notes |
 | --- | --- | --- |
-| `ParticipantJoined` | someone joins | the participant (`ParticipantDto`) |
-| `ParticipantApproved` | the host approves, or a join was auto-approved | `sessionId`, `participantId`, `displayName`, `autoApproved` |
-| `ParticipantDenied` | the host denies a request | `sessionId`, `participantId`, `displayName` |
-| `AdventureStateChanged` | a turn advances, a scene advances, or a player acts | `sessionId` (the adventure run id), `reason` (`TurnAdvanced`, `SceneAdvanced`, `PlayerAction`), `changedAt` |
+| `ChatMessageReceived` | table | |
+| `RollRecorded` | table if public; host + the roller if private | |
+| `RollRequested` | table | not sent by anything yet |
+| `AINarrationStarted` / `Chunk` / `Completed` | table | narration is what the table is told; not sent by anything yet |
+| `SceneChanged` | table | public description only; not sent by anything yet |
+| `HandoutRevealed` | table | revealed on purpose; not sent by anything yet |
+| `CombatTurnChanged` | table | whose turn and the round |
+| `AdventureSceneAdvanced` | table | transition narration |
+| `TurnAdvanced`, `ParticipantJoinedAdventure` | table | |
+| `AdventureStateChanged` | table | a signal only; also sent when a run completes |
+| `ParticipantApproved` | table | the approved person is in it by then |
+| `ParticipantLeft` | table | |
+| `ParticipantJoined` | host | a new join request, before anyone has decided on it |
+| `ParticipantDenied` | host + the person denied | |
+| `AIProposalCreated` | host | |
+| `StateUpdated` | host | the whole campaign state, NPC sheets included; not sent by anything yet |
+| `ImportStatusUpdated` | host | library imports; not sent by anything yet (imports use the library hub) |
+| `AdventureClueRevealed`, `AdventureSecretRevealed`, `AdventureNpcUpdated` | host | DM-facing text; the table hears the story through the narration |
+| `AdventureCompleted` | host | the outcome notes; the table gets `AdventureStateChanged` (`Completed`) |
 
-`AdventureStateChanged` is a signal only. Clients respond by reading `GET /api/sessions/{id}/adventure-run`, which is
-where the player-safe filtering lives, so no event can leak what a player may not see. Approval is announced once:
-approving someone who is already approved sends nothing.
+None of these carries an invite code or a token. `AdventureStateChanged` is a signal: clients read
+`GET /api/sessions/{id}/adventure-run`, where the player-safe filtering lives. Approval is announced once: approving
+someone who is already approved sends nothing.
 
 ## `GET /api/sessions/{sessionId}/adventure-run`
 
@@ -126,5 +169,4 @@ What an approved Player may do with a **group** run:
 A **solo** run has no table to protect, so its one Player keeps full access (still needing a seat).
 Adventure content (`/api/adventures`), campaigns, combat, proposals and campaign state are Host or DM-only by policy.
 
-Events sent to the session's SignalR group (`AdventureSceneAdvanced`, `AdventureClueRevealed` and so on) reach every
-connection in the group. They carry only what has been revealed to the table.
+Live events follow the same line: see "Who hears which event" above.

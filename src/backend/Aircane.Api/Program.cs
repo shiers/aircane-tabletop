@@ -29,6 +29,10 @@ builder.Services.AddScoped<IAdventureGenerationNotifier, AdventureGenerationNoti
 
 // Register SessionHubNotifier so application/infrastructure services can broadcast session events
 builder.Services.AddScoped<ISessionHubNotifier, SessionHubNotifier>();
+// Which hub connection belongs to which participant, so approvals, denials and the end of a session can
+// change who is connected (one process, so one registry).
+builder.Services.AddSingleton<SessionHubConnections>();
+builder.Services.AddScoped<ISessionHubMembership, SessionHubMembership>();
 
 // Configure CORS for development
 var allowedOrigins = builder.Configuration

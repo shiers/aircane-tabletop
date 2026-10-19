@@ -758,6 +758,8 @@ public sealed class AdventureSessionService : IAdventureSessionService
             session.SessionId!.Value,
             new AdventureCompletedNotification(sessionId, outcomeNotes),
             ct));
+        // The outcome notes above go to the host only; the table is told the run changed, and reads it.
+        await NotifyStateChangedAsync(session.SessionId, sessionId, "Completed", ct);
     }
 
     /// <inheritdoc />

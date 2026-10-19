@@ -3,7 +3,9 @@
  * GroupRunHostPanel - the host's view of a group adventure that is under way.
  *
  * Shows the current scene, whose turn it is, the round and the turn order, with the controls only
- * the host has: pass the turn, move the scene, abandon, and add a player who joined late.
+ * the host has: pass the turn, move the scene and abandon. Bringing in more players (join link, invite
+ * code, approving, adding to the turn order) lives in the InvitePlayersPanel, which the parent supplies
+ * through the `invite` slot.
  *
  * The host takes no turn. Players act one at a time; the server does not pass the turn on its own,
  * so a player who has disconnected, or who is simply slow, keeps the turn until the host passes it.
@@ -11,13 +13,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import type { ParticipantDto } from '@/features/sessions/api'
 import { useGroupRunStore } from '../stores/groupRunStore'
-
-const props = defineProps<{
-  /** Approved players of the play session who are not in the run's turn order yet. */
-  latePlayers: ParticipantDto[]
-}>()
 
 const emit = defineEmits<{
   (e: 'abandoned'): void
@@ -26,6 +22,11 @@ const emit = defineEmits<{
 const store = useGroupRunStore()
 const { run, busy, error, notice, nextParticipantName, nextStartsNewRound } = storeToRefs(store)
 
+/**
+ * Where "Advance scene" will move the party. This picks a DESTINATION: the scenes reachable from the
+ * current one (the server rejects any other, including the current scene itself), so it never shows the
+ * current scene. Nothing is preselected, so the host cannot move the party by accident.
+ */
 const targetSceneId = ref('')
 
 const exits = computed(() => run.value?.currentScene.exits ?? [])
@@ -41,11 +42,11 @@ const finishedLabel = computed(() => {
   }
 })
 
-// Keep the chosen exit valid as the scene changes.
+// A chosen destination is forgotten once the scene changes and it is no longer one of the exits.
 watch(
   exits,
   (list) => {
-    if (!list.some((e) => e.sceneId === targetSceneId.value)) targetSceneId.value = list[0]?.sceneId ?? ''
+    if (!list.some((e) => e.sceneId === targetSceneId.value)) targetSceneId.value = ''
   },
   { immediate: true },
 )
@@ -113,6 +114,9 @@ async function handleAbandon(): Promise<void> {
         </p>
       </div>
 
+      <!-- Invite players: join link, QR, invite code, approvals (supplied by the host page) -->
+      <slot name="invite" />
+
       <!-- Turn order -->
       <div>
         <h3 class="mb-2 text-sm font-medium uppercase tracking-wider text-gray-400">Turn order</h3>
@@ -134,41 +138,20 @@ async function handleAbandon(): Promise<void> {
         </p>
       </div>
 
-      <!-- Players who joined after the adventure started -->
-      <div v-if="props.latePlayers.length" data-testid="late-players">
-        <h3 class="mb-2 text-sm font-medium uppercase tracking-wider text-yellow-400">Not in the adventure yet</h3>
-        <ul class="space-y-2">
-          <li
-            v-for="player in props.latePlayers"
-            :key="player.id"
-            class="flex items-center justify-between gap-3 rounded-md border border-yellow-800 bg-yellow-950/30 px-3 py-2"
-          >
-            <span class="min-w-0 truncate text-sm text-white">{{ player.displayName }}</span>
-            <button
-              type="button"
-              class="shrink-0 rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
-              :disabled="busy !== null"
-              :aria-label="`Add ${player.displayName} to the adventure`"
-              data-testid="add-late-player"
-              @click="store.addParticipant(player.id)"
-            >
-              Add to the end
-            </button>
-          </li>
-        </ul>
-      </div>
-
       <!-- Host scene override -->
       <div v-if="exits.length" class="space-y-2" data-testid="scene-controls">
-        <h3 class="text-sm font-medium uppercase tracking-wider text-gray-400">Current scene: {{ run.currentScene.title }}</h3>
+        <h3 class="text-sm font-medium uppercase tracking-wider text-gray-400" data-testid="current-scene">
+          Current scene: {{ run.currentScene.title }}
+        </h3>
+        <label for="advance-scene-target" class="block text-sm text-gray-300">Move the party to…</label>
         <div class="flex flex-col gap-2 sm:flex-row">
-          <label for="advance-scene-target" class="sr-only">Move the party to</label>
           <select
             id="advance-scene-target"
             v-model="targetSceneId"
             data-testid="scene-select"
             class="min-w-0 flex-1 rounded-md border border-surface-700/50 bg-surface-900 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-aircane-500"
           >
+            <option value="" disabled>Choose a scene…</option>
             <option v-for="exit in exits" :key="exit.sceneId" :value="exit.sceneId">{{ exit.title }}</option>
           </select>
           <button
@@ -181,7 +164,7 @@ async function handleAbandon(): Promise<void> {
             {{ busy === 'scene' ? 'Moving…' : 'Advance scene' }}
           </button>
         </div>
-        <p class="text-xs text-gray-500">The AI DM moves the story along too; use this to override it.</p>
+        <p class="text-xs text-gray-500" data-testid="scene-hint">The AI GM moves the story along too; use this to override it.</p>
       </div>
       <p v-else class="text-sm text-gray-400" data-testid="no-exits">
         Current scene: {{ run.currentScene.title }}. It has no exits to move on to.

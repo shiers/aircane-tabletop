@@ -11,7 +11,7 @@ import { useRoute } from 'vue-router'
 import { useSessionStore } from './store'
 import PlayerJoinForm from './PlayerJoinForm.vue'
 import QRCode from './components/QRCode.vue'
-import type { JoinSessionResult } from './api'
+import { getJoinInfo, type JoinSessionResult } from './api'
 
 // ---------------------------------------------------------------------------
 // Route params
@@ -35,6 +35,9 @@ const joinResult = ref<JoinSessionResult | null>(null)
 const lookupLoading = ref(false)
 const lookupError = ref<string | null>(null)
 
+/** The session's name from the anonymous join read; null until it is known to be joinable. */
+const sessionName = ref<string | null>(null)
+
 /** The current page URL so players can hand off the join link via QR. */
 const joinUrl = computed(() =>
   typeof window !== 'undefined' ? window.location.href : '',
@@ -50,11 +53,18 @@ onMounted(async () => {
   if (!sessionId) return
   lookupLoading.value = true
   try {
-    await store.fetchSession(sessionId)
+    // The player has no token yet, so this reads the anonymous join-info endpoint: just the name
+    // and whether the session can be joined. A missing, ended or non-joinable session look the same.
+    const info = await getJoinInfo(sessionId)
+    if (info.joinable) {
+      sessionName.value = info.name
+    } else {
+      lookupError.value = 'This session was not found or is no longer open to players.'
+    }
   } catch {
     // Record the failure in dedicated lookup state so the standalone
     // "Session not found" panel owns it (store.error is left for join submits).
-    lookupError.value = store.error ?? 'Session not found.'
+    lookupError.value = 'Could not look up this session. Check the link and your connection.'
   } finally {
     lookupLoading.value = false
   }
@@ -121,7 +131,7 @@ function handleJoined(result: JoinSessionResult): void {
       <template v-else>
         <PlayerJoinForm
           :session-id="sessionId"
-          :session-name="lookupError ? undefined : store.currentSession?.name"
+          :session-name="lookupError ? undefined : (sessionName ?? undefined)"
           :hide-error="!!lookupError"
           @joined="handleJoined"
         />

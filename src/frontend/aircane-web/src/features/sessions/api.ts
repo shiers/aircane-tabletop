@@ -118,6 +118,22 @@ export async function startSession(
   return response.data
 }
 
+/**
+ * What the join page needs before the player has a token. Anonymous: the session name when it can
+ * be joined, and nothing else. A session that does not exist, has ended, or is not open to players
+ * all come back as `{ name: null, joinable: false }`.
+ */
+export interface JoinInfo {
+  name: string | null
+  joinable: boolean
+}
+
+/** Read the minimal join information for a session. Needs no token. */
+export async function getJoinInfo(sessionId: string): Promise<JoinInfo> {
+  const response = await apiClient.get<JoinInfo>(`/api/sessions/${sessionId}/join-info`)
+  return response.data
+}
+
 /** Get a session by ID. The invite code and join URL are not included in this response. */
 export async function getSession(sessionId: string): Promise<SessionDto> {
   const response = await apiClient.get<SessionDto>(`/api/sessions/${sessionId}`)

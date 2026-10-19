@@ -20,6 +20,7 @@ public sealed class EndpointAuthorizationCoverageTests
     [
         "FeedbackController.Submit",
         "LicensesController.ListLicenses",
+        "SessionsController.GetJoinInfo",
         "SessionsController.JoinSession",
         "SessionsController.GetNetworkInfo",
         "SetupController.GetStatus",

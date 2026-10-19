@@ -2,6 +2,7 @@ using Aircane.Api.Authorization;
 using Aircane.Application.Abstractions;
 using Aircane.Application.Configuration;
 using Aircane.Application.DTOs.Sessions;
+using Aircane.Domain.Enums;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -152,6 +153,32 @@ public sealed class SessionsController : ControllerBase
                 Status = StatusCodes.Status400BadRequest,
             });
         }
+    }
+
+    /// <summary>
+    /// What the join page needs before the player has a token: the session's name and whether it can
+    /// be joined. Anonymous, rate-limited like join, and minimal on purpose: no participants, invite
+    /// code, campaign or access mode. A session that does not exist, has ended, or is a solo play
+    /// session answers exactly like any other that cannot be joined (HTTP 200, no name), so the
+    /// response does not confirm that an ID was ever valid. Only a running session open to players
+    /// reveals anything, and the invite code, which is what joining actually needs, is never
+    /// returned. Session IDs are random GUIDs, so they cannot be enumerated.
+    /// </summary>
+    [HttpGet("api/sessions/{id:guid}/join-info")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimitingSettings.JoinPolicy)]
+    [ProducesResponseType(typeof(JoinInfoDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<JoinInfoDto>> GetJoinInfo(Guid id, CancellationToken cancellationToken)
+    {
+        var session = await _sessions.GetSessionAsync(id, cancellationToken);
+
+        // The same condition JoinSessionAsync enforces (an active session), plus: a solo play session
+        // exists only to carry a solo run's live events, and its name is the adventure's title.
+        var joinable = session is { Status: SessionStatus.Active, AccessMode: not SessionAccessMode.Solo };
+
+        // Never cache: a session stops being joinable the moment the host ends it.
+        Response.Headers.CacheControl = "no-store";
+        return Ok(joinable ? new JoinInfoDto(session!.Name, Joinable: true) : JoinInfoDto.NotJoinable);
     }
 
     /// <summary>

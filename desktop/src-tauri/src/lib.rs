@@ -14,6 +14,7 @@ mod config;
 mod network;
 mod ollama;
 mod sidecar;
+mod signing_key;
 mod tray;
 mod tunnel;
 

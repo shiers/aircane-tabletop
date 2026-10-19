@@ -24,6 +24,46 @@ runtime equivalent of the `TunnelSettings:Enabled` configuration flag referenced
 task spec — a live flag is used instead of static config because the tunnel is started and
 stopped at runtime by the host.)
 
+## Authorization and the local host
+
+Authorization is enforced in **every** mode (desktop, Development, hosted). The `HostOnly`,
+`DmOrHost` and `Authenticated` policies require a participant token with the right role, and an
+endpoint with no attribute falls back to `Authenticated`, so a forgotten attribute fails closed.
+Only endpoints marked `[AllowAnonymous]` work without a token, and a test keeps that list explicit.
+
+The single exception is the **local host**, for desktop mode (`Aircane:TrustLocalHost`) and for a
+developer running the Development environment: the person at the machine running the backend needs
+no token. A request is that person only if `LocalHostTrust` says it came straight from this machine:
+
+1. the TCP peer is loopback;
+2. every client address a proxy reports (`X-Forwarded-For`, `Forwarded`, `X-Real-IP`,
+   `True-Client-IP`, `CF-Connecting-IP`) is also loopback;
+3. the host name used (`Host`, and `X-Forwarded-Host`) is `localhost` or a loopback address;
+4. it is not marked as coming from Cloudflare (`CF-Ray`).
+
+A loopback peer alone is not enough, because proxies on the same machine forward other people's
+traffic from `127.0.0.1`: the Cloudflare tunnel (internet players) and the Vite dev server (LAN
+players who load the app from it, which is why `vite.config.ts` sets `xfwd`). The backend
+may also bind every interface, so a LAN device is never loopback.
+
+A tunnel or reverse proxy that sends none of those signals, and rewrites `Host` to `localhost`,
+cannot be told apart from the host's own browser. That is unsupported
+(see [internet-play.md](../setup/internet-play.md#using-your-own-tunnel-or-reverse-proxy)).
+
+The desktop sidecar also supplies the key participant tokens are signed with
+(`desktop/src-tauri/src/signing_key.rs`): 256 random bits, generated once and kept in the app
+data directory, never logged. Tokens therefore survive an app restart.
+
+## Anonymous join lookup
+
+The join page needs a little information before the player has a token, so
+`GET /api/sessions/{id}/join-info` is anonymous and uses the `join` rate limit. It returns only
+`{ "name": ..., "joinable": ... }`. A session that does not exist, has ended, or is a solo play
+session returns `{ "name": null, "joinable": false }` with the same status and headers, so the
+response does not confirm that an ID was ever valid. Only a running session open to players reveals
+its name. The invite code, participants and campaign are never returned. Session IDs are random
+GUIDs (122 bits), so they cannot be enumerated, and joining still needs the invite code.
+
 ## Rate limiting
 
 ASP.NET Core rate limiting (`Microsoft.AspNetCore.RateLimiting`) throttles requests **per

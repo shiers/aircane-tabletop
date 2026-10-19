@@ -483,15 +483,15 @@ public sealed class AdventureSessionsController : ControllerBase
     // ── Authorization ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// True when the caller is the Host: a Host token, or, with no token, a caller the
-    /// <see cref="AnonymousHostRule"/> trusts. In desktop mode (<c>Aircane:TrustLocalHost</c>) that is
-    /// only a direct loopback request from the host's own machine, never a LAN player or tunnel
-    /// traffic; in Development it is anyone. Hosted deployments never let a token-less caller this far.
+    /// True when the caller is the Host: a Host token, or, with no token, the trusted local host
+    /// (<see cref="LocalHostTrust"/>): a direct request from the host's own machine, never a LAN
+    /// player or tunnel traffic. Desktop mode and Development both let such a caller past the
+    /// policies; a hosted deployment never lets a token-less caller this far.
     /// </summary>
     private bool IsHost()
         => User.Identity?.IsAuthenticated == true
             ? string.Equals(User.FindFirst(ClaimTypes.Role)?.Value, nameof(ParticipantRole.Host), StringComparison.OrdinalIgnoreCase)
-            : (HttpContext.RequestServices?.GetService<AnonymousHostRule>() ?? AnonymousHostRule.LocalHostOnly).IsHost(HttpContext);
+            : LocalHostTrust.IsTrustedLocalCaller(HttpContext);
 
     /// <summary>
     /// Host, or the solo Player whose token was issued for this run's play session.

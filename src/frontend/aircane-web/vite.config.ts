@@ -12,14 +12,21 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // xfwd adds X-Forwarded-For/-Host/-Proto so the backend can see who the browser really is.
+    // Without it every proxied request reaches the backend from 127.0.0.1, and a LAN player who
+    // loads the app from this dev server (docs/setup/lan-hosting.md) would look like the developer
+    // on the host machine. The backend trusts a proxied request only if it was forwarded for a
+    // loopback client, so the developer's own browser still works without a token.
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
+        xfwd: true,
       },
       '/hubs': {
         target: 'http://localhost:5000',
         changeOrigin: true,
+        xfwd: true,
         ws: true,
       },
     },

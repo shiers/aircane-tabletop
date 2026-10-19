@@ -2,6 +2,30 @@
 
 Aircane Tabletop is designed for local network play. The host runs the server, and players join from their own devices on the same network.
 
+## Security model
+
+**Authorization is enforced in every mode.** There is no development or desktop setting that
+lets another device on your network act as the host. Whoever is not the host needs a
+participant token, which they get by joining with the invite code, and a token makes them a
+**Player**. A request counts as *the host* only when it comes straight from the machine running
+the backend, with no token needed: it must come from a loopback address (`127.0.0.1`/`::1`),
+use `localhost` as the host name, and carry no proxy header that names another client
+(`X-Forwarded-For`, `Forwarded`, `X-Real-IP`, `CF-Connecting-IP`, …).
+
+This applies to the desktop app, to `dotnet run` (the Development environment) and to hosted
+deployments alike. In practice:
+
+- On the host machine, open the app at **`http://localhost:<port>`**. Opening it through the
+  machine's own LAN address (`http://192.168.x.x:<port>`) is a request from a LAN address, so it
+  needs a token like any other device.
+- Players use `http://<your-lan-ip>:<port>` (or the dev server, below), enter the invite code, and
+  are Players. They cannot end the session, approve players, assign characters, change AI
+  settings or manage the library, however they reach the server.
+- If you put your own reverse proxy in front of the backend on the same machine, it must pass the
+  client address on (`X-Forwarded-For` or `Forwarded`) or the public `Host` name; see
+  [Internet play](./internet-play.md#using-your-own-tunnel-or-reverse-proxy). A proxy that does
+  neither makes every player look like the host.
+
 ## How It Works
 
 1. The host starts the Aircane backend and frontend on their machine
@@ -49,6 +73,18 @@ Or set the environment variable:
 export ASPNETCORE_URLS="http://0.0.0.0:5000"
 ```
 
+Binding to all interfaces does not make other devices hosts: they are held to the rules in
+[Security model](#security-model) above. For players to join, the backend needs a token signing
+key. Set one for your run, for example with user secrets (a long random value, never committed):
+
+```bash
+cd src/backend/Aircane.Api
+dotnet user-secrets set "Jwt:SigningKey" "$(openssl rand -hex 32)"
+```
+
+(The desktop app generates and stores its own key; you do not set one there. Delete
+`jwt-signing-key` from the app data directory to rotate it, which signs everyone out.)
+
 ### 4. Configure CORS for LAN
 
 Add your LAN IP to the allowed origins in `appsettings.Development.json` or via environment variable:
@@ -70,6 +106,11 @@ If running the frontend in dev mode, start Vite with host binding:
 cd src/frontend/aircane-web
 npm run dev -- --host
 ```
+
+Players then load the app from the dev server, which forwards their requests to the backend. The
+dev server is configured (`xfwd` in `vite.config.ts`) to pass each browser's address on, which is
+how the backend tells your own browser on the host machine (the host, no token) from a player's
+phone (a Player). Keep that setting if you edit the proxy.
 
 ### 5. Create a Session
 
@@ -140,7 +181,7 @@ sudo ufw allow 5173/tcp
 
 ## Limitations (MVP)
 
-- LAN only - no internet/tunnel hosting yet
+- LAN play is for trusted networks; use [Internet play](./internet-play.md) (Cloudflare Tunnel) for remote players
 - No HTTPS on LAN (acceptable for trusted local networks)
 - Session tokens expire after 24 hours by default
 - No persistent user accounts - players are identified by session tokens

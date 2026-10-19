@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   startSession,
   getSession,
+  getJoinInfo,
   joinSession,
   endSession,
   getParticipants,
@@ -269,5 +270,26 @@ describe('sessions API', () => {
         'Not Found',
       )
     })
+  })
+})
+
+describe('getJoinInfo', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('GETs the anonymous join-info endpoint and returns only name and joinable', async () => {
+    mockedGet.mockResolvedValueOnce({ data: { name: 'Friday Table', joinable: true } })
+
+    const info = await getJoinInfo('session-1')
+
+    expect(mockedGet).toHaveBeenCalledWith('/api/sessions/session-1/join-info')
+    expect(info).toEqual({ name: 'Friday Table', joinable: true })
+  })
+
+  it('returns the not-joinable shape for a session that cannot be joined', async () => {
+    mockedGet.mockResolvedValueOnce({ data: { name: null, joinable: false } })
+
+    expect(await getJoinInfo('gone')).toEqual({ name: null, joinable: false })
   })
 })

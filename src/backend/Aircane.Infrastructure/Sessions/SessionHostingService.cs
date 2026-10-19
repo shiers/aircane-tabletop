@@ -96,6 +96,19 @@ public sealed class SessionHostingService : ISessionHostingService
     }
 
     /// <inheritdoc />
+    public async Task<ParticipantDto?> GetParticipantAsync(
+        Guid sessionId,
+        Guid participantId,
+        CancellationToken cancellationToken = default)
+    {
+        var participant = await _db.SessionParticipants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.SessionId == sessionId && p.Id == participantId, cancellationToken);
+
+        return participant is null ? null : ToParticipantDto(participant);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<ParticipantDto>> GetParticipantsAsync(
         Guid sessionId,
         CancellationToken cancellationToken = default)

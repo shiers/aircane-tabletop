@@ -93,3 +93,38 @@ NPCs, encounters and treasure, exits and the other scenes (so nothing about what
 private DM note, and internal ids of scenes.
 
 The full run state (`GET /api/adventure-sessions/{id}`) remains a host tool.
+
+## Who may read or act in a run
+
+A Player token is a **seat** only while the host has approved the participant and not denied them. Every
+Player-visible adventure read and action checks that against the roster on each request (`PlayerSeat`), not just the
+token's signature:
+
+| Caller | Result |
+| --- | --- |
+| Host (Host token, or the trusted local host) | everything |
+| Player with an approved seat at the run's play session | what the table below allows |
+| Participant still waiting for approval | 403 `Waiting for approval` |
+| Participant the host denied | 403 with `code: "participant-denied"` (their token is also revoked, which gives the same refusal) |
+| Token for another session, no participant record, or a role other than Player | 403 |
+
+What an approved Player may do with a **group** run:
+
+| Endpoint | Player | Why |
+| --- | --- | --- |
+| `GET /api/sessions/{id}/adventure-run` | yes | the player-safe view, above |
+| `POST /api/adventure-sessions/{runId}/player-action` | yes, on their turn | the response is the narration only (no run state, no action outcomes, no private DM note) |
+| `GET /api/adventure-sessions/{runId}` (full state) | **403** | scene synopsis, objectives, exits, NPCs, revealed secrets, encounter outcomes |
+| `GET .../history` | **403** | 50 entries and scene ids, where `adventure-run` has the latest 20 |
+| `POST .../recap` | **403** | the AI is given the scene synopsis and objectives, and can repeat them |
+| `GET .../available-scenes` | **403** | names and descriptions of the scenes that come next |
+| `GET /api/adventure-sessions/active?campaignId=` | **403** | run ids and outcome notes |
+| `POST .../resume`, `advance-scene`, `abandon` | **403** | the course of the game is the Host's |
+| `POST .../advance-turn`, `.../participants`, `start`, `start-group`, `GET in-progress` | **403** | Host only, as before |
+| `POST /api/sessions/{id}/ai/player-action` | seat required; 409 during a group run | when it does answer, `privateDmNote` is removed for a Player |
+
+A **solo** run has no table to protect, so its one Player keeps full access (still needing a seat).
+Adventure content (`/api/adventures`), campaigns, combat, proposals and campaign state are Host or DM-only by policy.
+
+Events sent to the session's SignalR group (`AdventureSceneAdvanced`, `AdventureClueRevealed` and so on) reach every
+connection in the group. They carry only what has been revealed to the table.

@@ -81,7 +81,7 @@ public sealed class AdventureGroupPlayTests : IDisposable
         _db.AdventureSessions.AsNoTracking().SingleAsync(s => s.Id == id);
 
     private AdventureSessionsController CreateController(ClaimsPrincipal? user)
-        => new(_sut, _playerActions, sessionHosting: null!, NullLogger<AdventureSessionsController>.Instance)
+        => new(_sut, _playerActions, sessionHosting: new DbBackedSessionHosting(_db), NullLogger<AdventureSessionsController>.Instance)
         {
             ControllerContext = new ControllerContext
             {
@@ -286,7 +286,9 @@ public sealed class AdventureGroupPlayTests : IDisposable
 
         var body = Assert.IsType<AdventureSessionActionResponse>(Assert.IsType<OkObjectResult>(result).Value);
         Assert.Equal("The torch flares.", body.Narration);
-        Assert.Equal(_alice.Id, body.State.ActiveParticipantId);
+        Assert.Null(body.State);   // a Player is never sent the full run state
+        Assert.Null(body.PrivateDmNote);
+        Assert.Empty(body.Actions);
         Assert.Equal(1, _playerActions.Calls);
     }
 

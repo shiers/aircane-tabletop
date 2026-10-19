@@ -179,12 +179,18 @@ public sealed record AdventureActionOutcomeDto(string ActionType, string Outcome
 /// <summary>
 /// Response to a player action in an adventure run: the AI DM's narration, what happened to the
 /// actions it proposed, and the refreshed run state.
+/// <para>
+/// The Host gets all of it. A Player gets only <see cref="Narration"/>: the private DM note is null, the
+/// action outcomes are empty and <see cref="State"/> is null, because the full run state and the AI's
+/// proposed actions carry more than a player may see. A Player reads the table's view from
+/// <c>GET /api/sessions/{id}/adventure-run</c>.
+/// </para>
 /// </summary>
 public sealed record AdventureSessionActionResponse(
     string Narration,
     string? PrivateDmNote,
     IReadOnlyList<AdventureActionOutcomeDto> Actions,
-    AdventureSessionStateDto State);
+    AdventureSessionStateDto? State);
 
 /// <summary>
 /// The player-safe view of an adventure run: what a Player at the table may be told. Everything here is

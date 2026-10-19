@@ -65,6 +65,8 @@ public sealed class PlayerActionControllerGroupGuardTests : IDisposable
         await _db.SaveChangesAsync();
 
         _hosting.Register(_playSession);
+        _hosting.Register(_alice);
+        _hosting.Register(_bob);
     }
 
     /// <summary>A group run, Alice up first.</summary>
@@ -79,7 +81,7 @@ public sealed class PlayerActionControllerGroupGuardTests : IDisposable
         {
             ControllerContext = new ControllerContext
             {
-                HttpContext = new DefaultHttpContext { User = user ?? new ClaimsPrincipal(new ClaimsIdentity()) },
+                HttpContext = LocalHostHttpContext.Create(user),
             },
         };
 
@@ -238,13 +240,21 @@ public sealed class PlayerActionControllerGroupGuardTests : IDisposable
         }
     }
 
-    /// <summary>Only <see cref="GetSessionAsync"/> is used by the controller under test.</summary>
+    /// <summary>Only the session and participant reads are used by the controller under test.</summary>
     private sealed class FakeSessionHostingService : ISessionHostingService
     {
         private readonly Dictionary<Guid, SessionDto> _sessions = [];
 
         public void Register(Session s) => _sessions[s.Id] = new SessionDto(
             s.Id, s.CampaignId, s.Name, s.AccessMode, s.Status, StartedAt: null, EndedAt: null, s.CreatedAt);
+
+        private readonly Dictionary<Guid, ParticipantDto> _participants = [];
+
+        public void Register(SessionParticipant p) => _participants[p.Id] = new ParticipantDto(
+            p.Id, p.SessionId, p.DisplayName, p.Role, p.CharacterId, p.IsApproved, p.JoinedAt, p.LastSeenAt, p.IsDenied);
+
+        public Task<ParticipantDto?> GetParticipantAsync(Guid sessionId, Guid participantId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_participants.GetValueOrDefault(participantId) is { } dto && dto.SessionId == sessionId ? dto : null);
 
         public Task<SessionDto?> GetSessionAsync(Guid sessionId, CancellationToken cancellationToken = default)
             => Task.FromResult(_sessions.GetValueOrDefault(sessionId));

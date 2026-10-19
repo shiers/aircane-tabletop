@@ -565,4 +565,62 @@ public sealed class SessionHubSecurityTests : IClassFixture<DesktopModeWebApplic
             signingCredentials: credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Rolls recorded over REST are broadcast through the notifier's routing
+    // ═════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task RecordedRolls_AreBroadcast_PrivateToTheRollerAndHost_PublicToTheTable()
+    {
+        var session = await StartSessionAsync();
+        var alice = await JoinApprovedAsync(session, "Alice");
+        var bob = await JoinApprovedAsync(session, "Bob");
+        await using var host = await HostOnHubAsync(session);
+        await using var aliceHub = await JoinedAsync(alice.ParticipantToken, session.Id, alice.ParticipantId, "Alice");
+        await using var bobHub = await JoinedAsync(bob.ParticipantToken, session.Id, bob.ParticipantId, "Bob");
+
+        using (var asBob = Lan(bob.ParticipantToken))
+        {
+            (await asBob.PostAsJsonAsync($"/api/sessions/{session.Id}/rolls",
+                new { rollerParticipantId = alice.ParticipantId, formula = "1d20+3", visibility = (int)RollVisibility.Private, context = "insight" }))
+                .EnsureSuccessStatusCode();
+            await host.WaitFor("RollRecorded");
+            await bobHub.WaitFor("RollRecorded");
+
+            (await asBob.PostAsJsonAsync($"/api/sessions/{session.Id}/manual-rolls",
+                new { rollerParticipantId = bob.ParticipantId, dieResults = new[] { 14 }, modifier = 2, total = 16, formula = "1d20+2", context = "attack" }))
+                .EnsureSuccessStatusCode();
+        }
+
+        var seenByAlice = await aliceHub.WaitFor("RollRecorded");
+        await Task.Delay(Quiet);
+
+        // Alice saw the public roll only; the host and Bob saw both.
+        Assert.Single(aliceHub.All("RollRecorded"));
+        Assert.Equal(2, host.All("RollRecorded").Count());
+        Assert.Equal(2, bobHub.All("RollRecorded").Count());
+
+        // The payload: { sessionId, roll } with the roller (from Bob's token, not the body), the dice and the total.
+        Assert.Equal(session.Id, seenByAlice.GetProperty("sessionId").GetGuid());
+        var roll = seenByAlice.GetProperty("roll");
+        Assert.Equal(bob.ParticipantId, roll.GetProperty("rollerParticipantId").GetGuid());
+        Assert.Equal("Bob", roll.GetProperty("rollerName").GetString());
+        Assert.Equal("1d20+2", roll.GetProperty("formula").GetString());
+        Assert.Equal(14, roll.GetProperty("dieResults")[0].GetInt32());
+        Assert.Equal(2, roll.GetProperty("modifier").GetInt32());
+        Assert.Equal(16, roll.GetProperty("total").GetInt32());
+        Assert.Equal((int)RollVisibility.Public, roll.GetProperty("visibility").GetInt32());
+        Assert.True(roll.TryGetProperty("createdAt", out _));
+
+        var privateOne = bobHub.All("RollRecorded").Single(r => r.GetProperty("roll").GetProperty("context").GetString() == "insight");
+        Assert.Equal(bob.ParticipantId, privateOne.GetProperty("roll").GetProperty("rollerParticipantId").GetGuid());
+
+        // Nothing anyone could use to act as someone else.
+        foreach (var (_, payload) in host.Received.Concat(aliceHub.Received).Concat(bobHub.Received))
+        {
+            Assert.DoesNotContain(session.InviteCode!, payload.GetRawText());
+            Assert.DoesNotContain(bob.ParticipantToken, payload.GetRawText());
+        }
+    }
 }

@@ -81,7 +81,7 @@ public sealed class DiceService : IDiceService
             "Roll persisted: {RollId} formula={Formula} total={Total} session={SessionId}",
             roll.Id, request.Formula, result.Total, request.SessionId);
 
-        return ToDto(roll, result.AllDieResults);
+        return ToDto(roll, result.AllDieResults, await RollerNameAsync(roll, cancellationToken));
     }
 
     /// <inheritdoc />
@@ -110,7 +110,7 @@ public sealed class DiceService : IDiceService
             "Manual roll persisted: {RollId} formula={Formula} total={Total} session={SessionId}",
             roll.Id, request.Formula, request.Total, request.SessionId);
 
-        return ToDto(roll, request.DieResults);
+        return ToDto(roll, request.DieResults, await RollerNameAsync(roll, cancellationToken));
     }
 
     /// <inheritdoc />
@@ -118,20 +118,45 @@ public sealed class DiceService : IDiceService
         Guid sessionId,
         int page = 1,
         int pageSize = 50,
+        RollLogViewer? viewer = null,
         CancellationToken cancellationToken = default)
     {
-        var rolls = await _db.Rolls
+        var query = _db.Rolls
             .AsNoTracking()
-            .Where(r => r.SessionId == sessionId)
+            .Where(r => r.SessionId == sessionId);
+
+        // Someone else's private roll is never read for a viewer who may not see it, so the page size and
+        // order are those of what they may see.
+        if (viewer is { SeesPrivateRolls: false })
+        {
+            var reader = viewer.ParticipantId ?? Guid.Empty;
+            query = query.Where(r => r.Visibility == RollVisibility.Public || r.RollerParticipantId == reader);
+        }
+
+        var rolls = await query
             .OrderByDescending(r => r.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
+        var rollerIds = rolls.Select(r => r.RollerParticipantId).Distinct().ToList();
+        var names = await _db.SessionParticipants
+            .AsNoTracking()
+            .Where(p => p.SessionId == sessionId && rollerIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.DisplayName, cancellationToken);
+
         return rolls
-            .Select(r => ToDto(r, DeserializeDieResults(r.DieResultsJson)))
+            .Select(r => ToDto(r, DeserializeDieResults(r.DieResultsJson), names.GetValueOrDefault(r.RollerParticipantId)))
             .ToList();
     }
+
+    /// <summary>The roller's display name, when the roller is a participant of the roll's session.</summary>
+    private Task<string?> RollerNameAsync(Roll roll, CancellationToken ct)
+        => _db.SessionParticipants
+            .AsNoTracking()
+            .Where(p => p.SessionId == roll.SessionId && p.Id == roll.RollerParticipantId)
+            .Select(p => (string?)p.DisplayName)
+            .FirstOrDefaultAsync(ct);
 
     // ── Internal roll execution ───────────────────────────────────────────────
 
@@ -188,7 +213,7 @@ public sealed class DiceService : IDiceService
 
     // ── Mapping helpers ───────────────────────────────────────────────────────
 
-    private static RollDto ToDto(Roll roll, int[] dieResults) => new(
+    private static RollDto ToDto(Roll roll, int[] dieResults, string? rollerName = null) => new(
         Id: roll.Id,
         SessionId: roll.SessionId,
         CharacterId: roll.CharacterId,
@@ -200,7 +225,8 @@ public sealed class DiceService : IDiceService
         IsManual: roll.IsManual,
         Visibility: roll.Visibility,
         Context: roll.Context,
-        CreatedAt: roll.CreatedAt);
+        CreatedAt: roll.CreatedAt,
+        RollerName: rollerName);
 
     private static int[] DeserializeDieResults(string json)
     {

@@ -18,7 +18,7 @@ import { useRoute, useRouter } from 'vue-router'
 import * as signalR from '@microsoft/signalr'
 import { useSessionStore } from './store'
 import { endSession, getNetworkInfo, getParticipants, SessionStatus, type NetworkInfo } from './api'
-import { getRollLog, type RollDto } from '../dice/api'
+import { getRollLog, type RollDto, type RollRecordedEvent } from '../dice/api'
 import LanJoinScreen from './LanJoinScreen.vue'
 import InternetPlayPanel from './components/InternetPlayPanel.vue'
 import ParticipantApprovalPanel from './ParticipantApprovalPanel.vue'
@@ -257,7 +257,9 @@ async function connectHub(): Promise<void> {
       },
     )
 
-    connection.on('RollRecorded', (roll: RollDto) => {
+    // The hub sends { sessionId, roll }; a private roll reaches only its roller and the host.
+    connection.on('RollRecorded', (n: RollRecordedEvent) => {
+      const roll = n.roll
       pushEvent({
         actor: 'Player',
         eventType: 'RollRecorded',
@@ -421,9 +423,10 @@ async function handleEndSession(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function rollSummary(roll: RollDto): string {
+  const who = roll.rollerName ? `${roll.rollerName}: ` : ''
   const formula = roll.formula ? `${roll.formula} = ` : ''
   const context = roll.context ? ` (${roll.context})` : ''
-  return `${formula}${roll.total}${context}`
+  return `${who}${formula}${roll.total}${context}`
 }
 
 function formatRollTime(timestamp: string): string {

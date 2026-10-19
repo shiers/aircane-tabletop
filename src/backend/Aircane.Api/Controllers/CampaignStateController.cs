@@ -14,6 +14,7 @@ namespace Aircane.Api.Controllers;
 [Route("api/campaigns/{campaignId:guid}")]
 [Produces("application/json")]
 [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
 public sealed class CampaignStateController : ControllerBase
 {
     private readonly ICampaignStateService _stateService;

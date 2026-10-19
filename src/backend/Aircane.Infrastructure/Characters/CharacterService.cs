@@ -2,6 +2,7 @@ using Aircane.Application.Abstractions;
 using Aircane.Application.Characters;
 using Aircane.Application.DTOs.Characters;
 using Aircane.Domain.Entities;
+using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -192,6 +193,35 @@ public sealed class CharacterService : ICharacterService
         _logger.LogInformation(
             "Character deleted: {CharacterId} (unassigned from {ParticipantCount} participant(s))",
             characterId, assignedParticipants.Count);
+    }
+
+    // ── ListForPlayerAsync ────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CharacterDto>> ListForPlayerAsync(
+        Guid campaignId,
+        Guid participantId,
+        Guid? assignedCharacterId,
+        CancellationToken cancellationToken = default)
+    {
+        // The filter is the query: an NPC, or someone else's character, is never read.
+        var characters = await _db.Characters
+            .AsNoTracking()
+            .Where(c => c.CampaignId == campaignId
+                        && c.Role != CharacterRole.Npc
+                        && (c.OwnerParticipantId == participantId || c.Id == assignedCharacterId))
+            .OrderBy(c => c.Name)
+            .ToListAsync(cancellationToken);
+
+        if (characters.Count == 0)
+            return [];
+
+        var campaignName = await _db.Campaigns
+            .Where(c => c.Id == campaignId)
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return characters.Select(c => ToDto(c, campaignName)).ToList();
     }
 
     // ── ListByCampaignAsync ───────────────────────────────────────────────────

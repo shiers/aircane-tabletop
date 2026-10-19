@@ -7,6 +7,7 @@ using Aircane.Infrastructure.Embeddings;
 using Aircane.Infrastructure.Persistence;
 using Aircane.Infrastructure.Retrieval.Reranking;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -117,6 +118,16 @@ public class AircaneWebApplicationFactory : WebApplicationFactory<Program>
                 options.DefaultAuthenticateScheme = "TestScheme";
                 options.DefaultChallengeScheme = "TestScheme";
             });
+
+            // The always-Host test scheme stands for the host of every session, so the session-scope check
+            // (which reads a real token's sid) is replaced by one that lets that identity through. Factories
+            // that use real tokens (DesktopModeWebApplicationFactory) register the real check again.
+            var scopeHandler = services.FirstOrDefault(d =>
+                d.ServiceType == typeof(IAuthorizationHandler)
+                && d.ImplementationType == typeof(Aircane.Api.Authorization.SessionScopeAuthorizationHandler));
+            if (scopeHandler is not null)
+                services.Remove(scopeHandler);
+            services.AddSingleton<IAuthorizationHandler, TestSchemeSessionScopeHandler>();
         });
     }
 }
@@ -131,6 +142,20 @@ public sealed class SharedDbWebApplicationFactory : AircaneWebApplicationFactory
 {
     public SharedDbWebApplicationFactory(string dbName) : base(dbName)
     {
+    }
+}
+
+/// <summary>
+/// Meets the session-scope requirement for the always-Host test identity, and nobody else.
+/// </summary>
+public sealed class TestSchemeSessionScopeHandler : AuthorizationHandler<Aircane.Api.Authorization.SessionScopeRequirement>
+{
+    protected override Task HandleRequirementAsync(
+        AuthorizationHandlerContext context, Aircane.Api.Authorization.SessionScopeRequirement requirement)
+    {
+        if (context.User.Identity?.AuthenticationType == "TestScheme")
+            context.Succeed(requirement);
+        return Task.CompletedTask;
     }
 }
 

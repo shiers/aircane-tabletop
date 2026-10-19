@@ -21,7 +21,8 @@ namespace Aircane.Api.Controllers;
 [ApiController]
 [Route("api/adventure-sessions")]
 [Produces("application/json")]
-[Authorize(Policy = AuthorizationPolicies.Authenticated)]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
+[SessionScopedRoute(SessionScopeKind.AdventureRun)]
 public sealed class AdventureSessionsController : ControllerBase
 {
     // Claim carrying the session a participant token was issued for (see ParticipantTokenService).

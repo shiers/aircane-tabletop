@@ -11,7 +11,8 @@ namespace Aircane.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/sessions")]
-[Authorize(Policy = AuthorizationPolicies.Authenticated)]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
+[SessionScopedRoute(SessionScopeKind.Session)]
 public sealed class PlayerActionController : ControllerBase
 {
     private readonly IPlayerActionService _playerActionService;

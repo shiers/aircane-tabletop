@@ -14,6 +14,7 @@ namespace Aircane.Api.Controllers;
 [Route("api/sessions/{sessionId:guid}/ai/proposals")]
 [Produces("application/json")]
 [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
 public sealed class AiProposalsController : ControllerBase
 {
     private readonly IAiProposalService _proposalService;

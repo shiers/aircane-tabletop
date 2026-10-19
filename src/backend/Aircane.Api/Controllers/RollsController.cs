@@ -17,24 +17,52 @@ namespace Aircane.Api.Controllers;
 [ApiController]
 [Route("api/sessions/{sessionId:guid}")]
 [Produces("application/json")]
-[Authorize(Policy = AuthorizationPolicies.Authenticated)]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
 public sealed class RollsController : ControllerBase
 {
     private readonly IDiceService _dice;
     private readonly ISystemRegistry _registry;
     private readonly IMechanicResolver _mechanicResolver;
+    private readonly ISessionHubNotifier _hub;
     private readonly ILogger<RollsController> _logger;
 
     public RollsController(
         IDiceService dice,
         ISystemRegistry registry,
         IMechanicResolver mechanicResolver,
+        ISessionHubNotifier hub,
         ILogger<RollsController> logger)
     {
         _dice = dice;
         _registry = registry;
         _mechanicResolver = mechanicResolver;
+        _hub = hub;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Who rolled. A Player (or Spectator) rolls as themselves: the token's participant, whatever the body
+    /// says. The host (and a human DM) may roll for someone else, so theirs comes from the body.
+    /// </summary>
+    private Guid RollerOf(Guid fromBody)
+        => this.TokenCaller() is { Role: ParticipantRole.Player or ParticipantRole.Spectator } caller
+            ? caller.ParticipantId
+            : fromBody;
+
+    /// <summary>
+    /// Tells the session the roll happened: a public roll to the table, a private one to the roller and the
+    /// host only (the notifier's routing). Best effort: the roll is saved whatever happens here.
+    /// </summary>
+    private async Task BroadcastAsync(Guid sessionId, RollDto roll)
+    {
+        try
+        {
+            await _hub.NotifyRollRecordedAsync(sessionId, roll, HttpContext.RequestAborted);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast roll {RollId} in session {SessionId}", roll.Id, sessionId);
+        }
     }
 
     // ── POST /api/sessions/{sessionId}/rolls ──────────────────────────────────
@@ -52,6 +80,8 @@ public sealed class RollsController : ControllerBase
         [FromBody] RollDiceBody body,
         CancellationToken cancellationToken)
     {
+        body = body with { RollerParticipantId = RollerOf(body.RollerParticipantId) };
+
         if (string.IsNullOrWhiteSpace(body.Formula))
             return BadRequest(new ProblemDetails
             {
@@ -86,6 +116,7 @@ public sealed class RollsController : ControllerBase
             Context: body.Context);
 
         var dto = await _dice.RollAsync(request, cancellationToken);
+        await BroadcastAsync(sessionId, dto);
 
         // Attempt system-aware resolution if a campaign is bound
         string? outcomeTier = null;
@@ -180,6 +211,8 @@ public sealed class RollsController : ControllerBase
         [FromBody] ManualRollBody body,
         CancellationToken cancellationToken)
     {
+        body = body with { RollerParticipantId = RollerOf(body.RollerParticipantId) };
+
         if (body.RollerParticipantId == Guid.Empty)
             return BadRequest(new ProblemDetails
             {
@@ -208,13 +241,15 @@ public sealed class RollsController : ControllerBase
             Context: body.Context);
 
         var dto = await _dice.RecordManualRollAsync(request, cancellationToken);
+        await BroadcastAsync(sessionId, dto);
         return CreatedAtAction(nameof(GetRollLog), new { sessionId }, dto);
     }
 
     // ── GET /api/sessions/{sessionId}/rolls ───────────────────────────────────
 
     /// <summary>
-    /// Returns the roll log for a session, ordered by most recent first.
+    /// Returns the roll log for a session, ordered by most recent first. Private rolls are in it only for
+    /// the host, a human DM, and the person who rolled them; the filtering is in the query.
     /// </summary>
     [HttpGet("rolls")]
     [ProducesResponseType(typeof(IReadOnlyList<RollDto>), StatusCodes.Status200OK)]
@@ -227,7 +262,10 @@ public sealed class RollsController : ControllerBase
         if (page < 1) page = 1;
         if (pageSize is < 1 or > 200) pageSize = 50;
 
-        var rolls = await _dice.GetRollLogAsync(sessionId, page, pageSize, cancellationToken);
+        var viewer = this.IsHostOrDm()
+            ? RollLogViewer.Everything
+            : new RollLogViewer(this.TokenCaller()?.ParticipantId, SeesPrivateRolls: false);
+        var rolls = await _dice.GetRollLogAsync(sessionId, page, pageSize, viewer, cancellationToken);
         return Ok(rolls);
     }
 }

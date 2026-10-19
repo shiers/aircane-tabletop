@@ -17,7 +17,8 @@ namespace Aircane.Api.Controllers;
 [ApiController]
 [Route("api/characters")]
 [Produces("application/json")]
-[Authorize(Policy = AuthorizationPolicies.DmOrHost)]
+[Authorize(Policy = AuthorizationPolicies.SessionMember)]
+[SessionScopedRoute(SessionScopeKind.Character)]
 public sealed class CharactersController : ControllerBase
 {
     /// <summary>Maximum size, in bytes, accepted on the source-adapter import path.</summary>
@@ -30,6 +31,7 @@ public sealed class CharactersController : ControllerBase
     private readonly CharacterFormatDetector _formatDetector;
     private readonly IReadOnlyList<ICharacterSourceMapper> _sourceMappers;
     private readonly IDndBeyondUrlImportService _dndBeyondUrlImport;
+    private readonly ISessionHostingService _sessions;
     private readonly ILogger<CharactersController> _logger;
 
     public CharactersController(
@@ -40,6 +42,7 @@ public sealed class CharactersController : ControllerBase
         CharacterFormatDetector formatDetector,
         IEnumerable<ICharacterSourceMapper> sourceMappers,
         IDndBeyondUrlImportService dndBeyondUrlImport,
+        ISessionHostingService sessions,
         ILogger<CharactersController> logger)
     {
         _characters = characters;
@@ -49,6 +52,7 @@ public sealed class CharactersController : ControllerBase
         _formatDetector = formatDetector;
         _sourceMappers = sourceMappers.ToList();
         _dndBeyondUrlImport = dndBeyondUrlImport;
+        _sessions = sessions;
         _logger = logger;
     }
 
@@ -59,6 +63,7 @@ public sealed class CharactersController : ControllerBase
     /// Returns 400 when the JSON is malformed or the request body is missing required fields.
     /// </summary>
     [HttpPost("import")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(typeof(CharacterDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(SourceImportResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -385,6 +390,7 @@ public sealed class CharactersController : ControllerBase
     /// is never stored or logged.
     /// </summary>
     [HttpPost("import/dndbeyond-url")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(typeof(SourceImportResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
@@ -556,6 +562,7 @@ public sealed class CharactersController : ControllerBase
     /// Returns 422 when the PDF requires OCR (no extractable text or form fields found).
     /// </summary>
     [HttpPost("import/pdf")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(CharacterFieldReviewDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(PdfCharacterExtractionResult), StatusCodes.Status200OK)]
@@ -687,6 +694,7 @@ public sealed class CharactersController : ControllerBase
     /// Returns 404 when the character does not exist.
     /// </summary>
     [HttpPut("{id:guid}/field-mappings")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(typeof(CharacterDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -1014,6 +1022,7 @@ public sealed class CharactersController : ControllerBase
     /// Validates character data against the campaign's bound Character Schema when available.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(typeof(CharacterDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateCharacter(
@@ -1078,14 +1087,22 @@ public sealed class CharactersController : ControllerBase
     }
 
     /// <summary>
-    /// Returns a single character by ID.
+    /// Returns a single character by ID. The host and a human DM get any character of their session's
+    /// campaign (the <see cref="AuthorizationPolicies.SessionMember"/> policy keeps them to it); a Player gets
+    /// only a player character they own or have been assigned, and 404 for anything else, NPCs included.
     /// </summary>
     [HttpGet("{id:guid}")]
-    [Authorize(Policy = AuthorizationPolicies.Authenticated)]
     [ProducesResponseType(typeof(CharacterDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetCharacter(Guid id, CancellationToken cancellationToken)
     {
+        if (!this.IsHostOrDm())
+        {
+            var mine = await ListForPlayerAsync(cancellationToken);
+            var visible = mine.FirstOrDefault(c => c.Id == id);
+            return visible is null ? NotFound() : Ok(visible);
+        }
+
         var dto = await _characters.GetCharacterAsync(id, cancellationToken);
         return dto is null ? NotFound() : Ok(dto);
     }
@@ -1095,6 +1112,7 @@ public sealed class CharactersController : ControllerBase
     /// Validates character data against the campaign's bound Character Schema when available.
     /// </summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(typeof(CharacterDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -1136,6 +1154,7 @@ public sealed class CharactersController : ControllerBase
     /// Deletes a character by ID.
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteCharacter(Guid id, CancellationToken cancellationToken)
@@ -1155,16 +1174,25 @@ public sealed class CharactersController : ControllerBase
     /// Lists characters. When <c>campaignId</c> is supplied, returns that campaign's roster
     /// (pass <c>participantId</c> to scope to a specific participant/player view). When
     /// <c>campaignId</c> is omitted, returns the entire global character library, including
-    /// unassigned characters.
+    /// unassigned characters, to the host; a human DM gets their session's campaign.
+    /// A Player gets only the player characters they own or have been assigned in their session's
+    /// campaign (never NPCs), whatever is asked for; an empty list when there are none.
     /// </summary>
     [HttpGet]
-    [Authorize(Policy = AuthorizationPolicies.Authenticated)]
     [ProducesResponseType(typeof(IReadOnlyList<CharacterDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> ListCharacters(
         [FromQuery] Guid? campaignId,
         [FromQuery] Guid? participantId,
         CancellationToken cancellationToken)
     {
+        if (!this.IsHostOrDm())
+            return Ok(await ListForPlayerAsync(cancellationToken));
+
+        // A human DM's library is their session's campaign: the policy has already checked a campaignId
+        // they name, and one they leave out is theirs.
+        if (!campaignId.HasValue && this.TokenCaller() is { } dm)
+            campaignId = (await _sessions.GetSessionAsync(dm.SessionId, cancellationToken))?.CampaignId ?? Guid.Empty;
+
         if (campaignId.HasValue)
         {
             var scoped = await _characters.ListByCampaignAsync(
@@ -1185,6 +1213,7 @@ public sealed class CharactersController : ControllerBase
     /// Returns 400 when a non-null target campaign does not exist. No other field is changed.
     /// </summary>
     [HttpPut("{id:guid}/campaign")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(typeof(CharacterDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -1221,6 +1250,7 @@ public sealed class CharactersController : ControllerBase
     /// Returns 400 when required fields are missing.
     /// </summary>
     [HttpPost("templates")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(typeof(CharacterTemplateDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> SaveTemplate(
@@ -1272,6 +1302,7 @@ public sealed class CharactersController : ControllerBase
     /// Pass <c>?gameSystem=</c> to filter by game system.
     /// </summary>
     [HttpGet("templates")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(typeof(IReadOnlyList<CharacterTemplateDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> ListTemplates(
         [FromQuery] string? gameSystem,
@@ -1285,6 +1316,7 @@ public sealed class CharactersController : ControllerBase
     /// Returns a single character template by ID.
     /// </summary>
     [HttpGet("templates/{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicies.DmOrHost)]
     [ProducesResponseType(typeof(CharacterTemplateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetTemplate(Guid id, CancellationToken cancellationToken)
@@ -1343,5 +1375,20 @@ public sealed class CharactersController : ControllerBase
                 campaignId, ex.Message);
             return null; // Graceful degradation - don't block character creation
         }
+    }
+
+    /// <summary>
+    /// What the calling Player may see: player characters of their session's campaign that they own or have
+    /// been assigned. Empty when they have none, or when the caller is not a seated participant.
+    /// </summary>
+    private async Task<IReadOnlyList<CharacterDto>> ListForPlayerAsync(CancellationToken cancellationToken)
+    {
+        if (this.TokenCaller() is not { } caller)
+            return [];
+        var session = await _sessions.GetSessionAsync(caller.SessionId, cancellationToken);
+        if (session is null)
+            return [];
+        var seat = await _sessions.GetParticipantAsync(caller.SessionId, caller.ParticipantId, cancellationToken);
+        return await _characters.ListForPlayerAsync(session.CampaignId, caller.ParticipantId, seat?.CharacterId, cancellationToken);
     }
 }

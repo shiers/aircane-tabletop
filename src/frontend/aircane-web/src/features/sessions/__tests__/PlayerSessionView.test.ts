@@ -419,20 +419,31 @@ describe('PlayerSessionView', () => {
       })
     })
 
-    it('shows rolls in the roll log', async () => {
+    it('shows rolls in the roll log, from the payload the server sends ({ sessionId, roll })', async () => {
       const { wrapper } = await mountView()
 
+      // The real RollRecorded payload: the roll wrapped with its session, the roller's name included.
       hub.handlers.RollRecorded({
-        id: 'roll-9',
         sessionId: 'session-1',
-        formula: '1d20+2',
-        total: 17,
-        context: 'Perception',
-        createdAt: '2024-01-01T10:08:00Z',
+        roll: {
+          id: 'roll-9',
+          sessionId: 'session-1',
+          characterId: null,
+          rollerParticipantId: 'participant-2',
+          rollerName: 'Bifur',
+          formula: '1d20+2',
+          dieResults: [15],
+          modifier: 2,
+          total: 17,
+          isManual: false,
+          visibility: 0,
+          context: 'Perception',
+          createdAt: '2024-01-01T10:08:00Z',
+        },
       })
       await flushPromises()
 
-      expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('1d20+2 = 17 (Perception)')
+      expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Bifur: 1d20+2 = 17 (Perception)')
     })
 
     it('reads the run again when the hub says the adventure changed, and shows the new turn', async () => {

@@ -17,6 +17,7 @@ vi.mock('@microsoft/signalr', () => ({
     configureLogging: vi.fn().mockReturnThis(),
     build: vi.fn().mockReturnValue({
       on: vi.fn(),
+      onreconnected: vi.fn(),
       start: vi.fn().mockResolvedValue(undefined),
       invoke: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),

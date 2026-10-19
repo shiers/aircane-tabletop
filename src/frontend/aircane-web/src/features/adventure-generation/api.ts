@@ -175,6 +175,14 @@ export interface ActiveSession {
   status: string
 }
 
+/**
+ * True when the adventure was generated for a group. The list endpoints send the mode as text
+ * ("Solo" / "Group"), and older adventures may have none: those are offered as solo.
+ */
+export function isGroupAdventure(mode: string | null | undefined): boolean {
+  return mode?.trim().toLowerCase() === 'group'
+}
+
 /** The adventures generated for a campaign, newest first. */
 export async function listCampaignAdventures(campaignId: string): Promise<CampaignAdventure[]> {
   const response = await apiClient.get<CampaignAdventure[]>(`/api/campaigns/${campaignId}/adventures`)
@@ -199,4 +207,18 @@ export async function deleteAdventure(adventureId: string): Promise<void> {
 
 export async function approveAdventure(adventureId: string): Promise<void> {
   await apiClient.post(`/api/adventures/${adventureId}/approve`)
+}
+
+/**
+ * The generation mode of one adventure ("Solo" / "Group"), or null when it cannot be determined.
+ * The draft endpoint carries the campaign but not the mode, so this reads it from the list
+ * endpoints, which do. Never throws: a page that only wants to pick a button must not fail on this.
+ */
+export async function lookupAdventureMode(adventureId: string, campaignId?: string | null): Promise<string | null> {
+  try {
+    const list = campaignId ? await listCampaignAdventures(campaignId) : await listUnassignedAdventures()
+    return list.find((a) => a.id === adventureId)?.mode ?? null
+  } catch {
+    return null
+  }
 }

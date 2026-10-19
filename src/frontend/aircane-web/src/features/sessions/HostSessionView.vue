@@ -5,16 +5,35 @@
  *
  * Shows session info, LAN join details, participant management,
  * chat log, roll log, and a placeholder for pending AI proposals.
+ *
+ * Group adventures add two phases, both on this screen:
+ *   - Lobby: reached with `?adventure=<id>` (from "Start Group Session"). Players join with the
+ *     invite code, the host approves them, orders the turns and starts the adventure.
+ *   - Run: once the campaign has a group run in progress (found by asking the server, so it also
+ *     survives a reload), the run view replaces the lobby: acting player, round, pass the turn,
+ *     advance the scene, abandon.
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as signalR from '@microsoft/signalr'
 import { useSessionStore } from './store'
-import { endSession, SessionStatus } from './api'
+import { endSession, getNetworkInfo, getParticipants, SessionStatus, type NetworkInfo } from './api'
 import { getRollLog, type RollDto } from '../dice/api'
 import LanJoinScreen from './LanJoinScreen.vue'
 import InternetPlayPanel from './components/InternetPlayPanel.vue'
 import ParticipantApprovalPanel from './ParticipantApprovalPanel.vue'
+import GroupLobbyPanel from './components/GroupLobbyPanel.vue'
+import GroupRunHostPanel from '../adventures/components/GroupRunHostPanel.vue'
+import { useGroupRunStore } from '../adventures/stores/groupRunStore'
+import type {
+  AdventureSessionStateDto,
+  ParticipantJoinedAdventureEvent,
+  TurnAdvancedEvent,
+} from '../adventures/api'
+import { getAdventureDraft } from '../adventure-generation/api'
+import { listCharacters, CharacterRole } from '../characters/api'
+import { buildJoinLink, eligiblePlayers } from './lobby'
+import { clearInviteCode, loadInviteCode } from './inviteCodeStorage'
 import ChatPanel from './ChatPanel.vue'
 import type { ChatMessage } from './ChatPanel.vue'
 import CombatTracker from './CombatTracker.vue'
@@ -38,6 +57,10 @@ const route = useRoute()
 const router = useRouter()
 const sessionId = route.params.sessionId as string
 const store = useSessionStore()
+const groupRun = useGroupRunStore()
+
+/** Set when the host arrived from "Start Group Session": the adventure the lobby will start. */
+const adventureId = computed(() => (typeof route.query.adventure === 'string' ? route.query.adventure : null))
 
 // ---------------------------------------------------------------------------
 // Local state
@@ -70,8 +93,117 @@ const sessionIsLive = computed(
   () => !!store.currentSession && store.currentSession.status !== SessionStatus.Ended,
 )
 
-// Available characters - placeholder; a real implementation would fetch from the campaign
+// The campaign's player characters, for assignment.
 const availableCharacters = ref<{ id: string; name: string }[]>([])
+
+// ---------------------------------------------------------------------------
+// Group adventure: lobby and run
+// ---------------------------------------------------------------------------
+
+const networkInfo = ref<NetworkInfo | null>(null)
+const adventureTitle = ref<string | null>(null)
+const groupLoading = ref(false)
+
+/** The server returns the invite code once; it was kept in this browser when the session was made. */
+const storedInviteCode = ref<string | null>(loadInviteCode(sessionId))
+const groupInviteCode = computed(() => store.currentSession?.inviteCode || storedInviteCode.value)
+
+const joinLink = computed(() => buildJoinLink(window.location.origin, sessionId, networkInfo.value))
+
+/** A failure to read the group run, shown only on the group screens (it is noise elsewhere). */
+const groupBannerError = computed(() => (adventureId.value || showRun.value ? groupRun.error : null))
+
+/** A group run (in progress, finished or abandoned) exists for this campaign: show the run view. */
+const showRun = computed(() => !!groupRun.run?.isGroup)
+
+/** A solo run is using the campaign, so a group run cannot start in it. */
+const soloRunReason = computed(() =>
+  groupRun.run && !groupRun.run.isGroup && groupRun.run.status === 'InProgress'
+    ? `This campaign already has a solo adventure in progress ("${groupRun.run.adventureTitle}"). Finish or abandon it before starting a group adventure.`
+    : null,
+)
+
+/** The lobby shows while the host is setting up an adventure and none is running yet. */
+const showLobby = computed(
+  () => !!adventureId.value && sessionIsLive.value && !showRun.value && !groupLoading.value,
+)
+
+/** Approved players who are not in the running adventure's turn order yet (they joined late). */
+const latePlayers = computed(() => {
+  const inRun = new Set(groupRun.run?.turnOrder.map((t) => t.participantId) ?? [])
+  return eligiblePlayers(store.participants).filter((p) => !inRun.has(p.id))
+})
+
+async function loadGroupContext(): Promise<void> {
+  const campaignId = store.currentSession?.campaignId
+  if (!campaignId) return
+  groupLoading.value = true
+  try {
+    // Is there already a run? (This is also what makes the run view survive a page reload.)
+    await groupRun.loadForCampaign(campaignId)
+  } finally {
+    groupLoading.value = false
+  }
+
+  // The rest is only needed while setting up or running a group adventure.
+  if (!adventureId.value && !showRun.value) return
+  const [info, characters, draft] = await Promise.allSettled([
+    getNetworkInfo(),
+    listCharacters(campaignId),
+    adventureId.value ? getAdventureDraft(adventureId.value) : Promise.resolve(null),
+  ])
+  networkInfo.value = info.status === 'fulfilled' ? info.value : null
+  if (characters.status === 'fulfilled') {
+    availableCharacters.value = characters.value
+      .filter((c) => c.role === CharacterRole.Player)
+      .map((c) => ({ id: c.id, name: c.name }))
+  }
+  if (draft.status === 'fulfilled' && draft.value) adventureTitle.value = draft.value.title
+}
+
+function handleRunStarted(state: AdventureSessionStateDto): void {
+  groupRun.setRun(state)
+}
+
+// The server does not announce REST joins or approvals, so the lobby polls for them. This reads
+// quietly (no loading flag, no error banner) so the buttons do not flicker.
+const POLL_INTERVAL_MS = 4000
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+async function pollParticipants(): Promise<void> {
+  try {
+    store.participants = await getParticipants(sessionId)
+  } catch {
+    // A missed poll is corrected by the next one.
+  }
+}
+
+function startPolling(): void {
+  if (pollTimer || (!adventureId.value && !showRun.value)) return
+  pollTimer = setInterval(() => {
+    if (sessionIsLive.value) void pollParticipants()
+  }, POLL_INTERVAL_MS)
+}
+
+function stopPolling(): void {
+  if (pollTimer) clearInterval(pollTimer)
+  pollTimer = null
+}
+
+/** The host's identity on the hub. The host has no participant record, so this is made up. */
+const hostHubId =
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : 'host-' + Math.random().toString(16).slice(2)
+
+/** Every run event for the group adventure just means "read the state again". */
+const RUN_EVENTS = [
+  'AdventureSceneAdvanced',
+  'AdventureClueRevealed',
+  'AdventureSecretRevealed',
+  'AdventureNpcUpdated',
+  'AdventureCompleted',
+] as const
 
 // ---------------------------------------------------------------------------
 // SignalR connection
@@ -83,6 +215,16 @@ function buildHubUrl(): string {
   return token ? `${base}?access_token=${encodeURIComponent(token)}` : base
 }
 
+/** Joins the play session's SignalR group. The hub takes a message object, not a bare session id. */
+async function joinHubGroup(connection: signalR.HubConnection): Promise<void> {
+  await connection.invoke('JoinSession', {
+    sessionId,
+    participantId: hostHubId,
+    displayName: 'Host',
+    role: 0, // ParticipantRole.Host
+  })
+}
+
 async function connectHub(): Promise<void> {
   try {
     const connection = new signalR.HubConnectionBuilder()
@@ -92,17 +234,21 @@ async function connectHub(): Promise<void> {
       .build()
 
     // Server → client handlers
-    connection.on('ChatMessageReceived', (senderName: string, text: string, timestamp: string, senderId: string) => {
-      // Diagnostics: record sender name only, never the message text.
-      pushEvent({ actor: 'Player', eventType: 'ChatMessageReceived', keyField: senderName })
-      chatMessages.value.push({
-        id: `${senderId}-${timestamp}`,
-        senderName,
-        text,
-        timestamp,
-        isOwn: false,
-      })
-    })
+    // The hub sends one notification object: { sessionId, participantId, displayName, text, sentAt }.
+    connection.on(
+      'ChatMessageReceived',
+      (n: { participantId: string; displayName: string; text: string; sentAt: string }) => {
+        // Diagnostics: record sender name only, never the message text.
+        pushEvent({ actor: 'Player', eventType: 'ChatMessageReceived', keyField: n.displayName })
+        chatMessages.value.push({
+          id: `${n.participantId}-${n.sentAt}`,
+          senderName: n.displayName,
+          text: n.text,
+          timestamp: n.sentAt,
+          isOwn: n.participantId === hostHubId,
+        })
+      },
+    )
 
     connection.on('RollRecorded', (roll: RollDto) => {
       pushEvent({
@@ -137,8 +283,34 @@ async function connectHub(): Promise<void> {
       await refreshEncounter()
     })
 
+    // Group adventure: the run's events carry the ADVENTURE session id, not this play session's.
+    connection.on('TurnAdvanced', (event: TurnAdvancedEvent) => {
+      pushEvent({ actor: 'Host', eventType: 'TurnAdvanced', keyField: event?.activeParticipantName })
+      void groupRun.onRunEvent(event)
+    })
+    connection.on('ParticipantJoinedAdventure', (event: ParticipantJoinedAdventureEvent) => {
+      pushEvent({ actor: 'Host', eventType: 'ParticipantJoinedAdventure', keyField: event?.participantName })
+      void groupRun.onParticipantJoinedAdventure(event)
+    })
+    for (const name of RUN_EVENTS) {
+      connection.on(name, (event: { sessionId: string }) => {
+        pushEvent({ actor: 'AI', eventType: name })
+        void groupRun.onRunEvent(event)
+      })
+    }
+
+    // Group membership is per connection, so a reconnect has to join again (and catch up).
+    connection.onreconnected(async () => {
+      try {
+        await joinHubGroup(connection)
+        await Promise.all([pollParticipants(), groupRun.refresh()])
+      } catch {
+        // Still disconnected; the next reconnect attempt retries.
+      }
+    })
+
     await connection.start()
-    await connection.invoke('JoinSession', sessionId)
+    await joinHubGroup(connection)
     hubConnection.value = connection
     hubError.value = null
   } catch (err) {
@@ -185,7 +357,12 @@ async function handleRemoveCondition(targetId: string, conditionName: string): P
 async function handleSendChat(text: string): Promise<void> {
   if (!hubConnection.value) return
   try {
-    await hubConnection.value.invoke('SendChatMessage', sessionId, text)
+    await hubConnection.value.invoke('SendChatMessage', {
+      sessionId,
+      participantId: hostHubId,
+      displayName: 'Host',
+      text,
+    })
   } catch {
     // Silently ignore - the message will not appear in the log
   }
@@ -196,11 +373,19 @@ async function handleSendChat(text: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function handleApprove(participantId: string): Promise<void> {
-  await store.approveParticipant(sessionId, participantId)
+  try {
+    await store.approveParticipant(sessionId, participantId)
+  } catch {
+    // store.error is shown in the banner.
+  }
 }
 
 async function handleAssignCharacter(participantId: string, characterId: string): Promise<void> {
-  await store.assignCharacter(sessionId, participantId, characterId)
+  try {
+    await store.assignCharacter(sessionId, participantId, characterId)
+  } catch {
+    // store.error is shown in the banner.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +398,8 @@ async function handleEndSession(): Promise<void> {
   endError.value = null
   try {
     await endSession(sessionId)
+    // The session is over: the saved invite code is no longer useful.
+    clearInviteCode(sessionId)
     await store.fetchSession(sessionId)
     router.push('/sessions')
   } catch (err) {
@@ -255,10 +442,13 @@ onMounted(async () => {
     }),
     refreshEncounter(),
   ])
+  await loadGroupContext()
+  startPolling()
   await connectHub()
 })
 
 onUnmounted(async () => {
+  stopPolling()
   if (hubConnection.value) {
     try {
       await hubConnection.value.stop()
@@ -272,9 +462,9 @@ onUnmounted(async () => {
 <template>
   <div class="mx-auto max-w-6xl space-y-6">
     <!-- Page header -->
-    <div class="flex items-center justify-between gap-4">
-      <div class="flex items-center gap-3">
-        <h1 class="text-2xl font-bold text-white">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex min-w-0 items-center gap-3">
+        <h1 class="min-w-0 break-words text-xl font-bold text-white sm:text-2xl">
           {{ store.currentSession?.name ?? 'Loading…' }}
         </h1>
         <span
@@ -312,11 +502,11 @@ onUnmounted(async () => {
 
     <!-- Error banner -->
     <div
-      v-if="store.error || hubError || endError"
+      v-if="store.error || hubError || endError || groupBannerError"
       role="alert"
     >
       <div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">
-        {{ store.error ?? hubError ?? endError }}
+        {{ store.error ?? hubError ?? endError ?? groupBannerError }}
       </div>
     </div>
 
@@ -331,8 +521,37 @@ onUnmounted(async () => {
     </div>
 
     <template v-else-if="store.currentSession">
+      <!-- Group adventure under way: the host's run view -->
+      <div
+        v-if="showRun"
+        class="rounded-xl border border-surface-700/50 bg-surface-850 p-4 sm:p-6"
+        data-testid="host-run-view"
+      >
+        <GroupRunHostPanel :late-players="latePlayers" />
+      </div>
+
+      <!-- Group adventure being set up: invite, approve, order the turns, start -->
+      <GroupLobbyPanel
+        v-else-if="showLobby && adventureId"
+        :session-id="sessionId"
+        :campaign-id="store.currentSession.campaignId"
+        :adventure-id="adventureId"
+        :adventure-title="adventureTitle"
+        :session="store.currentSession"
+        :invite-code="groupInviteCode"
+        :join-link="joinLink"
+        :participants="store.participants"
+        :available-characters="availableCharacters"
+        :loading="store.loading"
+        :run-blocked-reason="soloRunReason"
+        @approve="handleApprove"
+        @assign-character="handleAssignCharacter"
+        @refresh="pollParticipants"
+        @started="handleRunStarted"
+      />
+
       <!-- LAN join info (shown when invite code is available) -->
-      <div v-if="showLanJoin">
+      <div v-if="showLanJoin && !showLobby && !showRun">
         <LanJoinScreen
           :session="store.currentSession"
           :join-url="joinUrl"
@@ -347,8 +566,8 @@ onUnmounted(async () => {
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <!-- Left: Participants + AI proposals -->
         <div class="space-y-6 lg:col-span-2">
-          <!-- Participant approval panel -->
-          <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-6">
+          <!-- Participant approval panel (the lobby has its own) -->
+          <div v-if="!showLobby" class="rounded-xl border border-surface-700/50 bg-surface-850 p-4 sm:p-6">
             <ParticipantApprovalPanel
               :session-id="sessionId"
               :participants="store.participants"

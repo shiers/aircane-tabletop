@@ -17,10 +17,16 @@ const props = defineProps<{
   /** Characters available in the campaign for assignment. */
   availableCharacters: { id: string; name: string }[]
   loading?: boolean
+  /**
+   * Offer a "Dismiss" button on pending requests. The server has no way to refuse a join request,
+   * so dismissing only hides the request on the host's screen; the person stays unapproved.
+   */
+  dismissible?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'approve', participantId: string): void
+  (e: 'dismiss', participantId: string): void
   (e: 'assign-character', participantId: string, characterId: string): void
 }>()
 
@@ -45,6 +51,7 @@ function roleLabel(role: ParticipantRole): string {
     [ParticipantRole.Player]: 'Player',
     [ParticipantRole.HumanDm]: 'Human DM',
     [ParticipantRole.Host]: 'Host',
+    [ParticipantRole.Spectator]: 'Spectator',
   }
   return map[role] ?? 'Unknown'
 }
@@ -81,21 +88,34 @@ function onAssignCharacter(participantId: string, event: Event): void {
         <li
           v-for="participant in pendingParticipants"
           :key="participant.id"
-          class="flex items-center justify-between gap-4 rounded-lg border border-yellow-800 bg-yellow-950/30 px-4 py-3"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-yellow-800 bg-yellow-950/30 px-4 py-3"
         >
-          <div>
+          <div class="min-w-0">
             <p class="font-medium text-white">{{ participant.displayName }}</p>
             <p class="text-xs text-gray-400">{{ roleLabel(participant.role) }}</p>
           </div>
-          <button
-            type="button"
-            :disabled="loading"
-            class="rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 transition-colors"
-            :aria-label="`Approve ${participant.displayName}`"
-            @click="onApprove(participant.id)"
-          >
-            Approve
-          </button>
+          <div class="flex shrink-0 items-center gap-2">
+            <button
+              v-if="dismissible"
+              type="button"
+              class="rounded-md border border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
+              :aria-label="`Dismiss ${participant.displayName}`"
+              title="Hides this request on your screen. They stay unapproved and cannot take part."
+              data-testid="dismiss-participant"
+              @click="emit('dismiss', participant.id)"
+            >
+              Dismiss
+            </button>
+            <button
+              type="button"
+              :disabled="loading"
+              class="rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 transition-colors"
+              :aria-label="`Approve ${participant.displayName}`"
+              @click="onApprove(participant.id)"
+            >
+              Approve
+            </button>
+          </div>
         </li>
       </ul>
     </div>

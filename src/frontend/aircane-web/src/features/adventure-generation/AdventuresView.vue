@@ -6,7 +6,8 @@
  * were linked), with the actions to put them to use, and a button to generate a new one.
  *
  *   Draft     Assign to Campaign · Approve · Review · Delete
- *   Approved  Assign to Campaign · Review · Play Solo · Delete
+ *   Approved  Assign to Campaign · Review · Play Solo (solo adventures) or Start Group Session
+ *             (group adventures) · Delete
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -15,11 +16,14 @@ import {
   assignAdventureToCampaign,
   approveAdventure,
   deleteAdventure,
+  isGroupAdventure,
   type CampaignAdventure,
 } from './api'
 import { useAdventureGenerationStore } from './store'
 import { useCampaignStore } from '@/features/campaigns/store'
 import PlaySoloLauncher from '@/features/adventures/components/PlaySoloLauncher.vue'
+import StartGroupLauncher from '@/features/adventures/components/StartGroupLauncher.vue'
+import { openRun } from '@/features/adventures/openRun'
 import AdventureCard from './components/AdventureCard.vue'
 
 const router = useRouter()
@@ -32,6 +36,8 @@ const error = ref<string | null>(null)
 const busyId = ref<string | null>(null)
 /** The adventure whose "Assign to Campaign" picker is open. */
 const assigningId = ref<string | null>(null)
+/** The campaign list could not be loaded, so the picker must not claim there are none. */
+const campaignsLoadFailed = ref(false)
 
 const isEmpty = computed(() => !loading.value && adventures.value.length === 0)
 const campaigns = computed(() => campaignStore.campaigns)
@@ -69,7 +75,7 @@ function generate(): void {
 }
 
 function resumeRun(runId: string): void {
-  void router.push({ name: 'adventure-solo', params: { sessionId: runId } })
+  void openRun(router, runId)
 }
 
 function review(a: CampaignAdventure): void {
@@ -82,12 +88,17 @@ async function openAssign(a: CampaignAdventure): Promise<void> {
     return
   }
   assigningId.value = a.id
-  if (!campaignStore.campaigns.length) {
-    try {
-      await campaignStore.fetchCampaigns()
-    } catch {
-      error.value = 'Could not load your campaigns.'
-    }
+  await loadCampaignsForPicker()
+}
+
+/** Loads the campaigns for the picker, remembering a failure so it can be shown (and retried). */
+async function loadCampaignsForPicker(): Promise<void> {
+  campaignsLoadFailed.value = false
+  if (campaignStore.campaigns.length) return
+  try {
+    await campaignStore.fetchCampaigns()
+  } catch {
+    campaignsLoadFailed.value = true
   }
 }
 
@@ -186,7 +197,13 @@ async function remove(a: CampaignAdventure): Promise<void> {
               class="absolute right-0 z-10 mt-1 w-56 rounded-md border border-surface-700/50 bg-surface-850 p-2 shadow-lg"
               data-testid="assign-picker"
             >
-              <p v-if="!campaigns.length" class="text-sm text-gray-300" data-testid="assign-no-campaigns">
+              <div v-if="campaignsLoadFailed" class="space-y-1 text-sm text-red-300" role="alert" data-testid="assign-load-failed">
+                <p>Could not load your campaigns.</p>
+                <button type="button" data-testid="assign-retry" class="text-aircane-300 underline" @click="loadCampaignsForPicker">
+                  Try again
+                </button>
+              </div>
+              <p v-else-if="!campaigns.length" class="text-sm text-gray-300" data-testid="assign-no-campaigns">
                 You have no campaigns yet.
                 <router-link to="/campaigns" class="text-aircane-300 underline">Create one</router-link>
               </p>
@@ -218,6 +235,11 @@ async function remove(a: CampaignAdventure): Promise<void> {
             class="adventure-action adventure-action--primary"
             @click="resumeRun(a.activeSession.sessionId)"
           >Resume</button>
+          <StartGroupLauncher
+            v-else-if="canPlay(a) && isGroupAdventure(a.mode)"
+            :adventure-id="a.id"
+            :adventure-title="a.title"
+          />
           <PlaySoloLauncher v-else-if="canPlay(a)" :adventure-id="a.id" />
           <button
             type="button"

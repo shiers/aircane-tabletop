@@ -4,7 +4,7 @@
  * this campaign, each with the actions that make sense for its status.
  *
  *   Draft              Review · Approve · Delete
- *   Approved / Active  Review · Play Solo · Delete
+ *   Approved / Active  Review · Play Solo (solo adventures) or Start Group Session (group adventures) · Delete
  *   Rejected           Review · Delete
  */
 import { ref, computed, watch, onMounted } from 'vue'
@@ -13,9 +13,12 @@ import {
   listCampaignAdventures,
   approveAdventure,
   deleteAdventure,
+  isGroupAdventure,
   type CampaignAdventure,
 } from '@/features/adventure-generation/api'
 import AdventureCard from '@/features/adventure-generation/components/AdventureCard.vue'
+import StartGroupLauncher from '@/features/adventures/components/StartGroupLauncher.vue'
+import { openRun } from '@/features/adventures/openRun'
 import { useAdventureGenerationStore } from '@/features/adventure-generation/store'
 import { useAdventureSessionStore } from '@/features/adventures/stores/adventureSessionStore'
 import { getActiveAdventureSession } from '@/features/adventures/api'
@@ -125,7 +128,7 @@ async function playSolo(a: CampaignAdventure): Promise<void> {
 
 /** Go back into a run that is already in progress (no new run is started). */
 async function resumeRun(runId: string): Promise<void> {
-  await router.push({ name: 'adventure-solo', params: { sessionId: runId } })
+  await openRun(router, runId)
 }
 
 async function resume(): Promise<void> {
@@ -208,6 +211,12 @@ async function resume(): Promise<void> {
           class="adventure-action adventure-action--primary"
           @click="resumeRun(a.activeSession.sessionId)"
         >Resume</button>
+        <StartGroupLauncher
+          v-else-if="canPlay(a) && isGroupAdventure(a.mode)"
+          :adventure-id="a.id"
+          :adventure-title="a.title"
+          :campaign-id="campaignId"
+        />
         <button
           v-else-if="canPlay(a)"
           type="button"

@@ -13,6 +13,13 @@ export interface StartAdventureSessionRequest {
   characterId?: string | null
 }
 
+export interface StartGroupAdventureSessionRequest {
+  generatedAdventureId: string
+  campaignId: string
+  /** Approved players of the campaign's current play session, in turn order. */
+  participantIds: string[]
+}
+
 export interface AdventureSessionDto {
   id: string
   generatedAdventureId: string
@@ -68,6 +75,13 @@ export interface AdventureSceneDto {
   npcs: AdventureNpcStateDto[]
 }
 
+/** One participant's place in a group run's turn order. */
+export interface ParticipantTurnDto {
+  participantId: string
+  participantName: string
+  isActive: boolean
+}
+
 export interface AdventureSessionStateDto {
   id: string
   generatedAdventureId: string
@@ -89,6 +103,13 @@ export interface AdventureSessionStateDto {
   startedAt: string
   completedAt: string | null
   lastActivityAt: string
+  /** Group play. False/null/0/[] for a solo run. */
+  isGroup: boolean
+  activeParticipantId: string | null
+  activeParticipantName: string | null
+  currentRound: number
+  /** In the order players take turns; the array index is the zero-based turn position. */
+  turnOrder: ParticipantTurnDto[]
 }
 
 /** What happened to one action the AI DM proposed. */
@@ -143,6 +164,24 @@ export interface AdventureNpcUpdatedEvent {
 export interface AdventureCompletedEvent {
   sessionId: string
   outcomeNotes: string
+}
+
+/** The host passed the turn. */
+export interface TurnAdvancedEvent {
+  sessionId: string
+  previousParticipantId: string | null
+  activeParticipantId: string
+  activeParticipantName: string
+  currentRound: number
+}
+
+/** A participant was added to the end of a group run's turn order. */
+export interface ParticipantJoinedAdventureEvent {
+  sessionId: string
+  participantId: string
+  participantName: string
+  /** Zero-based index into the state's turnOrder (0 = first to act): show it plus one. */
+  turnPosition: number
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +292,35 @@ export async function advanceAdventureScene(
 /** Abandon the run. */
 export async function abandonAdventureSession(id: string): Promise<AdventureSessionStateDto> {
   const response = await apiClient.post<AdventureSessionStateDto>(`${BASE}/${id}/abandon`)
+  return response.data
+}
+
+/**
+ * Start a group run: the listed participants of the campaign's most recent open play session take
+ * turns, in this order. Host only. 201 for a new run, 200 when the campaign is already running this
+ * adventure as a group (the existing run comes back, with its own turn order).
+ */
+export async function startGroupAdventureSession(
+  request: StartGroupAdventureSessionRequest,
+): Promise<AdventureSessionStateDto> {
+  const response = await apiClient.post<AdventureSessionStateDto>(`${BASE}/start-group`, request)
+  return response.data
+}
+
+/** Pass the turn of a group run to the next participant (host only). */
+export async function advanceAdventureTurn(id: string): Promise<AdventureSessionStateDto> {
+  const response = await apiClient.post<AdventureSessionStateDto>(`${BASE}/${id}/advance-turn`)
+  return response.data
+}
+
+/** Add an approved participant of the run's play session to the end of the turn order (host only). */
+export async function addAdventureParticipant(
+  id: string,
+  participantId: string,
+): Promise<AdventureSessionStateDto> {
+  const response = await apiClient.post<AdventureSessionStateDto>(`${BASE}/${id}/participants`, {
+    participantId,
+  })
   return response.data
 }
 

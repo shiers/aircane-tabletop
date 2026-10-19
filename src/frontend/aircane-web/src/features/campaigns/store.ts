@@ -23,7 +23,11 @@ export const useCampaignStore = defineStore('campaigns', () => {
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  /** Fetch all campaigns from the API. */
+  /**
+   * Fetch all campaigns from the API. On failure the message is kept in `error` and the error is
+   * rethrown, like the other actions: callers that need to tell "no campaigns" from "could not load
+   * them" (the launchers, the assign picker) catch it, the others can ignore it and show `error`.
+   */
   async function fetchCampaigns(): Promise<void> {
     loading.value = true
     error.value = null
@@ -31,6 +35,7 @@ export const useCampaignStore = defineStore('campaigns', () => {
       campaigns.value = await listCampaigns()
     } catch (err) {
       error.value = extractMessage(err)
+      throw err
     } finally {
       loading.value = false
     }

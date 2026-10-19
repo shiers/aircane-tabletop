@@ -24,6 +24,8 @@ const sessionStore = useAdventureSessionStore()
 
 const open = ref(false)
 const loadingCampaigns = ref(false)
+/** The campaign list could not be loaded: say so, instead of claiming there are no campaigns. */
+const campaignsLoadFailed = ref(false)
 const selectedCampaignId = ref('')
 const starting = ref(false)
 const error = ref<string | null>(null)
@@ -48,13 +50,14 @@ async function handleOpen(): Promise<void> {
   error.value = null
   resumeSessionId.value = null
   loadingCampaigns.value = true
+  campaignsLoadFailed.value = false
   try {
     await campaignStore.fetchCampaigns()
     if (!selectedCampaignId.value && campaigns.value.length === 1) {
       selectedCampaignId.value = campaigns.value[0].id
     }
   } catch {
-    error.value = 'Could not load your campaigns.'
+    campaignsLoadFailed.value = true
   } finally {
     loadingCampaigns.value = false
   }
@@ -111,6 +114,19 @@ async function handleResume(): Promise<void> {
       <p class="text-sm font-medium text-gray-200">Play this adventure in which campaign?</p>
 
       <p v-if="loadingCampaigns" class="text-sm text-gray-400">Loading campaigns…</p>
+
+      <!-- The list could not be loaded: not the same as having no campaigns -->
+      <div v-else-if="campaignsLoadFailed" data-testid="campaigns-load-failed" role="alert" class="space-y-2 text-sm text-red-300">
+        <p>Could not load your campaigns.</p>
+        <button
+          type="button"
+          data-testid="retry-campaigns"
+          class="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-gray-100 hover:bg-gray-700"
+          @click="handleOpen"
+        >
+          Try again
+        </button>
+      </div>
 
       <!-- No campaign yet: send the user to create one -->
       <div v-else-if="!campaigns.length" data-testid="no-campaigns" class="space-y-2 text-sm text-gray-300">

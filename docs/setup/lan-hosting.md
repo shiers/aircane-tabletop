@@ -104,8 +104,13 @@ If running the frontend in dev mode, start Vite with host binding:
 
 ```bash
 cd src/frontend/aircane-web
-npm run dev -- --host
+npm run dev:lan
 ```
+
+`npm run dev:lan` is `vite --host`. Prefer it to `npm run dev -- --host`: in **PowerShell** the
+`--host` after `--` is not passed through to Vite, so the dev server stays on `localhost` and other
+devices cannot reach it (it works in Git Bash, cmd and most other shells). If Vite prints only a
+`Local:` address and no `Network:` address, the flag did not get through.
 
 Players then load the app from the dev server, which forwards their requests to the backend. The
 dev server is configured (`xfwd` in `vite.config.ts`) to pass each browser's address on, which is
@@ -118,6 +123,31 @@ phone (a Player). Keep that setting if you edit the proxy.
 2. Create or select a campaign
 3. Click **Start Session**
 4. The app generates an **invite code** and displays the **join URL**
+
+#### Group adventures
+
+A group adventure (generated with the **Group** mode) is started from its card, on the Adventure
+Forge or on the campaign's page, with **Start Group Session**:
+
+1. The app creates a local-network play session for the campaign and opens the **lobby**. The
+   invite code, join link and QR code are at the top. The link uses your computer's network address,
+   not `localhost`, so it works on players' devices.
+2. Players join with the code and appear under **Awaiting Approval**. Approve each one (the list
+   refreshes by itself) and, if you like, assign them a character. **Dismiss** only hides a request
+   on your screen; the player stays unapproved and cannot take part.
+3. The **turn order** starts in the order you approved people. Use the arrows to change it.
+4. **Start adventure** is enabled once at least one player is approved.
+5. During the adventure you see the current scene, whose turn it is and the round. **Pass the
+   turn** moves play to the next player; the turn never moves by itself, so if the acting player has
+   disconnected they keep it until you pass it. You can also move the scene and abandon the
+   adventure.
+
+You run the game as the host and do not take a turn. To play too, join as a player from another
+browser with the invite code.
+
+The invite code is kept in this browser (local storage, for up to three days or until you end the
+session) because the server shows it only once. If you clear site data or use a different browser,
+the lobby cannot show it again; players who already have it can still join.
 
 ### 6. Share the Join URL
 

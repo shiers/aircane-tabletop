@@ -67,6 +67,16 @@ public interface ISessionHostingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns one participant of a session, or null when there is no such participant in it. Unlike
+    /// <see cref="GetParticipantsAsync"/> this also finds a participant the host denied
+    /// (<see cref="ParticipantDto.IsDenied"/>), so an access check can tell "denied" from "never joined".
+    /// </summary>
+    Task<ParticipantDto?> GetParticipantAsync(
+        Guid sessionId,
+        Guid participantId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns all participants in a session.
     /// </summary>
     Task<IReadOnlyList<ParticipantDto>> GetParticipantsAsync(

@@ -14,8 +14,9 @@ namespace Aircane.Api.Controllers;
 /// <summary>
 /// Adventure execution: start a run of a generated adventure, read its state, play it
 /// through the AI DM, and override it manually. The caller must be the Host, or a Player
-/// who joined the run's play session. A group run (several players taking turns) additionally
-/// gates player actions on whose turn it is; the Host passes the turn and adds players.
+/// who holds an approved seat at the run's play session. A group run (several players taking turns)
+/// additionally gates player actions on whose turn it is; the Host passes the turn and adds players,
+/// and players read the run through the player-safe <c>GET /api/sessions/{id}/adventure-run</c>.
 /// </summary>
 [ApiController]
 [Route("api/adventure-sessions")]
@@ -201,8 +202,9 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanAccess(session))
-            return Forbid();
+        var refused = await CheckAccessAsync(session, AccessLevel.Read, cancellationToken);
+        if (refused is not null)
+            return refused;
 
         return await RunAsync(async () => Ok(await _adventureSessions.GetSessionStateAsync(id, cancellationToken)));
     }
@@ -235,8 +237,9 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanAccess(session))
-            return Forbid();
+        var refused = await CheckAccessAsync(session, AccessLevel.Manage, cancellationToken);
+        if (refused is not null)
+            return refused;
 
         return await RunAsync(async () =>
         {
@@ -258,8 +261,9 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanAccess(session))
-            return Forbid();
+        var refused = await CheckAccessAsync(session, AccessLevel.Read, cancellationToken);
+        if (refused is not null)
+            return refused;
 
         return await RunAsync(async () =>
             Ok(new AdventureRecapDto(await _adventureSessions.GenerateRecapAsync(id, cancellationToken))));
@@ -278,8 +282,9 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanAccess(session))
-            return Forbid();
+        var refused = await CheckAccessAsync(session, AccessLevel.Read, cancellationToken);
+        if (refused is not null)
+            return refused;
 
         return Ok(await _adventureSessions.GetHistoryAsync(id, 50, cancellationToken));
     }
@@ -301,8 +306,9 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetActiveByCampaignAsync(campaignId, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanAccess(session))
-            return Forbid();
+        var refused = await CheckAccessAsync(session, AccessLevel.Read, cancellationToken);
+        if (refused is not null)
+            return refused;
 
         return Ok(ToDto(session));
     }
@@ -328,8 +334,9 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanAccess(session))
-            return Forbid();
+        var refused = await CheckAccessAsync(session, AccessLevel.Play, cancellationToken);
+        if (refused is not null)
+            return refused;
         if (session.Status != AdventureSessionStatus.InProgress)
             return Problem400($"Adventure session is {session.Status}; it can no longer be played.");
 
@@ -356,10 +363,16 @@ public sealed class AdventureSessionsController : ControllerBase
                     ActionText: request.ActionText.Trim()),
                 cancellationToken);
 
+            // A Player is told the narration and nothing else. The private DM note is DM-only, and the run
+            // state and the AI's proposed actions carry more than the table's view (GET
+            // /api/sessions/{id}/adventure-run) does: scene objectives, exits, NPCs, rolled-back errors.
+            if (!IsHost())
+                return Ok(new AdventureSessionActionResponse(response.Narration, null, [], null));
+
             var state = await _adventureSessions.GetSessionStateAsync(id, cancellationToken);
             return Ok(new AdventureSessionActionResponse(
                 response.Narration,
-                IsHost() ? response.PrivateDmNote : null,   // DM-only: never sent to a Player token
+                response.PrivateDmNote,
                 response.ProposedActions.Select(AdventureActionOutcomeDto.From).ToList(),
                 state));
         });
@@ -446,8 +459,9 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanManage(session))
-            return Forbid();
+        var refused = await CheckAccessAsync(session, AccessLevel.Manage, cancellationToken);
+        if (refused is not null)
+            return refused;
 
         return await RunAsync(async () =>
         {
@@ -470,8 +484,9 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanManage(session))
-            return Forbid();
+        var refused = await CheckAccessAsync(session, AccessLevel.Manage, cancellationToken);
+        if (refused is not null)
+            return refused;
 
         return await RunAsync(async () =>
         {
@@ -492,8 +507,9 @@ public sealed class AdventureSessionsController : ControllerBase
         var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
         if (session is null)
             return NotFound();
-        if (!CanAccess(session))
-            return Forbid();
+        var refused = await CheckAccessAsync(session, AccessLevel.Read, cancellationToken);
+        if (refused is not null)
+            return refused;
 
         return await RunAsync(async () => Ok(await _adventureSessions.GetAvailableScenesAsync(id, cancellationToken)));
     }
@@ -511,30 +527,51 @@ public sealed class AdventureSessionsController : ControllerBase
             ? string.Equals(User.FindFirst(ClaimTypes.Role)?.Value, nameof(ParticipantRole.Host), StringComparison.OrdinalIgnoreCase)
             : LocalHostTrust.IsTrustedLocalCaller(HttpContext);
 
-    /// <summary>
-    /// Host, or the solo Player whose token was issued for this run's play session.
-    /// </summary>
-    private bool CanAccess(AdventureSession session)
+    /// <summary>What the caller wants to do with a run; each level has its own rule in <see cref="CheckAccessAsync"/>.</summary>
+    private enum AccessLevel
     {
-        if (IsHost())
-            return true;
+        /// <summary>Read the full run: its state, history, recap, exits, the campaign's active run.</summary>
+        Read,
 
-        var isPlayer = string.Equals(
-            User.FindFirst(ClaimTypes.Role)?.Value, nameof(ParticipantRole.Player), StringComparison.OrdinalIgnoreCase);
+        /// <summary>Act in the run (player-action).</summary>
+        Play,
 
-        return isPlayer
-               && session.SessionId is not null
-               && Guid.TryParse(User.FindFirst(SessionIdClaim)?.Value, out var tokenSessionId)
-               && tokenSessionId == session.SessionId;
+        /// <summary>Change the run's course (resume, move the scene, abandon).</summary>
+        Manage,
     }
 
     /// <summary>
-    /// Who may change the run's course (abandon it, move it to another scene). Solo: anyone who
-    /// <see cref="CanAccess"/> it, since the single player runs it. Group: the Host only, as one
-    /// player must not be able to end or redirect the game for everyone.
+    /// Null when the caller may do this; otherwise the refusal to return (always a 403).
+    /// <list type="bullet">
+    ///   <item><b>Host</b> (a Host token, or the trusted local host): everything.</item>
+    ///   <item><b>Player</b>: only with a seat at the run's play session, meaning a token issued for it to a
+    ///   participant who is on its roster, approved and not denied (<see cref="PlayerSeat"/>). A participant
+    ///   still waiting gets 403 "Waiting for approval"; a denied one 403 with <c>code: "participant-denied"</c>.</item>
+    ///   <item><b>Group run</b>: a Player may only <see cref="AccessLevel.Play"/> it. The full run (state,
+    ///   history, recap, exits) carries scene synopses, objectives, NPCs and what comes next, so at a table
+    ///   a Player reads the player-safe <c>GET /api/sessions/{id}/adventure-run</c> instead, and the course
+    ///   of the game is the Host's to change. A solo run has no table to protect: its one player may do all of it.</item>
+    /// </list>
     /// </summary>
-    private bool CanManage(AdventureSession session)
-        => session.IsGroup ? IsHost() : CanAccess(session);
+    private async Task<IActionResult?> CheckAccessAsync(AdventureSession session, AccessLevel level, CancellationToken cancellationToken)
+    {
+        if (IsHost())
+            return null;
+
+        var isPlayer = string.Equals(
+            User.FindFirst(ClaimTypes.Role)?.Value, nameof(ParticipantRole.Player), StringComparison.OrdinalIgnoreCase);
+        if (!isPlayer || session.SessionId is not { } playSessionId)
+            return Forbid();
+
+        // Seat first: a participant who is waiting or was denied hears that, whatever they asked for.
+        var seat = await PlayerSeat.CheckAsync(User, playSessionId, _sessionHosting, cancellationToken);
+        if (seat == SeatStatus.NotInSession)
+            return Forbid();
+        if (seat != SeatStatus.Allowed)
+            return PlayerSeat.Refusal(seat);
+
+        return session.IsGroup && level != AccessLevel.Play ? Forbid() : null;
+    }
 
     /// <summary>
     /// True when the caller's token was issued to the participant whose turn it is. A caller with no

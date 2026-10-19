@@ -731,4 +731,109 @@ public sealed class GroupLobbyIntegrationTests : IClassFixture<GroupLobbyWebAppl
         var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("participant-denied", problem.GetProperty("code").GetString());
     }
+
+    // ── Who may read or act in a run (token-validating pipeline, end to end) ──
+
+    /// <summary>A session that needs approval: Alice is approved and in the run; Bob is still waiting.</summary>
+    private async Task<(Table Table, JoinSessionResult Waiting)> SetUpGatedTableAsync()
+    {
+        var campaignId = await CreateCampaignAsync();
+        var session = await StartSessionAsync(campaignId, requireHostApproval: true);
+        var alice = await JoinAsync(session, "Alice");
+        (await ApproveAsync(session.Id, alice.ParticipantId)).EnsureSuccessStatusCode();
+        var adventureId = await SeedAdventureAsync();
+        using var started = await StartGroupAsync(adventureId, campaignId, [alice.ParticipantId], session.Id);
+        Assert.Equal(HttpStatusCode.Created, started.StatusCode);
+        var run = (await started.Content.ReadFromJsonAsync<AdventureSessionDto>(Web))!;
+        var waiting = await JoinAsync(session, "Bob");
+        return (new Table(campaignId, session, alice, alice, run.Id, adventureId), waiting);
+    }
+
+    /// <summary>Every call a Player token can make about a run, with what it would return to the Host.</summary>
+    private static IEnumerable<(string Name, Func<HttpClient, Table, Task<HttpResponseMessage>> Send)> RunCalls() =>
+    [
+        ("GET full state", (c, t) => c.GetAsync($"/api/adventure-sessions/{t.RunId}")),
+        ("GET history", (c, t) => c.GetAsync($"/api/adventure-sessions/{t.RunId}/history")),
+        ("GET available-scenes", (c, t) => c.GetAsync($"/api/adventure-sessions/{t.RunId}/available-scenes")),
+        ("GET active", (c, t) => c.GetAsync($"/api/adventure-sessions/active?campaignId={t.CampaignId}")),
+        ("POST recap", (c, t) => c.PostAsync($"/api/adventure-sessions/{t.RunId}/recap", null)),
+        ("POST resume", (c, t) => c.PostAsync($"/api/adventure-sessions/{t.RunId}/resume", null)),
+        ("POST advance-scene", (c, t) => c.PostAsJsonAsync($"/api/adventure-sessions/{t.RunId}/advance-scene", new { targetSceneId = "scene-2" })),
+        ("POST abandon", (c, t) => c.PostAsync($"/api/adventure-sessions/{t.RunId}/abandon", null)),
+        ("POST player-action", (c, t) => c.PostAsJsonAsync($"/api/adventure-sessions/{t.RunId}/player-action", new { actionText = "I look around." })),
+        ("POST ai/player-action", (c, t) => c.PostAsJsonAsync($"/api/sessions/{t.Session.Id}/ai/player-action", new { characterId = Guid.NewGuid(), actionText = "I look around." })),
+    ];
+
+    [Fact]
+    public async Task ParticipantWaitingForApproval_Gets403OnEveryRunEndpoint_AndNothingChanges()
+    {
+        var (table, waiting) = await SetUpGatedTableAsync();
+        using var bob = Lan(waiting.ParticipantToken);
+
+        foreach (var (name, send) in RunCalls())
+        {
+            using var response = await send(bob, table);
+
+            Assert.True(response.StatusCode == HttpStatusCode.Forbidden, $"{name} returned {(int)response.StatusCode}.");
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Contains("Waiting for approval", body);
+            AssertNoSpoilers(body);
+        }
+
+        using var host = Host();
+        var run = await host.GetFromJsonAsync<AdventureSessionStateDto>($"/api/adventure-sessions/{table.RunId}", Web);
+        Assert.Equal("InProgress", run!.Status);
+        Assert.Equal("scene-1", run.CurrentScene.SceneId);
+    }
+
+    [Fact]
+    public async Task DeniedParticipant_GetsTheParticipantDeniedRefusal_OnEveryRunEndpoint()
+    {
+        var (table, waiting) = await SetUpGatedTableAsync();
+        (await DenyAsync(table.Session.Id, waiting.ParticipantId)).EnsureSuccessStatusCode();
+        using var bob = Lan(waiting.ParticipantToken);
+
+        foreach (var (name, send) in RunCalls())
+        {
+            using var response = await send(bob, table);
+
+            Assert.True(response.StatusCode == HttpStatusCode.Forbidden, $"{name} returned {(int)response.StatusCode}.");
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("participant-denied", problem.GetProperty("code").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task ApprovedPlayer_IsRefusedTheFullRunAndTheHostsControls_ButMayActOnTheirTurn()
+    {
+        var (table, _) = await SetUpGatedTableAsync();
+        using var alice = Lan(table.First.ParticipantToken);
+
+        foreach (var (name, send) in RunCalls().Where(c => !c.Name.Contains("player-action")))
+        {
+            using var response = await send(alice, table);
+            Assert.True(response.StatusCode == HttpStatusCode.Forbidden, $"{name} returned {(int)response.StatusCode}.");
+        }
+
+        using var acted = await alice.PostAsJsonAsync($"/api/adventure-sessions/{table.RunId}/player-action",
+            new { actionText = "I look around." });
+        Assert.Equal(HttpStatusCode.OK, acted.StatusCode);
+        var body = await acted.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(string.IsNullOrEmpty(body.GetProperty("narration").GetString()));
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("privateDmNote").ValueKind);
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("state").ValueKind);
+        Assert.Equal(0, body.GetProperty("actions").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task ApprovedPlayer_CanStillReadThePlayerSafeRun()
+    {
+        var (table, _) = await SetUpGatedTableAsync();
+        using var alice = Lan(table.First.ParticipantToken);
+
+        var json = await alice.GetStringAsync($"/api/sessions/{table.Session.Id}/adventure-run");
+
+        AssertNoSpoilers(json);
+        Assert.Equal(table.RunId, JsonSerializer.Deserialize<PlayerAdventureRunDto>(json, Web)!.RunId);
+    }
 }

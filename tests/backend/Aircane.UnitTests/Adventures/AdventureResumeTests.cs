@@ -39,7 +39,7 @@ public sealed class AdventureResumeTests : IDisposable
             hubNotifier: null,
             aiProvider: _ai);
         _controller = new AdventureSessionsController(
-            _service, playerActionService: null!, sessionHosting: null!, NullLogger<AdventureSessionsController>.Instance)
+            _service, playerActionService: null!, sessionHosting: new DbBackedSessionHosting(_db), NullLogger<AdventureSessionsController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = LocalHostHttpContext.Create() },
         };

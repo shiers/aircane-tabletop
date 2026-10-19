@@ -1,3 +1,4 @@
+import axios from 'axios'
 import apiClient from '@/shared/api/client'
 
 // ---------------------------------------------------------------------------
@@ -74,6 +75,8 @@ export interface ParticipantDto {
   isApproved: boolean
   joinedAt: string
   lastSeenAt: string
+  /** Only ever true on the response to a denial; denied people are not on the roster. */
+  isDenied?: boolean
 }
 
 export interface NetworkInfo {
@@ -196,4 +199,111 @@ export async function assignCharacter(
 export async function getNetworkInfo(): Promise<NetworkInfo> {
   const response = await apiClient.get<NetworkInfo>('/api/sessions/network-info')
   return response.data
+}
+
+// ---------------------------------------------------------------------------
+// Player side: reconnect, the player-safe adventure run, and acting in it
+// ---------------------------------------------------------------------------
+
+/** What POST /api/sessions/{id}/reconnect says about the caller's own token. */
+export interface ReconnectResult {
+  sessionId: string
+  participantId: string
+  displayName: string
+  role: ParticipantRole
+  /** False while the host has not approved this participant yet. */
+  isApproved: boolean
+}
+
+/**
+ * Checks the stored participant token against the server (it is sent as the bearer token by the API
+ * client) and reports whether the host has approved this participant. Cheap, so it doubles as the
+ * waiting screen's fallback poll. Never needs approval itself.
+ */
+export async function reconnectSession(sessionId: string): Promise<ReconnectResult> {
+  const response = await apiClient.post<ReconnectResult>(`/api/sessions/${sessionId}/reconnect`)
+  return response.data
+}
+
+/** One player's place in the turn order. The array index is the zero-based turn position. */
+export interface PlayerTurn {
+  participantId: string
+  participantName: string
+  isActive: boolean
+}
+
+/** A roll the AI DM asked the acting player for and that has not been answered yet. */
+export interface PlayerPendingRoll {
+  label: string
+  /** Null when the DM gave no difficulty. */
+  dc: number | null
+}
+
+/** One line of the public story so far. */
+export interface PlayerNarrationEntry {
+  /** "PlayerAction" (what a player typed) or "AiNarration" (what the AI DM said to the table). */
+  kind: string
+  text: string
+  createdAt: string
+}
+
+/**
+ * GET /api/sessions/{id}/adventure-run: the adventure as a Player may see it (mirrors
+ * Aircane.Application.DTOs.Adventures.PlayerAdventureRunDto). The server leaves out DM notes, secrets,
+ * NPCs, exits, objectives and the AI's private note, so nothing in this shape is DM-only; every field
+ * the view shows comes from here and nowhere else.
+ */
+export interface PlayerAdventureRun {
+  runId: string
+  adventureTitle: string
+  /** "InProgress" | "Completed" | "Abandoned" | "NotStarted". */
+  status: string
+  isGroup: boolean
+  /** Title and the text meant to be read aloud to the table (null when the scene has none). */
+  scene: { title: string; description: string | null }
+  currentSceneNumber: number
+  totalScenes: number
+  activeParticipantId: string | null
+  activeParticipantName: string | null
+  currentRound: number
+  turnOrder: PlayerTurn[]
+  /** Only ever set for the participant who owes the roll. */
+  pendingRoll: PlayerPendingRoll | null
+  recentNarration: PlayerNarrationEntry[]
+}
+
+/**
+ * The adventure running in this play session, as a player may see it, or null when none is running
+ * (404). Host and approved participants only.
+ */
+export async function getAdventureRun(sessionId: string): Promise<PlayerAdventureRun | null> {
+  try {
+    const response = await apiClient.get<PlayerAdventureRun>(`/api/sessions/${sessionId}/adventure-run`)
+    return response.data
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 404) return null
+    throw err
+  }
+}
+
+/** What a player gets back from acting: the narration, and nothing else. */
+export interface PlayerActionResult {
+  narration: string
+}
+
+/**
+ * Submits a free-text action to the AI DM for this run (POST /api/adventure-sessions/{runId}/player-action).
+ * Only the acting player may; the AI can take a while, hence the long timeout.
+ *
+ * The response also carries the run's full state and, for the host only, the AI's private DM note.
+ * Neither is returned from here: only the public narration is picked out, so nothing DM-only can
+ * reach a component. The refreshed run is read through {@link getAdventureRun}.
+ */
+export async function submitPlayerAction(runId: string, actionText: string): Promise<PlayerActionResult> {
+  const response = await apiClient.post<{ narration?: string }>(
+    `/api/adventure-sessions/${runId}/player-action`,
+    { actionText },
+    { timeout: 180_000 },
+  )
+  return { narration: response.data?.narration ?? '' }
 }

@@ -3,21 +3,26 @@
  * JoinSessionView - the page players open when they follow a join URL.
  * Route: /join/:sessionId
  *
- * Loads the session details, then shows the PlayerJoinForm.
- * On successful join, shows a waiting/confirmation state.
+ * Loads the session details, then shows the PlayerJoinForm. After joining, a player the host has
+ * not approved yet waits on this page (WaitingForApproval) and moves on to the session view the
+ * moment they are approved, without a reload. A player who comes back here (a reload, a dropped
+ * connection) is recognised by the participant token the page remembered and resumes where they
+ * were; a token the server no longer accepts is dropped and the form is shown as for anyone new.
  */
-import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from './store'
 import PlayerJoinForm from './PlayerJoinForm.vue'
-import QRCode from './components/QRCode.vue'
+import WaitingForApproval from './components/WaitingForApproval.vue'
 import { getJoinInfo, type JoinSessionResult } from './api'
+import { clearParticipantSession, loadParticipantSessionFor } from './participantSession'
 
 // ---------------------------------------------------------------------------
 // Route params
 // ---------------------------------------------------------------------------
 
 const route = useRoute()
+const router = useRouter()
 const sessionId = (route.params.sessionId as string | undefined) ?? ''
 
 // ---------------------------------------------------------------------------
@@ -25,7 +30,9 @@ const sessionId = (route.params.sessionId as string | undefined) ?? ''
 // ---------------------------------------------------------------------------
 
 const store = useSessionStore()
-const joinResult = ref<JoinSessionResult | null>(null)
+
+/** Who this browser is at the table once they have joined (or are being recognised after a reload). */
+const participant = ref<{ participantId: string; displayName: string } | null>(null)
 
 /**
  * Dedicated lookup state, tracked locally and independent of the shared store.
@@ -38,11 +45,6 @@ const lookupError = ref<string | null>(null)
 /** The session's name from the anonymous join read; null until it is known to be joinable. */
 const sessionName = ref<string | null>(null)
 
-/** The current page URL so players can hand off the join link via QR. */
-const joinUrl = computed(() =>
-  typeof window !== 'undefined' ? window.location.href : '',
-)
-
 // ---------------------------------------------------------------------------
 // Load session info
 // ---------------------------------------------------------------------------
@@ -51,6 +53,20 @@ onMounted(async () => {
   // No pre-populated session ID (e.g. the /sessions index): skip the lookup so
   // the join form always renders instead of hanging on an invalid request.
   if (!sessionId) return
+
+  // Already joined from this tab (a reload, a phone that woke up): pick up where they were. The
+  // waiting screen asks the server whether the host has approved them and moves on if so. A token
+  // for another session, or one that has expired, is removed here and never gets in the way.
+  const saved = loadParticipantSessionFor(sessionId)
+  if (saved) {
+    participant.value = { participantId: saved.participantId, displayName: saved.displayName }
+    return
+  }
+
+  await lookUpSession()
+})
+
+async function lookUpSession(): Promise<void> {
   lookupLoading.value = true
   try {
     // The player has no token yet, so this reads the anonymous join-info endpoint: just the name
@@ -68,14 +84,31 @@ onMounted(async () => {
   } finally {
     lookupLoading.value = false
   }
-})
+}
 
 // ---------------------------------------------------------------------------
 // Join handler
 // ---------------------------------------------------------------------------
 
+function enterSession(): void {
+  void router?.replace({ name: 'play-session', params: { sessionId } })
+}
+
 function handleJoined(result: JoinSessionResult): void {
-  joinResult.value = result
+  // A session that does not need the host's approval lets them straight in.
+  if (result.isApproved) {
+    enterSession()
+    return
+  }
+  participant.value = { participantId: result.participantId, displayName: result.displayName }
+}
+
+/** The server no longer accepts the remembered login, or the player chose to join again after a denial. */
+async function startOver(): Promise<void> {
+  clearParticipantSession()
+  store.error = null
+  participant.value = null
+  await lookUpSession()
 }
 </script>
 
@@ -105,29 +138,19 @@ function handleJoined(result: JoinSessionResult): void {
         <span class="text-gray-400">Loading session…</span>
       </div>
 
-      <!-- Joined - waiting for approval -->
-      <div
-        v-else-if="joinResult"
-        class="rounded-xl border border-surface-700/50 bg-surface-850 p-8 text-center"
-        aria-live="polite"
-      >
-        <div class="mb-4 text-4xl" aria-hidden="true">🎲</div>
-        <h2 class="mb-2 text-xl font-semibold text-white">
-          Welcome, {{ joinResult.displayName }}!
-        </h2>
-        <p v-if="joinResult.isApproved" class="text-sm text-green-400">
-          You have joined the session. The host will set up your character shortly.
-        </p>
-        <p v-else class="text-sm text-yellow-400">
-          Your join request is pending host approval. Please wait…
-        </p>
-        <p class="mt-4 text-xs text-gray-500">
-          Keep this page open to stay connected.
-        </p>
-      </div>
+      <!-- Joined - waiting for the host to approve; moves on by itself -->
+      <WaitingForApproval
+        v-else-if="participant"
+        :session-id="sessionId"
+        :participant-id="participant.participantId"
+        :display-name="participant.displayName"
+        @approved="enterSession"
+        @rejected="startOver"
+        @rejoin="startOver"
+      />
 
-      <!-- Join form + QR hand-off. The form always renders first (regardless of
-           whether the session loaded), with the error panel shown BELOW it. -->
+      <!-- Join form. It always renders first (regardless of whether the session
+           loaded), with the error panel shown BELOW it. -->
       <template v-else>
         <PlayerJoinForm
           :session-id="sessionId"
@@ -135,22 +158,6 @@ function handleJoined(result: JoinSessionResult): void {
           :hide-error="!!lookupError"
           @joined="handleJoined"
         />
-
-        <!-- Join by QR card: QR over the left 35%, heading/subtext over the right 65% -->
-        <div
-          class="qr-card flex items-center gap-4 rounded-xl p-5"
-          v-bg-asset="{ url: '/assets/join-session/join-by-qr-card.png', fallback: '#0d0d2a', position: 'left center' }"
-        >
-          <div class="flex w-[35%] shrink-0 justify-center">
-            <QRCode :value="joinUrl" :size="140" />
-          </div>
-          <div class="w-[65%]">
-            <h2 class="mb-1 text-lg font-semibold text-white">Join by QR Code</h2>
-            <p class="text-sm text-gray-300">
-              Scan this code with another device to open this join page there.
-            </p>
-          </div>
-        </div>
 
         <!-- Session-not-found panel: only when the ID-backed lookup failed.
              PlayerJoinForm surfaces join (API) errors itself, so this standalone
@@ -183,9 +190,4 @@ function handleJoined(result: JoinSessionResult): void {
   background-position: left center;
 }
 
-.qr-card {
-  border: var(--border-gold);
-  background-size: cover;
-  background-position: left center;
-}
 </style>

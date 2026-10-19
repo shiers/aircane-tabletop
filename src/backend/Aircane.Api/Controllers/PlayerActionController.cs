@@ -41,6 +41,8 @@ public sealed class PlayerActionController : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The AI DM response with narration and action results.</returns>
     /// <remarks>
+    /// Only the Host or an approved participant of this session may call it (403 otherwise); a Player's
+    /// response never carries the AI's private DM note.
     /// Not available while the campaign has a group adventure run in progress (409): that run is
     /// played through <c>POST /api/adventure-sessions/{id}/player-action</c>, which enforces whose
     /// turn it is. Solo runs and campaigns with no run are unaffected.
@@ -84,6 +86,16 @@ public sealed class PlayerActionController : ControllerBase
         if (session is null)
             return NotFound();
 
+        // A Player must hold an approved seat at THIS session (a token for another session, a participant
+        // still waiting for approval, or one the host denied, is refused). The Host needs no seat.
+        var isHost = this.IsHostCaller();
+        if (!isHost)
+        {
+            var seat = await PlayerSeat.CheckAsync(User, id, _sessionHostingService, cancellationToken);
+            if (seat != SeatStatus.Allowed)
+                return PlayerSeat.Refusal(seat);
+        }
+
         // The AI picks up the campaign's in-progress run whichever session id is used, so the check
         // is keyed on the campaign too: otherwise any other session of it would sidestep the guard.
         var run = await _adventureSessions.GetActiveByCampaignAsync(session.CampaignId, cancellationToken);
@@ -107,7 +119,9 @@ public sealed class PlayerActionController : ControllerBase
         try
         {
             var response = await _playerActionService.ProcessActionAsync(request, cancellationToken);
-            return Ok(response);
+
+            // The AI's private DM note is for the Host only.
+            return Ok(isHost ? response : response with { PrivateDmNote = null });
         }
         catch (KeyNotFoundException ex)
         {

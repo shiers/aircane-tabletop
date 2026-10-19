@@ -23,7 +23,6 @@ namespace Aircane.Api.Controllers;
 [Authorize(Policy = AuthorizationPolicies.Authenticated)]
 public sealed class SessionAdventureRunController : ControllerBase
 {
-    private const string SessionIdClaim = "sid";
     private const string ParticipantIdClaim = "pid";
 
     private readonly IAdventureSessionService _adventureSessions;
@@ -55,23 +54,12 @@ public sealed class SessionAdventureRunController : ControllerBase
 
         if (!this.IsHostCaller())
         {
-            // A participant of THIS session: the token must have been issued for it.
-            var tokenSession = User.FindFirst(SessionIdClaim)?.Value;
-            if (!Guid.TryParse(tokenSession, out var tokenSessionId) || tokenSessionId != sessionId
-                || !Guid.TryParse(User.FindFirst(ParticipantIdClaim)?.Value, out var participantId))
-            {
-                return Refuse("Not in this session", "You are not a participant of this session.");
-            }
+            // A participant of THIS session whom the host has approved and not denied.
+            var seat = await PlayerSeat.CheckAsync(User, sessionId, _sessions, cancellationToken);
+            if (seat != SeatStatus.Allowed)
+                return PlayerSeat.Refusal(seat);
 
-            // ...who the host has approved. (Denied people are not on the roster at all.)
-            var roster = await _sessions.GetParticipantsAsync(sessionId, cancellationToken);
-            var me = roster.FirstOrDefault(p => p.Id == participantId);
-            if (me is null)
-                return Refuse("Not in this session", "You are not a participant of this session.");
-            if (!me.IsApproved)
-                return Refuse("Waiting for approval", "The host has not approved you yet.");
-
-            callerParticipantId = participantId;
+            callerParticipantId = Guid.Parse(User.FindFirst(ParticipantIdClaim)!.Value);
         }
 
         var view = await _adventureSessions.GetPlayerRunViewAsync(sessionId, callerParticipantId, cancellationToken);
@@ -90,13 +78,6 @@ public sealed class SessionAdventureRunController : ControllerBase
         return Ok(view);
     }
 
-    private ObjectResult Refuse(string title, string detail)
-        => StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
-        {
-            Title = title,
-            Detail = detail,
-            Status = StatusCodes.Status403Forbidden,
-        });
 }
 
 /// <summary>Who the caller is, for controllers that check it themselves rather than through a policy.</summary>

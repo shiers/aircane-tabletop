@@ -65,7 +65,7 @@ public sealed class AdventureSessionsControllerAuthorizationTests : IDisposable
         var controller = new AdventureSessionsController(
             _service,
             playerActionService: null!,
-            sessionHosting: null!,
+            sessionHosting: new DbBackedSessionHosting(_db),
             NullLogger<AdventureSessionsController>.Instance)
         {
             ControllerContext = new ControllerContext
@@ -79,6 +79,23 @@ public sealed class AdventureSessionsControllerAuthorizationTests : IDisposable
     private static ClaimsPrincipal Participant(string role, Guid sessionId) => new(new ClaimsIdentity(
         [new Claim(ClaimTypes.Role, role), new Claim("sid", sessionId.ToString())],
         authenticationType: "Test"));
+
+    /// <summary>A Player token for the run's play session, with the participant row the roster check reads.</summary>
+    private async Task<ClaimsPrincipal> SeatedPlayerAsync(bool approved = true, bool denied = false)
+    {
+        var participant = new SessionParticipant(_playSessionId, "Alice", ParticipantRole.Player, isApproved: approved)
+        {
+            IsDenied = denied,
+        };
+        _db.SessionParticipants.Add(participant);
+        await _db.SaveChangesAsync();
+        return new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Role, "Player"),
+            new Claim("sid", _playSessionId.ToString()),
+            new Claim("pid", participant.Id.ToString()),
+        ], authenticationType: "Test"));
+    }
 
     // ── Reads ─────────────────────────────────────────────────────────────────
 
@@ -97,9 +114,56 @@ public sealed class AdventureSessionsControllerAuthorizationTests : IDisposable
     {
         await SeedRunAsync();
 
-        var result = await CreateController(Participant("Player", _playSessionId)).GetSession(_runId, default);
+        var result = await CreateController(await SeatedPlayerAsync()).GetSession(_runId, default);
 
         Assert.IsType<OkObjectResult>(result);
+    }
+
+    // A token alone is not a seat: the host has to have approved the participant, and not denied them.
+    [Fact]
+    public async Task GetSession_PlayerWithATokenButNoParticipantRecord_IsForbidden()
+    {
+        await SeedRunAsync();
+
+        var result = await CreateController(Participant("Player", _playSessionId)).GetSession(_runId, default);
+
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task GetSession_PlayerStillWaitingForApproval_Gets403WaitingForApproval()
+    {
+        await SeedRunAsync();
+
+        var result = await CreateController(await SeatedPlayerAsync(approved: false)).GetSession(_runId, default);
+
+        var refused = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, refused.StatusCode);
+        Assert.Equal("Waiting for approval", Assert.IsType<ProblemDetails>(refused.Value).Title);
+    }
+
+    [Fact]
+    public async Task GetSession_DeniedPlayer_Gets403WithTheParticipantDeniedCode()
+    {
+        await SeedRunAsync();
+
+        var result = await CreateController(await SeatedPlayerAsync(approved: false, denied: true)).GetSession(_runId, default);
+
+        var refused = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, refused.StatusCode);
+        Assert.Equal("participant-denied", Assert.IsType<ProblemDetails>(refused.Value).Extensions["code"]);
+    }
+
+    [Fact]
+    public async Task AdvanceScene_PlayerStillWaitingForApproval_IsRefusedAndStateIsUnchanged()
+    {
+        await SeedRunAsync();
+
+        var result = await CreateController(await SeatedPlayerAsync(approved: false))
+            .AdvanceScene(_runId, new AdvanceSceneRequest("scene-2"), default);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(result).StatusCode);
+        Assert.Equal("scene-1", (await _db.AdventureSessions.AsNoTracking().SingleAsync()).CurrentSceneId);
     }
 
     [Fact]
@@ -178,7 +242,7 @@ public sealed class AdventureSessionsControllerAuthorizationTests : IDisposable
     {
         await SeedRunAsync();
 
-        var result = await CreateController(Participant("Player", _playSessionId)).Abandon(_runId, default);
+        var result = await CreateController(await SeatedPlayerAsync()).Abandon(_runId, default);
 
         Assert.IsType<OkObjectResult>(result);
         Assert.Equal(AdventureSessionStatus.Abandoned, (await _db.AdventureSessions.AsNoTracking().SingleAsync()).Status);
@@ -214,6 +278,7 @@ public sealed class AdventureSessionsControllerPlayerActionTests : IDisposable
 {
     private readonly AircaneDbContext _db;
     private readonly AdventureSessionService _service;
+    private SessionParticipant _seat = null!;
 
     public AdventureSessionsControllerPlayerActionTests()
     {
@@ -258,9 +323,12 @@ public sealed class AdventureSessionsControllerPlayerActionTests : IDisposable
         var run = await _service.StartAdventureSessionAsync(adventure.Id, campaign.Id, null);
         var playSessionId = Guid.NewGuid();
         await _service.AttachPlaySessionAsync(run.Id, playSessionId);
+        _seat = new SessionParticipant(playSessionId, "Alice", ParticipantRole.Player, isApproved: true);
+        _db.SessionParticipants.Add(_seat);
+        await _db.SaveChangesAsync();
 
         var controller = new AdventureSessionsController(
-            _service, new StubPlayerActionService(), sessionHosting: null!,
+            _service, new StubPlayerActionService(), sessionHosting: new DbBackedSessionHosting(_db),
             NullLogger<AdventureSessionsController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = LocalHostHttpContext.Create(user) },
@@ -290,13 +358,21 @@ public sealed class AdventureSessionsControllerPlayerActionTests : IDisposable
         var playSessionId = Guid.NewGuid();
         var (controller, runId, actualPlaySession) = await SetUpAsync(Participant("Player", playSessionId));
         // Re-bind the token to the session the service actually attached.
-        controller.ControllerContext.HttpContext!.User = Participant("Player", actualPlaySession);
+        controller.ControllerContext.HttpContext!.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Role, "Player"),
+            new Claim("sid", actualPlaySession.ToString()),
+            new Claim("pid", _seat.Id.ToString()),
+        ], "Test"));
 
         var result = await controller.SubmitPlayerAction(runId, new AdventureSessionActionRequest("I pry it open"), default);
 
         var body = Assert.IsType<AdventureSessionActionResponse>(Assert.IsType<OkObjectResult>(result).Value);
         Assert.Null(body.PrivateDmNote);
         Assert.Equal("You pry open the chest.", body.Narration);
+        // Nothing else of the run either: not the full state, and not what the AI proposed.
+        Assert.Null(body.State);
+        Assert.Empty(body.Actions);
     }
 
     [Fact]

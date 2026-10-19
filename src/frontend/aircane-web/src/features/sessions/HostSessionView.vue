@@ -24,6 +24,7 @@ import InternetPlayPanel from './components/InternetPlayPanel.vue'
 import ParticipantApprovalPanel from './ParticipantApprovalPanel.vue'
 import GroupLobbyPanel from './components/GroupLobbyPanel.vue'
 import GroupRunHostPanel from '../adventures/components/GroupRunHostPanel.vue'
+import InvitePlayersPanel from '../adventures/components/InvitePlayersPanel.vue'
 import { useGroupRunStore } from '../adventures/stores/groupRunStore'
 import type {
   AdventureSessionStateDto,
@@ -133,6 +134,12 @@ const latePlayers = computed(() => {
   const inRun = new Set(groupRun.run?.turnOrder.map((t) => t.participantId) ?? [])
   return eligiblePlayers(store.participants).filter((p) => !inRun.has(p.id))
 })
+
+/** People who joined and are waiting for the host (shown in the run view's invite panel). */
+const pendingPlayers = computed(() => store.participants.filter((p) => !p.isApproved))
+
+/** An approve or add is in flight, so the invite panel's buttons wait. */
+const inviteBusy = computed(() => groupRun.busy !== null || store.loading)
 
 async function loadGroupContext(): Promise<void> {
   const campaignId = store.currentSession?.campaignId
@@ -527,7 +534,19 @@ onUnmounted(async () => {
         class="rounded-xl border border-surface-700/50 bg-surface-850 p-4 sm:p-6"
         data-testid="host-run-view"
       >
-        <GroupRunHostPanel :late-players="latePlayers" />
+        <GroupRunHostPanel>
+          <template #invite>
+            <InvitePlayersPanel
+              :invite-code="groupInviteCode"
+              :join-link="joinLink"
+              :pending="pendingPlayers"
+              :late-players="latePlayers"
+              :busy="inviteBusy"
+              @approve="handleApprove"
+              @add="groupRun.addParticipant($event)"
+            />
+          </template>
+        </GroupRunHostPanel>
       </div>
 
       <!-- Group adventure being set up: invite, approve, order the turns, start -->

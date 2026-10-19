@@ -5,16 +5,11 @@ import HealthStatus from './HealthStatus.vue'
 import AppSidebar from './AppSidebar.vue'
 import FeedbackModal from '@/features/feedback/FeedbackModal.vue'
 import { useFeedbackModal } from '@/features/feedback/useFeedbackModal'
+import { isNarrowScreen } from '@/shared/screen'
 
 const route = useRoute()
 
-/** Below Tailwind's `lg` breakpoint the sidebar is a drawer behind the hamburger button. */
-const NARROW_QUERY = '(max-width: 1023px)'
-
-function isNarrowScreen(): boolean {
-  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(NARROW_QUERY).matches
-}
-
+// Below Tailwind's `lg` breakpoint the sidebar is a drawer behind the hamburger button.
 // On a phone the sidebar starts closed so the page gets the full width.
 const sidebarCollapsed = ref(isNarrowScreen())
 

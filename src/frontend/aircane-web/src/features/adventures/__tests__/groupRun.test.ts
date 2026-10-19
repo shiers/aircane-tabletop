@@ -4,7 +4,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import { AxiosError, type AxiosResponse } from 'axios'
 import GroupRunHostPanel from '../components/GroupRunHostPanel.vue'
 import { useGroupRunStore } from '../stores/groupRunStore'
-import { ParticipantRole, type ParticipantDto } from '@/features/sessions/api'
 import * as api from '../api'
 import { groupRunState, makeScene } from './fixtures'
 
@@ -26,23 +25,12 @@ function httpError(status: number, data?: unknown): AxiosError {
   return new AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_REQUEST', undefined, undefined, response)
 }
 
-const late = (id: string, name: string): ParticipantDto => ({
-  id,
-  sessionId: 'play-session-1',
-  displayName: name,
-  role: ParticipantRole.Player,
-  characterId: null,
-  isApproved: true,
-  joinedAt: '2026-10-01T10:00:00Z',
-  lastSeenAt: '2026-10-01T10:00:00Z',
-})
-
-function setup(run = groupRunState(), latePlayers: ParticipantDto[] = []) {
+function setup(run = groupRunState(), slots: Record<string, string> = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const store = useGroupRunStore()
   store.setRun(run)
-  const wrapper = mount(GroupRunHostPanel, { props: { latePlayers }, global: { plugins: [pinia] } })
+  const wrapper = mount(GroupRunHostPanel, { slots, global: { plugins: [pinia] } })
   return { wrapper, store }
 }
 
@@ -172,6 +160,56 @@ describe('GroupRunHostPanel', () => {
   })
 
   describe('scene control', () => {
+    // The dropdown is a destination picker. The heading names the scene the party is in now; the
+    // dropdown lists where it can go next (the server only accepts scenes reachable from the current one).
+    it('lists the exits, not the current scene, and labels it as where to move the party', () => {
+      const { wrapper } = setup()
+
+      expect(wrapper.find('[data-testid="current-scene"]').text()).toBe('Current scene: The Sunken Library')
+      const options = wrapper.find('[data-testid="scene-select"]').findAll('option').map((o) => o.text())
+      expect(options).toEqual(['Choose a scene…', 'The Grand Hall', 'The Hidden Passage'])
+      expect(options).not.toContain('The Sunken Library')
+      expect(wrapper.find('label[for="advance-scene-target"]').text()).toMatch(/move the party to/i)
+    })
+
+    it('preselects nothing, so Advance scene is disabled until the host chooses', async () => {
+      const { wrapper } = setup()
+
+      expect((wrapper.find('[data-testid="scene-select"]').element as HTMLSelectElement).value).toBe('')
+      expect(wrapper.find('[data-testid="advance-scene-button"]').attributes('disabled')).toBeDefined()
+
+      await wrapper.find('[data-testid="scene-select"]').setValue('scene-3')
+
+      expect(wrapper.find('[data-testid="advance-scene-button"]').attributes('disabled')).toBeUndefined()
+    })
+
+    it('forgets the choice when the scene changes and it is no longer an exit', async () => {
+      vi.mocked(api.advanceAdventureScene).mockResolvedValue(
+        groupRunState({
+          currentScene: makeScene({
+            sceneId: 'scene-3',
+            title: 'The Grand Hall',
+            exits: [{ sceneId: 'scene-9', title: 'The Vault', sceneType: 'exploration' }],
+          }),
+        }),
+      )
+      const { wrapper } = setup()
+      await wrapper.find('[data-testid="scene-select"]').setValue('scene-3')
+
+      await wrapper.find('[data-testid="advance-scene-button"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="current-scene"]').text()).toBe('Current scene: The Grand Hall')
+      expect((wrapper.find('[data-testid="scene-select"]').element as HTMLSelectElement).value).toBe('')
+    })
+
+    it('calls the AI the GM in the hint', () => {
+      const { wrapper } = setup()
+
+      expect(wrapper.find('[data-testid="scene-hint"]').text()).toBe('The AI GM moves the story along too; use this to override it.')
+      expect(wrapper.text()).not.toContain('AI DM')
+    })
+
     it('advances to the chosen exit', async () => {
       vi.mocked(api.advanceAdventureScene).mockResolvedValue(groupRunState({ currentSceneNumber: 3 }))
       const { wrapper } = setup()
@@ -183,14 +221,13 @@ describe('GroupRunHostPanel', () => {
       expect(api.advanceAdventureScene).toHaveBeenCalledWith('run-1', 'scene-4')
     })
 
-    it('defaults to the first exit', async () => {
-      vi.mocked(api.advanceAdventureScene).mockResolvedValue(groupRunState())
+    it('does nothing when Advance scene is pressed with no destination chosen', async () => {
       const { wrapper } = setup()
 
       await wrapper.find('[data-testid="advance-scene-button"]').trigger('click')
       await flushPromises()
 
-      expect(api.advanceAdventureScene).toHaveBeenCalledWith('run-1', 'scene-3')
+      expect(api.advanceAdventureScene).not.toHaveBeenCalled()
     })
 
     it('says so when the scene has no exits', () => {
@@ -236,34 +273,61 @@ describe('GroupRunHostPanel', () => {
     })
   })
 
-  describe('players who joined late', () => {
-    it('lists approved players who are not in the turn order, and adds one to the end', async () => {
-      vi.mocked(api.addAdventureParticipant).mockResolvedValue(groupRunState())
-      const { wrapper } = setup(groupRunState(), [late('p-dan', 'Dan')])
+  describe('invite slot', () => {
+    it('renders what the host page puts in the invite slot, before the turn order', () => {
+      const { wrapper } = setup(groupRunState(), { invite: '<div data-testid="slotted-invite">Invite players</div>' })
 
-      expect(wrapper.find('[data-testid="late-players"]').text()).toContain('Dan')
-      await wrapper.find('[data-testid="add-late-player"]').trigger('click')
-      await flushPromises()
-
-      expect(api.addAdventureParticipant).toHaveBeenCalledWith('run-1', 'p-dan')
+      const html = wrapper.html()
+      expect(wrapper.find('[data-testid="slotted-invite"]').exists()).toBe(true)
+      expect(html.indexOf('slotted-invite')).toBeGreaterThan(html.indexOf('turn-card'))
+      expect(html.indexOf('slotted-invite')).toBeLessThan(html.indexOf('run-turn-order'))
     })
 
-    it('shows nothing when everyone is in', () => {
+    it('no longer lists late players itself (the invite panel does)', () => {
       const { wrapper } = setup()
 
       expect(wrapper.find('[data-testid="late-players"]').exists()).toBe(false)
+    })
+  })
+
+  describe('adding a late player (store)', () => {
+    it('adds to the end through the server, and keeps the acting player and round', async () => {
+      const added = groupRunState({ activeParticipantName: 'Bob', currentRound: 1 })
+      added.turnOrder = [...added.turnOrder, { participantId: 'p-dan', participantName: 'Dan', isActive: false }]
+      vi.mocked(api.addAdventureParticipant).mockResolvedValue(added)
+      const { store } = setup(groupRunState({ activeParticipantName: 'Bob', currentRound: 1 }))
+
+      await store.addParticipant('p-dan')
+
+      expect(api.addAdventureParticipant).toHaveBeenCalledWith('run-1', 'p-dan')
+      expect(store.run?.turnOrder.map((t) => t.participantName)).toEqual(['Alice', 'Bob', 'Cara', 'Dan'])
+      expect(store.run?.activeParticipantName).toBe('Bob')
+      expect(store.run?.currentRound).toBe(1)
     })
 
     it('shows the server message when the player is already in the adventure', async () => {
       vi.mocked(api.addAdventureParticipant).mockRejectedValue(
         httpError(409, { detail: 'That participant is already in this adventure run.' }),
       )
-      const { wrapper } = setup(groupRunState(), [late('p-dan', 'Dan')])
+      const { store } = setup()
 
-      await wrapper.find('[data-testid="add-late-player"]').trigger('click')
-      await flushPromises()
+      await store.addParticipant('p-bob')
 
-      expect(wrapper.find('[data-testid="run-error"]').text()).toBe('That participant is already in this adventure run.')
+      expect(store.error).toBe('That participant is already in this adventure run.')
+    })
+
+    it('explains an unapproved player without showing a GUID', async () => {
+      vi.mocked(api.addAdventureParticipant).mockRejectedValue(
+        httpError(400, {
+          detail: "Participant '61dbdf2c-11ec-4663-b8f2-bb80787b436d' is not an active participant of this run's play session.",
+        }),
+      )
+      const { store } = setup()
+
+      await store.addParticipant('p-dan')
+
+      expect(store.error).toMatch(/isn't approved yet/i)
+      expect(store.error).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/)
     })
   })
 })

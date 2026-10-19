@@ -111,6 +111,14 @@ export function mapGroupError(err: unknown, action: GroupAction): GroupError {
             'The list has been refreshed; check it and try again.',
         }
       }
+      // Adding someone the host has not approved yet names the participant's GUID.
+      if (action === 'add-participant' && detail?.includes('is not an active participant of this run')) {
+        return {
+          kind: 'bad-request',
+          status,
+          message: "That player isn't approved yet. Approve them first, then add them to the adventure.",
+        }
+      }
       return { kind: 'bad-request', status, message: detail ?? `Could not ${verb}.` }
     }
 

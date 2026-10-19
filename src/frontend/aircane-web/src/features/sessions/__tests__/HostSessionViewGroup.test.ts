@@ -56,6 +56,7 @@ vi.mock('@/features/adventures/api', async (importOriginal) => ({
   getActiveAdventureSession: vi.fn(),
   getAdventureSession: vi.fn(),
   startGroupAdventureSession: vi.fn(),
+  addAdventureParticipant: vi.fn(),
 }))
 
 vi.mock('@/features/characters/api', async (importOriginal) => ({
@@ -393,6 +394,104 @@ describe('HostSessionView: group run', () => {
     })
 
     expect(wrapper.find('[data-testid="late-players"]').text()).toContain('p-dan')
+  })
+})
+
+describe('HostSessionView: inviting players after the adventure has started', () => {
+  async function mountRunning(participants: ParticipantDto[], saveCode = true) {
+    if (saveCode) saveInviteCode('play-1', 'ABCD1234')
+    vi.mocked(adventuresApi.getActiveAdventureSession).mockResolvedValue({ id: 'run-1' } as never)
+    vi.mocked(adventuresApi.getAdventureSession).mockResolvedValue(groupRunState({ sessionId: 'play-1' }))
+    return mountHost({ adventure: false, participants })
+  }
+
+  const inRun = [person('p-alice'), person('p-bob'), person('p-cara')]
+
+  // The bug: starting the adventure replaced the lobby, and the join link, QR and code vanished.
+  it('keeps the join link, QR code and invite code in the run view', async () => {
+    const { wrapper } = await mountRunning(inRun)
+
+    expect(wrapper.find('[data-testid="host-run-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="invite-panel"]').exists()).toBe(true)
+    // jsdom serves the page from http://localhost:3000; the link uses the LAN address instead.
+    expect(wrapper.find('[data-testid="invite-url"]').text()).toBe('http://192.168.1.42:3000/join/play-1')
+    expect(wrapper.find('[data-testid="invite-code"]').text()).toBe('ABCD1234')
+    expect(wrapper.find('[data-testid="invite-panel"] canvas').exists()).toBe(true)
+  })
+
+  it('is open on a wide screen (jsdom reports no narrow screen)', async () => {
+    const { wrapper } = await mountRunning(inRun)
+
+    expect(wrapper.find('[data-testid="invite-toggle"]').attributes('aria-expanded')).toBe('true')
+  })
+
+  it('shows the missing-code message, and the join link, when this browser no longer has the code', async () => {
+    const { wrapper } = await mountRunning(inRun, false)
+
+    expect(wrapper.find('[data-testid="invite-code-missing"]').text()).toMatch(/can't be shown again/i)
+    expect(wrapper.find('[data-testid="new-session-button"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="invite-url"]').exists()).toBe(true)
+  })
+
+  it('puts a badge on the panel when someone is waiting, counting requests and players to add', async () => {
+    const { wrapper } = await mountRunning([
+      ...inRun,
+      person('waiting', { isApproved: false }),
+      person('p-dan'), // approved, not in the turn order
+    ])
+
+    expect(wrapper.find('[data-testid="invite-badge"]').text()).toContain('2')
+  })
+
+  it('has no badge when everyone is in', async () => {
+    const { wrapper } = await mountRunning(inRun)
+
+    expect(wrapper.find('[data-testid="invite-badge"]').exists()).toBe(false)
+  })
+
+  it('approves a late joiner from the panel', async () => {
+    vi.mocked(sessionsApi.approveParticipant).mockResolvedValue(person('p-dan'))
+    const { wrapper } = await mountRunning([...inRun, person('p-dan', { isApproved: false })])
+
+    await wrapper.find('[data-testid="invite-approve"]').trigger('click')
+    await flushPromises()
+
+    expect(sessionsApi.approveParticipant).toHaveBeenCalledWith('play-1', 'p-dan')
+  })
+
+  it('adds an approved late player to the end of the turn order, from the panel', async () => {
+    const withDan = groupRunState({ sessionId: 'play-1' })
+    withDan.turnOrder = [...withDan.turnOrder, { participantId: 'p-dan', participantName: 'Dan', isActive: false }]
+    vi.mocked(adventuresApi.addAdventureParticipant).mockResolvedValue(withDan)
+    const { wrapper } = await mountRunning([...inRun, person('p-dan')])
+
+    await wrapper.find('[data-testid="add-late-player"]').trigger('click')
+    await flushPromises()
+
+    expect(adventuresApi.addAdventureParticipant).toHaveBeenCalledWith('run-1', 'p-dan')
+    expect(wrapper.findAll('[data-testid="run-turn-order"] li')).toHaveLength(4)
+    expect(wrapper.find('[data-testid="active-player"]').text()).toBe('Alice') // the turn stays put
+    expect(wrapper.find('[data-testid="run-progress"]').text()).toContain('Round 1') // and so does the round
+  })
+
+  it('moves a player from "waiting" to "to add" once they are approved (the list refreshes)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const { wrapper } = await mountRunning([...inRun, person('p-dan', { isApproved: false })])
+    expect(wrapper.find('[data-testid="invite-pending"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="add-late-player"]').exists()).toBe(false)
+    vi.mocked(sessionsApi.getParticipants).mockResolvedValue([...inRun, person('p-dan')])
+
+    await vi.advanceTimersByTimeAsync(4000)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="invite-pending"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="add-late-player"]').exists()).toBe(true)
+  })
+
+  it('does not offer the panel outside a group run', async () => {
+    const { wrapper } = await mountHost({ adventure: false })
+
+    expect(wrapper.find('[data-testid="invite-panel"]').exists()).toBe(false)
   })
 })
 

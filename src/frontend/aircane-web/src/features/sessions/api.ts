@@ -56,6 +56,8 @@ export interface StartSessionRequest {
 export interface JoinSessionRequest {
   displayName: string
   inviteCode: string
+  /** This browser's rejoin secret for the session (see rejoinSecrets.ts). Only its hash is stored. */
+  rejoinSecret?: string
 }
 
 export interface JoinSessionResult {
@@ -77,6 +79,11 @@ export interface ParticipantDto {
   lastSeenAt: string
   /** Only ever true on the response to a denial; denied people are not on the roster. */
   isDenied?: boolean
+  /**
+   * Host only, on a waiting request: another participant already in the session has the same display name
+   * (ignoring case). Probably the same person on a new device or tab; the host can approve or replace that seat.
+   */
+  sameNameAsParticipantId?: string | null
 }
 
 export interface NetworkInfo {
@@ -153,6 +160,55 @@ export async function joinSession(
   const response = await apiClient.post<JoinSessionResult>(
     `/api/sessions/${sessionId}/join`,
     request,
+  )
+  return response.data
+}
+
+/** What POST /api/sessions/{id}/rejoin returns: the same seat, with a fresh token. */
+export interface RejoinSessionResult {
+  participantId: string
+  displayName: string
+  role: ParticipantRole
+  isApproved: boolean
+  status: RejoinStatusValue
+  characterId: string | null
+  sessionName: string
+  participantToken: string
+}
+
+export type RejoinStatusValue = 'approved' | 'pending' | 'denied'
+
+/** What POST /api/sessions/{id}/rejoin-status returns. No token. */
+export interface RejoinStatusResult {
+  sessionName: string
+  displayName: string
+  status: RejoinStatusValue
+}
+
+/**
+ * Takes this browser's seat back with its rejoin secret. 403 (participant-denied) when the host declined it;
+ * 404, the same for every other case, when there is nothing to go back to (unknown secret, ended session).
+ */
+export async function rejoinSession(sessionId: string, secret: string): Promise<RejoinSessionResult> {
+  const response = await apiClient.post<RejoinSessionResult>(`/api/sessions/${sessionId}/rejoin`, { secret })
+  return response.data
+}
+
+/** Where this browser stands in a session, without logging in. 404 when there is nothing to go back to. */
+export async function getRejoinStatus(sessionId: string, secret: string): Promise<RejoinStatusResult> {
+  const response = await apiClient.post<RejoinStatusResult>(`/api/sessions/${sessionId}/rejoin-status`, { secret })
+  return response.data
+}
+
+/** Gives an approved participant's seat (character, turn position) to a waiting request. Host only. */
+export async function replaceParticipant(
+  sessionId: string,
+  oldParticipantId: string,
+  newParticipantId: string,
+): Promise<{ participant: ParticipantDto; replacedParticipantId: string }> {
+  const response = await apiClient.post<{ participant: ParticipantDto; replacedParticipantId: string }>(
+    `/api/sessions/${sessionId}/replace-participant`,
+    { oldParticipantId, newParticipantId },
   )
   return response.data
 }

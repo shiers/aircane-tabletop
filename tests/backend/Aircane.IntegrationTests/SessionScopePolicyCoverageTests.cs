@@ -16,12 +16,15 @@ namespace Aircane.IntegrationTests;
 public sealed class SessionScopePolicyCoverageTests : IClassFixture<AircaneWebApplicationFactory>
 {
     /// <summary>
-    /// The only session-keyed endpoints that may be anonymous: a player has no token before joining.
+    /// The only session-keyed endpoints that may be anonymous: a player has no token before joining, or (rejoin)
+    /// has lost it and proves the seat with the rejoin secret instead.
     /// </summary>
     private static readonly HashSet<string> AnonymousAllowlist =
     [
         "api/sessions/{id:guid}/join",
         "api/sessions/{id:guid}/join-info",
+        "api/sessions/{id:guid}/rejoin",
+        "api/sessions/{id:guid}/rejoin-status",
     ];
 
     // A route parameter that names a session, or something a session owns.

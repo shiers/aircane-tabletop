@@ -208,8 +208,9 @@ public sealed class SessionHub : Hub
         }
 
         var participantId = caller.ParticipantId!.Value;
-        var participant = await _sessions.GetParticipantAsync(sessionId, participantId)
-            ?? throw new HubException("You are not a participant of this session.");
+        var participant = await _sessions.GetParticipantAsync(sessionId, participantId);
+        if (participant is null || participant.IsReplaced)
+            throw new HubException("You are not a participant of this session.");
         if (participant.IsDenied)
             throw new HubException("The host declined your request to join this session.");
 

@@ -8,12 +8,21 @@
  * moment they are approved, without a reload. A player who comes back here (a reload, a dropped
  * connection) is recognised by the participant token the page remembered and resumes where they
  * were; a token the server no longer accepts is dropped and the form is shown as for anyone new.
+ *
+ * A tab with no token (closed and opened again, or the link opened in a new tab) first tries the browser's
+ * rejoin secret for the session (rejoin.ts): the same seat comes back, approved or still waiting, with no new
+ * request for the host. A secret the server has no seat for, or one the host declined, is dropped and the form is
+ * shown; it never blocks a fresh join.
+ *
+ * On /sessions (no session in the route) the page lists the sessions this browser can go back to (RejoinCards)
+ * above the join form.
  */
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from './store'
 import PlayerJoinForm from './PlayerJoinForm.vue'
 import WaitingForApproval from './components/WaitingForApproval.vue'
+import RejoinCards from './components/RejoinCards.vue'
 import { getJoinInfo, reconnectSession, type JoinSessionResult } from './api'
 import {
   clearParticipantSession,
@@ -21,7 +30,8 @@ import {
   loadParticipantSessionFor,
   type ParticipantSession,
 } from './participantSession'
-import { isParticipantDenied, isTokenRejected } from './playerErrors'
+import { DENIED_MESSAGE, isParticipantDenied, isTokenRejected } from './playerErrors'
+import { rejoinWithStoredSecret } from './rejoin'
 
 // ---------------------------------------------------------------------------
 // Route params
@@ -39,6 +49,15 @@ const store = useSessionStore()
 
 /** Who this browser is at the table once they have joined (or are being recognised after a reload). */
 const participant = ref<{ participantId: string; displayName: string } | null>(null)
+
+/** The player came back to a seat they already had (rejoin secret, or a "Rejoin" card): "Welcome back". */
+const returning = ref(route.query?.returning === '1')
+
+/** Taking the seat back with the rejoin secret is in flight. */
+const rejoining = ref(false)
+
+/** Said above the join form when the rejoin secret could not bring the seat back. */
+const rejoinNotice = ref<string | null>(null)
 
 /**
  * Dedicated lookup state, tracked locally and independent of the shared store.
@@ -59,38 +78,52 @@ const sessionName = ref<string | null>(null)
 const returningTo = ref<ParticipantSession | null>(null)
 
 /**
+ * /sessions only: the page knows it is staying (no live login to take back first), so the "Rejoin" cards may check
+ * the browser's secrets. Before that, a player with a live login is on their way to their table.
+ */
+const showRejoinCards = ref(false)
+
+/**
  * "Join Session" in the sidebar opens /sessions, which has no table in it. For a player who is already at one,
  * a blank join form looks like having been thrown out. So: find out where they stand, and take them back
  * (approved: the session; waiting or declined: the join page for it, which shows that), or, if the server no
  * longer accepts the login, forget it and show the page as for anyone new. While that is being found out, or if the
  * host cannot be reached, a "Return to your session" card is shown instead of nothing.
  */
-async function returnToStoredSession(): Promise<void> {
+async function returnToStoredSession(): Promise<boolean> {
   const saved = loadLiveParticipantSession()
-  if (!saved) return
+  if (!saved) return false
   returningTo.value = saved
   try {
     const status = await reconnectSession(saved.sessionId)
     await router?.replace(status.isApproved
       ? { name: 'play-session', params: { sessionId: saved.sessionId } }
       : { name: 'join-session', params: { sessionId: saved.sessionId } })
+    return true
   } catch (err) {
     if (isParticipantDenied(err)) {
       await router?.replace({ name: 'join-session', params: { sessionId: saved.sessionId } })
-    } else if (isTokenRejected(err)) {
+      return true
+    }
+    if (isTokenRejected(err)) {
       // Expired, revoked, or the table has ended: it must never get in the way of joining another.
       clearParticipantSession()
       returningTo.value = null
+      return false
     }
     // Anything else (the host is out of reach): the card stays, with its link.
+    return true
   }
 }
 
 onMounted(async () => {
+  // An error another screen left in the shared store (a refused read, say) is not this form's to show.
+  store.error = null
+
   // No pre-populated session ID (the /sessions index): there is nothing to look up, so the join form always
   // renders instead of hanging on an invalid request. A player who is already at a table is taken back to it.
   if (!sessionId) {
-    await returnToStoredSession()
+    showRejoinCards.value = !(await returnToStoredSession())
     return
   }
 
@@ -103,8 +136,40 @@ onMounted(async () => {
     return
   }
 
+  if (await rejoinSeat()) return
+
   await lookUpSession()
 })
+
+/**
+ * No login in this tab, but the browser may hold a rejoin secret for the session: take that seat back (true), or
+ * fall through to the join form (false). The secret is dropped when the server has nothing for it or the host
+ * declined it; kept (for a later try) when the host cannot be reached.
+ */
+async function rejoinSeat(): Promise<boolean> {
+  rejoining.value = true
+  let entering = false
+  try {
+    const outcome = await rejoinWithStoredSecret(sessionId)
+    if (outcome.kind === 'none') return false
+    if (outcome.kind === 'failed') {
+      if (outcome.failure === 'denied') rejoinNotice.value = DENIED_MESSAGE
+      else if (outcome.failure !== 'gone') rejoinNotice.value = outcome.message
+      return false
+    }
+    returning.value = true
+    if (outcome.result.isApproved) {
+      // Straight into the session; the "taking you back" message stays until the page changes.
+      entering = true
+      enterSession()
+      return true
+    }
+    participant.value = { participantId: outcome.result.participantId, displayName: outcome.result.displayName }
+    return true
+  } finally {
+    if (!entering) rejoining.value = false
+  }
+}
 
 async function lookUpSession(): Promise<void> {
   lookupLoading.value = true
@@ -148,6 +213,7 @@ async function startOver(): Promise<void> {
   clearParticipantSession()
   store.error = null
   participant.value = null
+  returning.value = false
   await lookUpSession()
 }
 </script>
@@ -170,12 +236,12 @@ async function startOver(): Promise<void> {
 
       <!-- Loading state (only while an ID-backed lookup is in flight) -->
       <div
-        v-if="lookupLoading"
+        v-if="lookupLoading || rejoining"
         class="flex items-center justify-center py-20"
         aria-live="polite"
         aria-busy="true"
       >
-        <span class="text-gray-400">Loading session…</span>
+        <span class="text-gray-400">{{ rejoining ? 'Taking you back to your seat…' : 'Loading session…' }}</span>
       </div>
 
       <!-- Already at a table: a way back, not a blank form -->
@@ -202,6 +268,7 @@ async function startOver(): Promise<void> {
         :session-id="sessionId"
         :participant-id="participant.participantId"
         :display-name="participant.displayName"
+        :returning="returning"
         @approved="enterSession"
         @rejected="startOver"
         @rejoin="startOver"
@@ -210,6 +277,18 @@ async function startOver(): Promise<void> {
       <!-- Join form. It always renders first (regardless of whether the session
            loaded), with the error panel shown BELOW it. -->
       <template v-else>
+        <!-- /sessions: the sessions this browser can go back to, above the form for a new one -->
+        <RejoinCards v-if="!sessionId && showRejoinCards" />
+
+        <p
+          v-if="rejoinNotice"
+          role="status"
+          class="rounded-lg border border-amber-700 bg-amber-950/30 px-4 py-3 text-sm text-amber-200"
+          data-testid="rejoin-notice"
+        >
+          {{ rejoinNotice }}
+        </p>
+
         <PlayerJoinForm
           :session-id="sessionId"
           :session-name="lookupError ? undefined : (sessionName ?? undefined)"

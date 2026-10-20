@@ -23,6 +23,10 @@ public sealed class EndpointAuthorizationCoverageTests
         "SessionsController.GetJoinInfo",
         "SessionsController.JoinSession",
         "SessionsController.GetNetworkInfo",
+        // A player who lost their token proves the seat with the rejoin secret (128+ random bits, stored hashed,
+        // rate limited in every mode); unknown secrets, ended and unknown sessions get one non-revealing 404.
+        "SessionsController.Rejoin",
+        "SessionsController.GetRejoinStatus",
         "SetupController.GetStatus",
         // Loopback-only, checked in the action (the desktop wrapper reports the tunnel URL).
         "TunnelController.SetTunnelUrl",

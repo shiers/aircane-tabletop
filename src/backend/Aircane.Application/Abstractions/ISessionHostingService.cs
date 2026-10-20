@@ -51,6 +51,47 @@ public interface ISessionHostingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Takes a seat back with the rejoin secret the browser sent when it joined: the same participant, with its
+    /// approval (or its place in the queue), character and turn position, and a fresh token. The previous token
+    /// is revoked, so a seat has one live login. No new join request is made and nothing is announced.
+    /// <see cref="RejoinOutcome.Denied"/> for a request the host declined (no token);
+    /// <see cref="RejoinOutcome.NotFound"/> for anything else: an unknown or malformed secret, an ended session,
+    /// or no such session.
+    /// </summary>
+    Task<RejoinAttempt> RejoinAsync(
+        Guid sessionId,
+        string? secret,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// What <see cref="RejoinAsync"/> would give back, without minting a token: the session's name, the
+    /// participant's name and status (approved, pending or denied). <see cref="RejoinOutcome.NotFound"/> on the
+    /// same terms.
+    /// </summary>
+    Task<RejoinStatusAttempt> GetRejoinStatusAsync(
+        Guid sessionId,
+        string? secret,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gives an approved participant's seat to a pending join request (the same person on a new device or
+    /// tab): approves the new participant and moves the old one's character and turn-order position to it.
+    /// If the old participant holds the turn, the new one holds it now, and a pending roll is cleared (it was
+    /// asked of the old connection; the AI asks again). The old participant is taken off the roster, its token
+    /// and rejoin secret are revoked and its connections closed.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">Either participant is not in the session.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The new participant is already approved or was denied, the old one has no seat (pending, denied or
+    /// already replaced), or both are the same participant.
+    /// </exception>
+    Task<ReplaceParticipantResult> ReplaceParticipantAsync(
+        Guid sessionId,
+        Guid oldParticipantId,
+        Guid newParticipantId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Assigns a character to a participant in the session.
     /// </summary>
     Task<ParticipantDto> AssignCharacterAsync(

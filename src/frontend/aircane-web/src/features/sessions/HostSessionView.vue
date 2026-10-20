@@ -397,6 +397,20 @@ async function handleApprove(participantId: string): Promise<void> {
   }
 }
 
+/**
+ * Gives an approved participant's seat to a waiting request with the same name (the same person on a new device).
+ * The server moves the character and the turn-order place; the roster and the run are read again to show it.
+ */
+async function handleReplace(newParticipantId: string, oldParticipantId: string): Promise<void> {
+  try {
+    await store.replaceParticipant(sessionId, oldParticipantId, newParticipantId)
+  } catch {
+    return   // store.error is shown in the banner.
+  }
+  await pollParticipants()
+  if (groupRun.run) await groupRun.refresh()
+}
+
 async function handleAssignCharacter(participantId: string, characterId: string): Promise<void> {
   try {
     await store.assignCharacter(sessionId, participantId, characterId)
@@ -532,7 +546,9 @@ onUnmounted(async () => {
               :pending="pendingPlayers"
               :late-players="latePlayers"
               :busy="inviteBusy"
+              :roster="store.participants"
               @approve="handleApprove"
+              @replace="handleReplace"
               @add="groupRun.addParticipant($event)"
             />
           </template>
@@ -554,6 +570,7 @@ onUnmounted(async () => {
         :loading="store.loading"
         :run-blocked-reason="soloRunReason"
         @approve="handleApprove"
+        @replace="handleReplace"
         @assign-character="handleAssignCharacter"
         @refresh="pollParticipants"
         @started="handleRunStarted"
@@ -583,6 +600,7 @@ onUnmounted(async () => {
               :available-characters="availableCharacters"
               :loading="store.loading"
               @approve="handleApprove"
+              @replace="handleReplace"
               @assign-character="handleAssignCharacter"
             />
           </div>

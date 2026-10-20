@@ -32,6 +32,21 @@ public class SessionParticipant : EntityBase
     /// <summary>Expiry of the last-issued participant token, used when persisting a revocation.</summary>
     public DateTimeOffset? TokenExpiresAt { get; set; }
 
+    /// <summary>
+    /// SHA-256 (hex) of the rejoin secret the player's browser sent with its join request, or null. The secret
+    /// itself is never stored. Holding the secret lets that browser take this seat back after its tab was
+    /// closed (a fresh token, no new request). Cleared when the session ends or the seat is replaced; kept on
+    /// a denied request only so the browser can be told it was declined (it never mints a token again).
+    /// </summary>
+    public string? RejoinSecretHash { get; set; }
+
+    /// <summary>
+    /// Set when the host gave this participant's seat to a newer join request (the same person on a new
+    /// device or tab). A replaced participant has no seat: it is off the roster, its tokens and rejoin
+    /// secret are revoked, and its character and turn-order place belong to the participant named here.
+    /// </summary>
+    public Guid? ReplacedByParticipantId { get; set; }
+
     public SessionParticipant(
         Guid sessionId,
         string displayName,

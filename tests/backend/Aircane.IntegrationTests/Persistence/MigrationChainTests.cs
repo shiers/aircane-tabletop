@@ -19,6 +19,7 @@ public sealed class MigrationChainTests : IAsyncLifetime
 {
     private const string GroupPlayMigration = "AddAdventureSessionGroupPlay";
     private const string TurnAdvanceAndChatMigration = "AddTurnAdvanceModeAndChatMessages";
+    private const string RejoinMigration = "AddParticipantRejoinAndReplace";
 
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
         .WithImage("pgvector/pgvector:pg16")
@@ -169,6 +170,40 @@ public sealed class MigrationChainTests : IAsyncLifetime
             VALUES ({Guid.NewGuid()}, {sessionId}, {Guid.NewGuid()}, 'Alice', 2, 'hello', now())
             """);
         Assert.Equal(1, await db.ChatMessages.AsNoTracking().CountAsync(m => m.SessionId == sessionId));
+
+        await migrator.MigrateAsync(all[index - 1]);   // runs Down()
+        await migrator.MigrateAsync(all[index]);       // and applies cleanly again
+    }
+
+    [Fact]
+    public async Task RejoinMigration_LeavesExistingParticipantsWithNoSecretAndTheirSeat_AndRollsBack()
+    {
+        await using var db = PostgresFixture.CreateContext(await CreateEmptyDatabaseAsync());
+        var migrator = db.GetService<IMigrator>();
+        var all = db.Database.GetMigrations().ToList();
+        var index = all.FindIndex(m => m.EndsWith(RejoinMigration, StringComparison.Ordinal));
+        Assert.True(index > 0, $"Migration {RejoinMigration} was not found in the chain.");
+
+        await migrator.MigrateAsync(all[index - 1]);
+
+        // A participant who joined before rejoin secrets existed. Foreign keys are skipped (superuser connection).
+        var participantId = Guid.NewGuid();
+        await db.Database.OpenConnectionAsync();
+        await db.Database.ExecuteSqlRawAsync("SET session_replication_role = replica");
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "SessionParticipants"
+                ("Id", "SessionId", "DisplayName", "Role", "JoinedAt", "LastSeenAt", "IsApproved", "IsDenied", "CreatedAt")
+            VALUES
+                ({participantId}, {Guid.NewGuid()}, 'Bifur', 2, now(), now(), true, false, now())
+            """);
+
+        await migrator.MigrateAsync(all[index]);
+
+        // They keep their seat; they simply cannot rejoin with a secret (they never sent one).
+        var row = await db.SessionParticipants.AsNoTracking().SingleAsync(p => p.Id == participantId);
+        Assert.True(row.IsApproved);
+        Assert.Null(row.RejoinSecretHash);
+        Assert.Null(row.ReplacedByParticipantId);
 
         await migrator.MigrateAsync(all[index - 1]);   // runs Down()
         await migrator.MigrateAsync(all[index]);       // and applies cleanly again

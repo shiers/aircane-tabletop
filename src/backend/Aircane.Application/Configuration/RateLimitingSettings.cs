@@ -26,6 +26,12 @@ public sealed class RateLimitingSettings
     public const string FeedbackPolicy = "feedback";
 
     /// <summary>
+    /// Policy name for the per-IP limiter on the anonymous rejoin endpoints (rejoin, rejoin-status). Always on,
+    /// on the LAN too: they take a secret, and anything that checks a secret is throttled.
+    /// </summary>
+    public const string RejoinPolicy = "rejoin";
+
+    /// <summary>
     /// Fixed-window limits for sensitive endpoints (join, participant approval, and any
     /// endpoint accepting an invite code or token). Prevents brute-forcing invite codes.
     /// </summary>
@@ -45,6 +51,18 @@ public sealed class RateLimitingSettings
         PermitLimit = 200,
         WindowSeconds = 60,
         SegmentsPerWindow = 6,
+        QueueLimit = 0,
+    };
+
+    /// <summary>
+    /// Fixed-window limits for the rejoin endpoints, in every mode. A browser checks each session it can return
+    /// to when the sessions page opens (the page lists at most 10), then rejoins one, so 30 a minute leaves room
+    /// for a few reloads while still capping guesses.
+    /// </summary>
+    public FixedWindowLimit Rejoin { get; set; } = new()
+    {
+        PermitLimit = 30,
+        WindowSeconds = 60,
         QueueLimit = 0,
     };
 

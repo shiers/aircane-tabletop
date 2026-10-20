@@ -39,6 +39,7 @@ describe('PlayerJoinForm', () => {
     vi.clearAllMocks()
     // Clear sessionStorage between tests
     sessionStorage.clear()
+    localStorage.clear()
   })
 
   it('renders the session name in the description', () => {
@@ -107,6 +108,7 @@ describe('PlayerJoinForm', () => {
     expect(mockedJoinSession).toHaveBeenCalledWith('session-abc', {
       displayName: 'Thorin',
       inviteCode: 'ABC123',
+      rejoinSecret: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/),   // the browser's rejoin secret goes with it
     })
     expect(wrapper.emitted('joined')).toBeTruthy()
     expect(wrapper.emitted('joined')![0]).toEqual([joinResult])

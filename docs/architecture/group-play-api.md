@@ -43,6 +43,60 @@ A denied person **may join again with the same invite code**. That is a new requ
 token; the host sees it as a new pending entry and can deny it again. The invite code is shared by everyone, so
 blocking one person by name is not meaningful, and a mistaken denial is recoverable.
 
+### Coming back: the rejoin secret
+
+A player's bearer token lives in the tab (`sessionStorage`), so closing the tab loses it. To come back to the same
+seat, the browser makes a **rejoin secret** once per session (at least 128 random bits, base64url, kept in
+`localStorage`) and sends it with the join request as `rejoinSecret`. The server stores only its SHA-256, compares it
+in constant time, and never logs or returns it. A secret that is sent but malformed is a 400; joining again with a
+secret that already holds a seat in the session is a 409 (rejoin instead).
+
+**A display name and the invite code never take an existing seat.** Without the secret, joining again is a new
+request, as before.
+
+`POST /api/sessions/{id}/rejoin` with `{ "secret": "..." }`. Anonymous, and rate limited **in every mode, the LAN
+included** (`RateLimiting:Rejoin`, 30 a minute per address; on the LAN the socket address, not a forwarding header).
+
+| Result | When |
+| --- | --- |
+| 200 + `{ participantId, displayName, role, isApproved, status, characterId, sessionName, participantToken }` | the secret holds a seat, approved (`status: "approved"`) or still waiting (`"pending"`) |
+| 403, `code: participant-denied` | the host declined that request: the usual refusal, and no token |
+| 404, one body for all | an unknown or malformed secret, an ended session, a session that does not exist |
+
+The participant is the same one: approval, character and turn position are unchanged, no new request is made and
+nothing is broadcast. The token is fresh and **the previous one is revoked**, so a seat has one live login (an older
+tab of the same browser has to come back the same way).
+
+`POST /api/sessions/{id}/rejoin-status` with `{ "secret": "..." }`: the same access, limit and 404, but it mints no
+token. 200 + `{ sessionName, displayName, status }`, where `status` is `approved`, `pending` or `denied`. The sessions
+page uses it to show its "Rejoin" cards before anyone is logged in.
+
+The secret stops working when the session **ends** (every hash is cleared) and when the seat is **replaced**. On a
+**denied** request it can never mint a token; its hash is kept only so the browser is told it was declined and can
+drop it. A new join from that browser with the same secret is a new request, and the secret moves to it.
+
+### Same name, and giving a seat to a new request
+
+A pending request whose display name matches (ignoring case) another participant already in the session carries
+`sameNameAsParticipantId` in the host's `GET /api/sessions/{id}/participants` and in the `ParticipantJoined` event.
+Players never see it.
+
+`POST /api/sessions/{id}/replace-participant` with `{ "oldParticipantId": "...", "newParticipantId": "..." }`. Host
+only, same pattern and rate limit as `approve-participant`. The new participant is approved and takes the old one's
+character and place in every running group adventure's turn order (under the run's turn lock). If the old one held the
+turn, the new one holds it, and a pending roll is cleared, as when the turn passes (the AI asks again). The old
+participant leaves the roster (`ReplacedByParticipantId`), its token is revoked, its secret cleared and its
+connections closed. The group hears `ParticipantApproved` (new), `ParticipantLeft` (old) and `AdventureStateChanged`
+(reason `ParticipantReplaced`) per changed run.
+
+| Result | When |
+| --- | --- |
+| 200 + `{ participant, replacedParticipantId, adventureRunIds, tookTheTurn }` | the seat moved |
+| 400 | an id missing |
+| 403 | the caller is not the host |
+| 404 | either participant is not in this session |
+| 409 | the new participant is already approved, denied or replaced; the old one has no seat (pending, denied, replaced); the same id twice; the session has ended |
+
 ## Starting a group run in a specific play session
 
 `POST /api/adventure-sessions/start-group` accepts an optional `playSessionId`:
@@ -103,7 +157,7 @@ cannot connect either.
 | `TurnAdvanced`, `ParticipantJoinedAdventure` | table | |
 | `AdventureStateChanged` | table | a signal only; also sent when a run completes |
 | `ParticipantApproved` | table | the approved person is in it by then |
-| `ParticipantLeft` | table | |
+| `ParticipantLeft` | table | also sent for the old participant when the host replaces a seat |
 | `ParticipantJoined` | host | a new join request, before anyone has decided on it |
 | `ParticipantDenied` | host + the person denied | |
 | `AIProposalCreated` | host | |

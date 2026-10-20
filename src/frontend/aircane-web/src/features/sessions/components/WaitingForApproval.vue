@@ -15,6 +15,8 @@ const props = defineProps<{
   sessionId: string
   participantId: string
   displayName: string
+  /** The player came back to a request they had already made (rejoined), rather than having just joined. */
+  returning?: boolean
   /** Test seam: replaces the status read and the live connection. */
   watchOptions?: Partial<ApprovalWatchOptions>
 }>()
@@ -75,9 +77,12 @@ const isDenied = computed(() => state.value === 'denied')
     <!-- Waiting (or checking for the first time) -->
     <template v-else>
       <div class="mb-4 text-4xl" aria-hidden="true">🎲</div>
-      <h2 class="mb-2 text-xl font-semibold text-white">Welcome, {{ displayName }}!</h2>
+      <h2 class="mb-2 text-xl font-semibold text-white" data-testid="waiting-name">
+        {{ returning ? `Welcome back, ${displayName}!` : `Welcome, ${displayName}!` }}
+      </h2>
       <p class="text-sm text-yellow-400" data-testid="pending-message">
         <template v-if="state === 'checking'">Checking your join request…</template>
+        <template v-else-if="returning">You are still waiting for the host to approve you. This is the same request as before, so there is no need to join again.</template>
         <template v-else>Your join request is pending host approval. You will be let in as soon as the host approves you.</template>
       </p>
       <p v-if="connectionProblem" role="status" class="mt-3 text-sm text-orange-300" data-testid="connection-problem">

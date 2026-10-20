@@ -43,7 +43,8 @@ public static class PlayerSeat
             return SeatStatus.NotInSession;
 
         var participant = await sessions.GetParticipantAsync(playSessionId, participantId, cancellationToken);
-        if (participant is null)
+        // A participant whose seat went to a newer request has no seat (its tokens are revoked too).
+        if (participant is null || participant.IsReplaced)
             return SeatStatus.NotInSession;
         if (participant.IsDenied)
             return SeatStatus.Denied;

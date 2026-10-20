@@ -42,6 +42,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'approve', participantId: string): void
+  (e: 'replace', newParticipantId: string, oldParticipantId: string): void
   (e: 'assign-character', participantId: string, characterId: string): void
   /** Ask the parent to re-read the participants (the server said the selection is out of date). */
   (e: 'refresh'): void
@@ -61,10 +62,23 @@ function dismiss(participantId: string): void {
 
 const turnOrder = ref<string[]>([])
 
+// Seats the host gave to a new request: the new participant keeps the old one's place in the order being built.
+const replaced = new Map<string, string>()
+
+function replaceSeat(newParticipantId: string, oldParticipantId: string): void {
+  replaced.set(oldParticipantId, newParticipantId)
+  emit('replace', newParticipantId, oldParticipantId)
+}
+
 watch(
   () => props.participants,
   (list) => {
-    turnOrder.value = reconcileTurnOrder(turnOrder.value, eligiblePlayers(list))
+    const present = new Set(list.map((p) => p.id))
+    const order = turnOrder.value.map((id) => {
+      const successor = replaced.get(id)
+      return successor && !present.has(id) && present.has(successor) ? successor : id
+    })
+    turnOrder.value = reconcileTurnOrder(order, eligiblePlayers(list))
   },
   { immediate: true, deep: true },
 )
@@ -160,6 +174,7 @@ async function handleStart(): Promise<void> {
         :loading="loading"
         dismissible
         @approve="emit('approve', $event)"
+        @replace="replaceSeat"
         @dismiss="dismiss"
         @assign-character="(pid: string, cid: string) => emit('assign-character', pid, cid)"
       />

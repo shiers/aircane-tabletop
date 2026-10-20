@@ -6,6 +6,7 @@
  */
 import { computed } from 'vue'
 import { ParticipantRole, type ParticipantDto } from './api'
+import ReplaceSeatControl from './components/ReplaceSeatControl.vue'
 
 // ---------------------------------------------------------------------------
 // Props & Emits
@@ -26,6 +27,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'approve', participantId: string): void
+  /** Give an approved participant's seat to a waiting request with the same name. */
+  (e: 'replace', newParticipantId: string, oldParticipantId: string): void
   (e: 'dismiss', participantId: string): void
   (e: 'assign-character', participantId: string, characterId: string): void
 }>()
@@ -93,6 +96,12 @@ function onAssignCharacter(participantId: string, event: Event): void {
           <div class="min-w-0">
             <p class="font-medium text-white">{{ participant.displayName }}</p>
             <p class="text-xs text-gray-400">{{ roleLabel(participant.role) }}</p>
+            <ReplaceSeatControl
+              :request="participant"
+              :roster="participants"
+              :busy="loading"
+              @replace="(newId: string, oldId: string) => emit('replace', newId, oldId)"
+            />
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <button

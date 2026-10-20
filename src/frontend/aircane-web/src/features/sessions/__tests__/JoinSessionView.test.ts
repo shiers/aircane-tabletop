@@ -16,6 +16,7 @@ vi.mock('../api', async (importOriginal) => {
     getSession: vi.fn(),
     joinSession: vi.fn(),
     reconnectSession: vi.fn(),
+    rejoinSession: vi.fn(),
   }
 })
 
@@ -97,6 +98,7 @@ describe('JoinSessionView', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     sessionStorage.clear()
+    localStorage.clear()
     hubEmit.handlers = {}
     mockedJoinInfo.mockResolvedValue({ name: 'Friday Table', joinable: true })
   })

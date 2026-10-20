@@ -66,12 +66,67 @@ export function mapJoinError(err: unknown): string {
       return 'That session was not found. Check the join link with the host.'
     case 401:
     case 403:
-      return 'The server did not accept this join request. Reload the page and try again, or ask the host for a fresh join link.'
+      return detail ?? 'The server did not accept this join request. Reload the page and try again, or ask the host for a fresh join link.'
+    case 409:
+      // "This browser already has a place in this session..."
+      return detail ?? 'This browser already has a place in this session. Go back to it instead of joining again.'
     case 429:
       return 'Too many tries in a short time. Wait a minute, then try again.'
     default:
       return detail ?? `Could not join the session (server error ${status}). Try again in a moment.`
   }
+}
+
+/**
+ * Why taking a seat back with the rejoin secret did not work, as the screens act on it:
+ *  - `gone`: the server has nothing to go back to (unknown secret, ended or unknown session): forget the secret;
+ *  - `denied`: the host declined this request: forget the secret, say so;
+ *  - `unreachable`: no answer: keep the secret, say the host cannot be reached;
+ *  - `busy`: rate limited: keep the secret, try again in a minute;
+ *  - `other`: anything else: keep the secret.
+ */
+export type RejoinFailure = 'gone' | 'denied' | 'unreachable' | 'busy' | 'other'
+
+export function rejoinFailure(err: unknown): RejoinFailure {
+  if (isUnreachable(err)) return 'unreachable'
+  if (isParticipantDenied(err)) return 'denied'
+  const { status } = problemOf(err)
+  if (status === 404) return 'gone'
+  if (status === 429) return 'busy'
+  return 'other'
+}
+
+/** A failed rejoin, ready to show on its card. */
+export function mapRejoinError(err: unknown): string {
+  switch (rejoinFailure(err)) {
+    case 'unreachable':
+      return UNREACHABLE
+    case 'denied':
+      return DENIED_MESSAGE
+    case 'gone':
+      return 'That session has ended, or no longer has a place for this browser. Join with the invite code.'
+    case 'busy':
+      return 'Too many tries in a short time. Wait a minute, then try again.'
+    default:
+      return problemOf(err).detail ?? 'Could not go back to that session. Try again in a moment.'
+  }
+}
+
+/**
+ * The server's own words for a failed request (ProblemDetails `detail`, then `title`), or a plain sentence for
+ * the status, never axios's "Request failed with status code 401".
+ */
+export function serverMessage(err: unknown, fallback = 'Something went wrong. Try again in a moment.'): string {
+  if (!axios.isAxiosError(err)) return err instanceof Error && err.message ? err.message : fallback
+  if (!err.response) return UNREACHABLE
+  const { status, detail } = problemOf(err)
+  if (detail) return detail
+  const title = (err.response.data as { title?: unknown } | undefined)?.title
+  if (typeof title === 'string' && title.trim()) return title.trim()
+  if (status === 401) return 'Your login for this table is no longer valid. Join again to continue.'
+  if (status === 403) return 'You are not allowed to do that here.'
+  if (status === 404) return 'That was not found. It may have ended.'
+  return fallback
 }
 
 /** A failed action in the adventure, ready to show beside the action box. */

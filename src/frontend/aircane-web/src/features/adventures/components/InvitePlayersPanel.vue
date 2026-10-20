@@ -15,6 +15,7 @@ import { ref, computed } from 'vue'
 import type { ParticipantDto } from '@/features/sessions/api'
 import type { JoinLink } from '@/features/sessions/lobby'
 import QRCode from '@/features/sessions/components/QRCode.vue'
+import ReplaceSeatControl from '@/features/sessions/components/ReplaceSeatControl.vue'
 import { isNarrowScreen } from '@/shared/screen'
 
 const props = defineProps<{
@@ -27,10 +28,13 @@ const props = defineProps<{
   latePlayers: ParticipantDto[]
   /** A host action (approve or add) is in flight. */
   busy?: boolean
+  /** Everyone on the host's roster, to name the participant a same-name request would replace. */
+  roster?: ParticipantDto[]
 }>()
 
 const emit = defineEmits<{
   (e: 'approve', participantId: string): void
+  (e: 'replace', newParticipantId: string, oldParticipantId: string): void
   (e: 'add', participantId: string): void
 }>()
 
@@ -177,9 +181,17 @@ async function copy(text: string, which: 'url' | 'code'): Promise<void> {
           <li
             v-for="person in pending"
             :key="person.id"
-            class="flex items-center justify-between gap-3 rounded-md border border-yellow-800 bg-yellow-950/30 px-3 py-2"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-yellow-800 bg-yellow-950/30 px-3 py-2"
           >
-            <span class="min-w-0 truncate text-sm text-white">{{ person.displayName }}</span>
+            <div class="min-w-0 flex-1">
+              <span class="block truncate text-sm text-white">{{ person.displayName }}</span>
+              <ReplaceSeatControl
+                :request="person"
+                :roster="roster ?? pending"
+                :busy="busy"
+                @replace="(newId: string, oldId: string) => emit('replace', newId, oldId)"
+              />
+            </div>
             <button
               type="button"
               class="shrink-0 rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"

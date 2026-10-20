@@ -11,6 +11,7 @@
   <ItemGroup>
     <!-- Expose internal members (e.g. DndBeyondUrlImportService.ParseCharacterId) to unit tests. -->
     <InternalsVisibleTo Include="Aircane.UnitTests" />
+    <InternalsVisibleTo Include="Aircane.IntegrationTests" />
   </ItemGroup>
 
   <ItemGroup>

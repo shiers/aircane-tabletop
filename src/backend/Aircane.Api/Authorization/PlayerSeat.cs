@@ -18,6 +18,9 @@ public enum SeatStatus
 
     /// <summary>The host denied them.</summary>
     Denied,
+
+    /// <summary>The host removed them from the session.</summary>
+    Removed,
 }
 
 /// <summary>
@@ -30,6 +33,11 @@ public static class PlayerSeat
 {
     private const string SessionIdClaim = "sid";
     private const string ParticipantIdClaim = "pid";
+
+    /// <summary>The refusal a removed participant gets, wherever they are refused.</summary>
+    public const string RemovedCode = "participant-removed";
+    public const string RemovedTitle = "You were removed from this session";
+    public const string RemovedDetail = "The host removed you from this session. You can ask to join again with the invite code.";
 
     public static async Task<SeatStatus> CheckAsync(
         ClaimsPrincipal user,
@@ -48,6 +56,8 @@ public static class PlayerSeat
             return SeatStatus.NotInSession;
         if (participant.IsDenied)
             return SeatStatus.Denied;
+        if (participant.IsRemoved)
+            return SeatStatus.Removed;
         return participant.IsApproved ? SeatStatus.Allowed : SeatStatus.Pending;
     }
 
@@ -69,6 +79,11 @@ public static class PlayerSeat
                 Title = "Join request declined",
                 Detail = "The host declined your request to join this session.",
             },
+            SeatStatus.Removed => new ProblemDetails
+            {
+                Title = RemovedTitle,
+                Detail = RemovedDetail,
+            },
             SeatStatus.Pending => new ProblemDetails
             {
                 Title = "Waiting for approval",
@@ -83,6 +98,8 @@ public static class PlayerSeat
         problem.Status = StatusCodes.Status403Forbidden;
         if (status == SeatStatus.Denied)
             problem.Extensions["code"] = "participant-denied";
+        if (status == SeatStatus.Removed)
+            problem.Extensions["code"] = RemovedCode;
 
         return problem;
     }

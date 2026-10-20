@@ -344,6 +344,11 @@ public sealed class AdventureSessionsController : ControllerBase
 
         return await RunAsync(async () =>
         {
+            // Nobody holds the turn: everyone has left the order, or (a legacy run) the acting participant is no
+            // longer in it. Say that, rather than "not your turn", which would leave every player waiting.
+            if (session.IsGroup && NoActingPlayer(session) is { } noOne)
+                return noOne;
+
             // Solo runs have no turn order, so this only applies to group runs.
             if (session.IsGroup && !IsActiveParticipant(session))
             {
@@ -683,6 +688,27 @@ public sealed class AdventureSessionsController : ControllerBase
             return PlayerSeat.Refusal(seat);
 
         return session.IsGroup && level is not (AccessLevel.Play or AccessLevel.EndTurn) ? Forbid() : null;
+    }
+
+    /// <summary>
+    /// The 409 for a group run in which no one can act (<c>code: "no-acting-player"</c>), or null when someone holds
+    /// the turn.
+    /// </summary>
+    private ObjectResult? NoActingPlayer(AdventureSession session)
+    {
+        if (session.ActiveParticipantId is { } active && session.TurnOrder.Contains(active))
+            return null;
+
+        var problem = new ProblemDetails
+        {
+            Title = "No acting player",
+            Detail = session.TurnOrder.Count == 0
+                ? "No one is in this adventure's turn order. The host needs to approve and add a player to continue."
+                : "No one holds the turn right now. The host needs to pass the turn to continue.",
+            Status = StatusCodes.Status409Conflict,
+        };
+        problem.Extensions["code"] = "no-acting-player";
+        return Conflict(problem);
     }
 
     /// <summary>

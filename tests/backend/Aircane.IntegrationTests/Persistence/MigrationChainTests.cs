@@ -20,6 +20,7 @@ public sealed class MigrationChainTests : IAsyncLifetime
     private const string GroupPlayMigration = "AddAdventureSessionGroupPlay";
     private const string TurnAdvanceAndChatMigration = "AddTurnAdvanceModeAndChatMessages";
     private const string RejoinMigration = "AddParticipantRejoinAndReplace";
+    private const string RemovedAtMigration = "AddParticipantRemovedAt";
 
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
         .WithImage("pgvector/pgvector:pg16")
@@ -199,11 +200,51 @@ public sealed class MigrationChainTests : IAsyncLifetime
 
         await migrator.MigrateAsync(all[index]);
 
-        // They keep their seat; they simply cannot rejoin with a secret (they never sent one).
-        var row = await db.SessionParticipants.AsNoTracking().SingleAsync(p => p.Id == participantId);
+        // They keep their seat; they simply cannot rejoin with a secret (they never sent one). Only this migration's
+        // columns are read: the model also has columns from later migrations, which this database does not have yet.
+        var row = await db.SessionParticipants.AsNoTracking()
+            .Where(p => p.Id == participantId)
+            .Select(p => new { p.IsApproved, p.RejoinSecretHash, p.ReplacedByParticipantId })
+            .SingleAsync();
         Assert.True(row.IsApproved);
         Assert.Null(row.RejoinSecretHash);
         Assert.Null(row.ReplacedByParticipantId);
+
+        await migrator.MigrateAsync(all[index - 1]);   // runs Down()
+        await migrator.MigrateAsync(all[index]);       // and applies cleanly again
+    }
+
+    [Fact]
+    public async Task RemovedAtMigration_LeavesExistingParticipantsSeated_AndRollsBack()
+    {
+        await using var db = PostgresFixture.CreateContext(await CreateEmptyDatabaseAsync());
+        var migrator = db.GetService<IMigrator>();
+        var all = db.Database.GetMigrations().ToList();
+        var index = all.FindIndex(m => m.EndsWith(RemovedAtMigration, StringComparison.Ordinal));
+        Assert.True(index > 0, $"Migration {RemovedAtMigration} was not found in the chain.");
+
+        await migrator.MigrateAsync(all[index - 1]);
+
+        // An approved participant from before removals existed. Foreign keys are skipped (superuser connection).
+        var participantId = Guid.NewGuid();
+        await db.Database.OpenConnectionAsync();
+        await db.Database.ExecuteSqlRawAsync("SET session_replication_role = replica");
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "SessionParticipants"
+                ("Id", "SessionId", "DisplayName", "Role", "JoinedAt", "LastSeenAt", "IsApproved", "IsDenied", "CreatedAt")
+            VALUES
+                ({participantId}, {Guid.NewGuid()}, 'Balin', 2, now(), now(), true, false, now())
+            """);
+
+        await migrator.MigrateAsync(all[index]);
+
+        // Nobody is removed by the migration: they keep their seat.
+        var row = await db.SessionParticipants.AsNoTracking()
+            .Where(p => p.Id == participantId)
+            .Select(p => new { p.IsApproved, p.RemovedAt })
+            .SingleAsync();
+        Assert.True(row.IsApproved);
+        Assert.Null(row.RemovedAt);
 
         await migrator.MigrateAsync(all[index - 1]);   // runs Down()
         await migrator.MigrateAsync(all[index]);       // and applies cleanly again

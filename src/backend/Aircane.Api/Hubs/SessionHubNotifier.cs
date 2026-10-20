@@ -18,7 +18,8 @@ namespace Aircane.Api.Hubs;
 ///   <item><b>Host only</b>: AI proposals, campaign state (it is the whole state, NPC sheets included), library
 ///   import status, the adventure's clue, secret and NPC events and its completion notes (DM-facing text;
 ///   the table hears the story through the narration), and new join requests.</item>
-///   <item><b>Host and one participant</b>: a private roll (to its roller) and a denial (to the person denied).</item>
+///   <item><b>Host and one participant</b>: a private roll (to its roller), a denial (to the person denied) and
+///   a removal (to the person removed).</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -184,6 +185,16 @@ public sealed class SessionHubNotifier : ISessionHubNotifier
                 SessionHub.HostGroupName(sessionId),
                 SessionHub.ParticipantGroupName(sessionId, notification.ParticipantId))
             .SendAsync("ParticipantDenied", notification, ct);
+    }
+
+    public Task NotifyParticipantRemovedAsync(Guid sessionId, ParticipantRemovedNotification notification, CancellationToken ct = default)
+    {
+        // The host, and the person removed (in their own group, which they are still in until their
+        // connections are closed right after this).
+        return _hubContext.Clients.Groups(
+                SessionHub.HostGroupName(sessionId),
+                SessionHub.ParticipantGroupName(sessionId, notification.ParticipantId))
+            .SendAsync("ParticipantRemoved", notification, ct);
     }
 
     public Task NotifyAdventureStateChangedAsync(Guid sessionId, AdventureStateChangedNotification notification, CancellationToken ct = default)

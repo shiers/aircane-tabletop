@@ -174,7 +174,8 @@ public sealed class AdventureSessionsController : ControllerBase
             }
 
             var session = await _adventureSessions.StartGroupSessionAsync(
-                request.GeneratedAdventureId, request.CampaignId, request.ParticipantIds, request.PlaySessionId, cancellationToken);
+                request.GeneratedAdventureId, request.CampaignId, request.ParticipantIds, request.PlaySessionId,
+                request.TurnAdvance ?? TurnAdvanceMode.ManualOnly, cancellationToken);
             var state = await _adventureSessions.GetSessionStateAsync(session.Id, cancellationToken);
 
             return resuming
@@ -364,6 +365,21 @@ public sealed class AdventureSessionsController : ControllerBase
                     ActionText: request.ActionText.Trim()),
                 cancellationToken);
 
+            // The AI answered (a failed call threw above, and left the turn where it was). A run set to
+            // AfterEachAction now moves on to the next player. Best effort: the narration is already saved and is
+            // what the player is waiting for, so a problem here is logged, never turned into a failed request.
+            if (session.IsGroup && session.ActiveParticipantId is { } actor)
+            {
+                try
+                {
+                    await _adventureSessions.AutoAdvanceAfterActionAsync(id, actor, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Auto-advance after an action failed for adventure session {AdventureSessionId}", id);
+                }
+            }
+
             // A Player is told the narration and nothing else. The private DM note is DM-only, and the run
             // state and the AI's proposed actions carry more than the table's view (GET
             // /api/sessions/{id}/adventure-run) does: scene objectives, exits, NPCs, rolled-back errors.
@@ -380,23 +396,115 @@ public sealed class AdventureSessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Passes the turn of a group run to the next participant, starting a new round when it wraps
-    /// back to the first (Host only).
+    /// Passes the turn of a group run to the next participant, starting a new round when it wraps back to the
+    /// first. Clears the pending roll (it was owed by the player whose turn just ended), broadcasts the adventure
+    /// state change, and records who passed it.
+    /// <list type="bullet">
+    ///   <item><b>The host</b> may pass any turn. With <c>fromParticipantId</c> set, the pass happens only if that
+    ///   participant still holds the turn; otherwise 409 and nothing changes (the host's screen was out of date).
+    ///   Returns the full run state.</item>
+    ///   <item><b>The acting player</b> (approved, not denied, token for this session, their <c>pid</c> holds the
+    ///   turn) may end their own turn, and only while it is theirs. Returns the player-safe run.</item>
+    ///   <item><b>Anyone else</b>: 403 ("Not your turn" for a player who does not hold it; a waiting or denied
+    ///   participant gets their own refusal).</item>
+    /// </list>
+    /// A request that arrives after the turn has already moved on never moves it again: the check and the move
+    /// are made together under a lock on the run. A player's late request is a 403 "not your turn" naming who
+    /// has it now; a host's, with <c>fromParticipantId</c>, a 409.
     /// </summary>
     [HttpPost("{id:guid}/advance-turn")]
     [ProducesResponseType(typeof(AdventureSessionStateDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PlayerAdventureRunDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> AdvanceTurn(Guid id, CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> AdvanceTurn(
+        Guid id,
+        [FromQuery] Guid? fromParticipantId,
+        CancellationToken cancellationToken)
     {
-        if (!IsHost())
-            return Forbid();
+        var session = await _adventureSessions.GetByIdAsync(id, cancellationToken);
+        if (session is null)
+            return NotFound();
+        var refused = await CheckAccessAsync(session, AccessLevel.EndTurn, cancellationToken);
+        if (refused is not null)
+            return refused;
 
-        return await RunAsync(async () =>
+        var host = IsHost();
+        Guid? callerParticipantId = null;
+        if (!host)
         {
-            await _adventureSessions.AdvanceTurnAsync(id, cancellationToken);
+            // A player ends their own turn, and only while it is theirs.
+            if (!Guid.TryParse(User.FindFirst(ParticipantIdClaim)?.Value, out var participantId)
+                || !session.IsGroup || session.ActiveParticipantId != participantId)
+            {
+                return await NotYourTurnAsync(id, cancellationToken);
+            }
+            callerParticipantId = participantId;
+        }
+
+        var pass = host
+            ? new TurnPass(TurnPassedBy.Host, ExpectedActiveParticipantId: fromParticipantId)
+            : new TurnPass(TurnPassedBy.Player, callerParticipantId, ExpectedActiveParticipantId: callerParticipantId);
+
+        try
+        {
+            await _adventureSessions.PassTurnAsync(id, pass, cancellationToken);
+        }
+        catch (TurnAlreadyMovedException ex)
+        {
+            // Moved between the check above and the move itself (or the host's screen was stale): nothing changed.
+            return host
+                ? Conflict(new ProblemDetails
+                {
+                    Title = "The turn has already moved on",
+                    Detail = ex.Message,
+                    Status = StatusCodes.Status409Conflict,
+                })
+                : StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+                {
+                    Title = "Not your turn",
+                    Detail = $"It is not your turn. Waiting for {ex.NowActiveName ?? "another player"}.",
+                    Status = StatusCodes.Status403Forbidden,
+                });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(NotFoundProblem(ex));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem400(ex.Message);
+        }
+
+        // The host gets the whole run; a player only what the table may see (adventure-run).
+        if (host)
             return Ok(await _adventureSessions.GetSessionStateAsync(id, cancellationToken));
+
+        var view = session.SessionId is { } playSessionId
+            ? await _adventureSessions.GetPlayerRunViewAsync(playSessionId, callerParticipantId, cancellationToken)
+            : null;
+        return view is null ? NoContent() : Ok(view);
+    }
+
+    private async Task<IActionResult> NotYourTurnAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        string? waitingFor = null;
+        try
+        {
+            waitingFor = (await _adventureSessions.GetSessionStateAsync(runId, cancellationToken)).ActiveParticipantName;
+        }
+        catch (InvalidOperationException)
+        {
+            // The run cannot be described (no adventure): fall through to the generic wording.
+        }
+
+        return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails
+        {
+            Title = "Not your turn",
+            Detail = $"It is not your turn. Waiting for {waitingFor ?? "another player"}.",
+            Status = StatusCodes.Status403Forbidden,
         });
     }
 
@@ -537,6 +645,9 @@ public sealed class AdventureSessionsController : ControllerBase
         /// <summary>Act in the run (player-action).</summary>
         Play,
 
+        /// <summary>End one's own turn (advance-turn); the acting player is checked by the endpoint.</summary>
+        EndTurn,
+
         /// <summary>Change the run's course (resume, move the scene, abandon).</summary>
         Manage,
     }
@@ -548,7 +659,7 @@ public sealed class AdventureSessionsController : ControllerBase
     ///   <item><b>Player</b>: only with a seat at the run's play session, meaning a token issued for it to a
     ///   participant who is on its roster, approved and not denied (<see cref="PlayerSeat"/>). A participant
     ///   still waiting gets 403 "Waiting for approval"; a denied one 403 with <c>code: "participant-denied"</c>.</item>
-    ///   <item><b>Group run</b>: a Player may only <see cref="AccessLevel.Play"/> it. The full run (state,
+    ///   <item><b>Group run</b>: a Player may only <see cref="AccessLevel.Play"/> it and end their own turn (<see cref="AccessLevel.EndTurn"/>). The full run (state,
     ///   history, recap, exits) carries scene synopses, objectives, NPCs and what comes next, so at a table
     ///   a Player reads the player-safe <c>GET /api/sessions/{id}/adventure-run</c> instead, and the course
     ///   of the game is the Host's to change. A solo run has no table to protect: its one player may do all of it.</item>
@@ -571,7 +682,7 @@ public sealed class AdventureSessionsController : ControllerBase
         if (seat != SeatStatus.Allowed)
             return PlayerSeat.Refusal(seat);
 
-        return session.IsGroup && level != AccessLevel.Play ? Forbid() : null;
+        return session.IsGroup && level is not (AccessLevel.Play or AccessLevel.EndTurn) ? Forbid() : null;
     }
 
     /// <summary>

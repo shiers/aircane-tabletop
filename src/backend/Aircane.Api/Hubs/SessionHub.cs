@@ -1,6 +1,7 @@
 using Aircane.Api.Authorization;
 using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Sessions;
+using Aircane.Domain.Entities;
 using Aircane.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -29,12 +30,21 @@ public sealed class SessionHub : Hub
 {
     private readonly ISessionHostingService _sessions;
     private readonly SessionHubConnections _connections;
+    private readonly IChatService _chat;
+    private readonly ChatRateLimiter _chatLimiter;
     private readonly ILogger<SessionHub> _logger;
 
-    public SessionHub(ISessionHostingService sessions, SessionHubConnections connections, ILogger<SessionHub> logger)
+    public SessionHub(
+        ISessionHostingService sessions,
+        SessionHubConnections connections,
+        IChatService chat,
+        ChatRateLimiter chatLimiter,
+        ILogger<SessionHub> logger)
     {
         _sessions = sessions;
         _connections = connections;
+        _chat = chat;
+        _chatLimiter = chatLimiter;
         _logger = logger;
     }
 
@@ -121,6 +131,12 @@ public sealed class SessionHub : Hub
     /// sender is the token's participant and display name. Refused unless the caller is at this session's
     /// table, so a participant still waiting for approval cannot chat. (The host's own messages carry the
     /// participant id the host's client chose, so it can recognise its own; the host has no participant record.)
+    /// <para>
+    /// A message is stored before it is sent (see <see cref="IChatService"/>), so history and the live feed agree.
+    /// It is refused when longer than <c>ChatMessage.MaxTextLength</c> characters, or when the sender is over
+    /// <see cref="ChatRateLimiter.MaxMessages"/> messages in <see cref="ChatRateLimiter.Window"/>. Chat is table-wide:
+    /// there are no private or host-only messages.
+    /// </para>
     /// </summary>
     public async Task SendChatMessage(SendChatMessage message)
     {
@@ -140,13 +156,25 @@ public sealed class SessionHub : Hub
 
         if (string.IsNullOrWhiteSpace(message.Text))
             return;
+        if (message.Text.Trim().Length > ChatMessage.MaxTextLength)
+            throw new HubException($"A chat message can be at most {ChatMessage.MaxTextLength} characters.");
+
+        var senderId = caller.IsHost ? caller.ParticipantId ?? message.ParticipantId : caller.ParticipantId!.Value;
+        if (!_chatLimiter.TryAcquire(message.SessionId, senderId))
+            throw new HubException("You are sending messages too fast. Wait a few seconds.");
+
+        var stored = await _chat.RecordAsync(message.SessionId, senderId, caller.DisplayName, caller.Role, message.Text);
+        if (stored is null)
+            return;
 
         var notification = new ChatMessageReceivedNotification(
             SessionId: message.SessionId,
-            ParticipantId: caller.IsHost ? caller.ParticipantId ?? message.ParticipantId : caller.ParticipantId!.Value,
+            ParticipantId: senderId,
             DisplayName: caller.DisplayName,
-            Text: message.Text,
-            SentAt: DateTimeOffset.UtcNow);
+            Text: stored.Text,
+            SentAt: stored.SentAt,
+            MessageId: stored.Id,
+            Role: caller.Role.ToString());
 
         await Clients.Group(SessionGroupName(message.SessionId))
             .SendAsync("ChatMessageReceived", notification);

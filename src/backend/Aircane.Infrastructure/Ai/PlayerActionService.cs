@@ -584,7 +584,7 @@ public sealed class PlayerActionService : IPlayerActionService
         sb.AppendLine("- Do not advance the scene or complete the adventure early; wait for the party to act.");
         sb.AppendLine();
         sb.AppendLine("TURN ROTATION - players act one at a time, in the turn order listed under GROUP PLAY:");
-        sb.AppendLine("- Only the character listed as Currently acting takes a turn. The host passes the turn to the next player; you never do. Do not announce that the turn has passed or narrate as if someone else is now acting.");
+        sb.AppendLine("- Only the character listed as Currently acting takes a turn. The turn passes to the next player when the acting player says they are done, when the host passes it, or by itself after your reply if the table is set up that way; you never pass it. Do not announce that the turn has passed or narrate as if someone else is now acting, even if the acting player says they are done: acknowledge it in a few words and stay with the current scene.");
         sb.AppendLine("- Keep the spotlight on the acting character. Other characters may react in small ways (a glance, a step back, a hand on a weapon), but never choose their actions, words or decisions for them.");
         sb.AppendLine("- Over a round, give every character something to react to. When it fits the scene, leave an opening for the next character in the turn order (a sound only they would notice, an NPC turning toward them) without asking them to act yet.");
         sb.AppendLine("- Address the acting player by their character's name: the name listed for them under GROUP PLAY, before \"played by\" (which gives the player's own name). When no character is listed for a player, use the name shown.");

@@ -35,6 +35,7 @@ public class AircaneDbContext : DbContext
     public DbSet<Character> Characters => Set<Character>();
     public DbSet<CharacterTemplate> CharacterTemplates => Set<CharacterTemplate>();
     public DbSet<Roll> Rolls => Set<Roll>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<CampaignEvent> CampaignEvents => Set<CampaignEvent>();
     public DbSet<GameStateSnapshot> GameStateSnapshots => Set<GameStateSnapshot>();
     public DbSet<AiActionProposal> AiActionProposals => Set<AiActionProposal>();
@@ -306,6 +307,26 @@ public class AircaneDbContext : DbContext
             entity.HasIndex(e => e.SessionId).HasDatabaseName("IX_Rolls_SessionId");
         });
 
+        // ── ChatMessage ───────────────────────────────────────────────────────
+        modelBuilder.Entity<ChatMessage>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.SenderId).IsRequired();
+            entity.Property(e => e.SenderName).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.SenderRole).HasConversion<int>();
+            entity.Property(e => e.Text).HasMaxLength(ChatMessage.MaxTextLength).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            // A session's chat goes with the session if the session is ever deleted.
+            entity.HasOne<Session>()
+                .WithMany()
+                .HasForeignKey(e => e.SessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // History is read newest first, a page at a time, per session.
+            entity.HasIndex(e => new { e.SessionId, e.CreatedAt, e.Id }).HasDatabaseName("IX_ChatMessages_Session_Time");
+        });
+
         // ── CampaignEvent ─────────────────────────────────────────────────────
         modelBuilder.Entity<CampaignEvent>(entity =>
         {
@@ -409,6 +430,7 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.PendingRollLabel).HasMaxLength(200).IsRequired(false);
             entity.Property(e => e.PendingRollDC).IsRequired(false);
             entity.Property(e => e.ActiveParticipantId).IsRequired(false);
+            entity.Property(e => e.TurnAdvance).HasConversion<int>();
 
             // Per-run state is a handful of small lists keyed by content IDs that live inside the
             // adventure's JSON columns, so it is stored as jsonb rather than as child tables.

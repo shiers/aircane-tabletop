@@ -601,8 +601,10 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
     {
         var block = PlayerActionService.BuildGroupAdventureInstructions();
 
-        // Turn rotation: the host passes the turn, the AI keeps the spotlight on the acting character.
-        Assert.Contains("The host passes the turn to the next player; you never do.", block);
+        // Turn rotation: the acting player, the host or (if set up) the run passes the turn - never the AI -
+        // and the AI keeps the spotlight on the acting character.
+        Assert.Contains("when the acting player says they are done, when the host passes it, or by itself after your reply if the table is set up that way; you never pass it.", block);
+        Assert.DoesNotContain("The host passes the turn to the next player", block);
         Assert.Contains("never choose their actions, words or decisions for them", block);
         // Addressing the acting player in character.
         Assert.Contains("Address the acting player by their character's name", block);
@@ -1200,8 +1202,10 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
         }
 
         public Task<AdventureSession> StartAdventureSessionAsync(Guid generatedAdventureId, Guid campaignId, Guid? characterId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<AdventureSession> StartGroupSessionAsync(Guid generatedAdventureId, Guid campaignId, IReadOnlyList<Guid> participantIds, Guid? playSessionId = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AdventureSession> StartGroupSessionAsync(Guid generatedAdventureId, Guid campaignId, IReadOnlyList<Guid> participantIds, Guid? playSessionId = null, Aircane.Domain.Enums.TurnAdvanceMode turnAdvance = Aircane.Domain.Enums.TurnAdvanceMode.ManualOnly, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<AdventureSession> AdvanceTurnAsync(Guid sessionId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AdventureSession> PassTurnAsync(Guid sessionId, TurnPass pass, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool> AutoAdvanceAfterActionAsync(Guid sessionId, Guid actingParticipantId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<AdventureSession> AddParticipantAsync(Guid sessionId, Guid participantId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task AttachPlaySessionAsync(Guid sessionId, Guid playSessionId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<AdventureSession?> GetByIdAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException();

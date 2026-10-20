@@ -24,6 +24,8 @@ const hub = vi.hoisted(() => ({
   connection: {
     on: vi.fn(),
     onreconnected: vi.fn(),
+    onreconnecting: vi.fn(),
+    onclose: vi.fn(),
     start: vi.fn(),
     invoke: vi.fn(),
     stop: vi.fn(),
@@ -48,6 +50,8 @@ vi.mock('../api', async (importOriginal) => ({
   getParticipants: vi.fn(),
   getNetworkInfo: vi.fn(),
   approveParticipant: vi.fn(),
+  denyParticipant: vi.fn(),
+  removeParticipant: vi.fn(),
   assignCharacter: vi.fn(),
   endSession: vi.fn(),
   getChatHistory: vi.fn(),
@@ -242,10 +246,13 @@ describe('HostSessionView: group lobby', () => {
     await wrapper.find('[data-testid="start-adventure-button"]').trigger('click')
     await flushPromises()
 
+    // This lobby's play session goes with the request, with the turn-advance choice (manual by default).
     expect(adventuresApi.startGroupAdventureSession).toHaveBeenCalledWith({
       generatedAdventureId: 'adventure-1',
       campaignId: 'campaign-1',
       participantIds: ['alice', 'bob'],
+      playSessionId: 'play-1',
+      turnAdvance: 'ManualOnly',
     })
     // The run view replaces the lobby.
     expect(wrapper.find('[data-testid="host-run-view"]').exists()).toBe(true)
@@ -269,13 +276,19 @@ describe('HostSessionView: group lobby', () => {
     expect(wrapper.find('[data-testid="start-reason"]').text()).toContain('Old Tale')
   })
 
-  it('refreshes the player list on its own, for players who join or are approved by REST', async () => {
+  it('refreshes the player list from the hub when someone joins or is approved, without polling', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     const { wrapper } = await mountHost()
     expect(wrapper.find('[data-testid="turn-order-empty"]').exists()).toBe(true)
+    vi.mocked(sessionsApi.getParticipants).mockClear()
     vi.mocked(sessionsApi.getParticipants).mockResolvedValue([person('alice')])
 
-    await vi.advanceTimersByTimeAsync(4000)
+    // No timer reads the roster while the hub is up...
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(sessionsApi.getParticipants).not.toHaveBeenCalled()
+
+    // ...the hub's event does.
+    hub.handlers.get('ParticipantApproved')!({ sessionId: 'play-1', participantId: 'alice', displayName: 'alice', autoApproved: true })
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid="turn-order-item"]')).toHaveLength(1)
@@ -484,7 +497,7 @@ describe('HostSessionView: inviting players after the adventure has started', ()
     expect(wrapper.find('[data-testid="add-late-player"]').exists()).toBe(false)
     vi.mocked(sessionsApi.getParticipants).mockResolvedValue([...inRun, person('p-dan')])
 
-    await vi.advanceTimersByTimeAsync(4000)
+    hub.handlers.get('ParticipantApproved')!({ sessionId: 'play-1', participantId: 'p-dan', displayName: 'Dan', autoApproved: false })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="invite-pending"]').exists()).toBe(false)
@@ -722,5 +735,179 @@ describe('HostSessionView: chat history, roll log and character assignment', () 
     const { wrapper } = await mountHost({ adventure: false })
 
     expect(text(wrapper)).toContain('AI proposals will appear here when the AI GM runtime is active.')
+  })
+})
+
+describe('HostSessionView: deny, remove and presence', () => {
+  async function mountRunning(participants: ParticipantDto[], run = groupRunState({ sessionId: 'play-1' })) {
+    saveInviteCode('play-1', 'ABCD1234')
+    vi.mocked(adventuresApi.getActiveAdventureSession).mockResolvedValue({ id: 'run-1' } as never)
+    vi.mocked(adventuresApi.getAdventureSession).mockResolvedValue(run)
+    return mountHost({ adventure: false, participants })
+  }
+
+  const inRun = [
+    person('p-alice', { displayName: 'Alice', isConnected: true }),
+    person('p-bob', { displayName: 'Bob', isConnected: true }),
+    person('p-cara', { displayName: 'Cara', isConnected: true }),
+  ]
+
+  it('Deny asks, naming the person, then declines the request on the server', async () => {
+    vi.mocked(sessionsApi.denyParticipant).mockResolvedValue(person('walt', { isApproved: false, isDenied: true }))
+    const confirmFn = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirmFn)
+    const { wrapper } = await mountHost({ adventure: false, participants: [person('walt', { displayName: 'Walt', isApproved: false })] })
+
+    await wrapper.find('[data-testid="deny-participant"]').trigger('click')
+    await flushPromises()
+    expect(confirmFn.mock.calls[0][0]).toContain("Decline Walt's request to join?")
+    expect(sessionsApi.denyParticipant).not.toHaveBeenCalled()
+
+    confirmFn.mockReturnValue(true)
+    await wrapper.find('[data-testid="deny-participant"]').trigger('click')
+    await flushPromises()
+    expect(sessionsApi.denyParticipant).toHaveBeenCalledWith('play-1', 'walt')
+    expect(wrapper.find('[data-testid="deny-participant"]').exists()).toBe(false)
+  })
+
+  it("shows the server's message when a denial fails", async () => {
+    vi.mocked(sessionsApi.denyParticipant).mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 409'), {
+        isAxiosError: true,
+        response: { status: 409, data: { detail: 'That player is already approved and taking part.' } },
+      }),
+    )
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    const { wrapper } = await mountHost({ adventure: false, participants: [person('walt', { isApproved: false })] })
+
+    await wrapper.find('[data-testid="deny-participant"]').trigger('click')
+    await flushPromises()
+
+    expect(text(wrapper)).toContain('That player is already approved and taking part.')
+  })
+
+  it('Remove names the person and what happens: the seat, the turn moving on, the character', async () => {
+    vi.mocked(sessionsApi.removeParticipant).mockResolvedValue({
+      participant: person('p-alice', { isApproved: false, isRemoved: true }),
+      adventureRunIds: ['run-1'],
+      turnPassedInRunIds: ['run-1'],
+    })
+    vi.mocked(charactersApi.listCharacters).mockResolvedValue([
+      { id: 'char-mira', name: 'Mira', role: 0 } as never,
+    ])
+    const confirmFn = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirmFn)
+    const participants = [{ ...inRun[0], characterId: 'char-mira' }, inRun[1], inRun[2]]
+    const { wrapper } = await mountRunning(participants)
+
+    // Alice is acting: remove her from the participants panel.
+    await wrapper.findAll('[data-testid="remove-participant"]')[0].trigger('click')
+    await flushPromises()
+
+    const asked = confirmFn.mock.calls[0][0] as string
+    expect(asked).toContain('Remove Alice from this session?')
+    expect(asked).toContain('loses their seat')
+    expect(asked).toContain('the turn moves on to Bob')
+    expect(asked).toContain('Their character, Mira, is unassigned.')
+    expect(sessionsApi.removeParticipant).toHaveBeenCalledWith('play-1', 'p-alice')
+    expect(adventuresApi.getAdventureSession).toHaveBeenCalledTimes(2)   // the run is read again
+  })
+
+  it('a declined removal removes nothing', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => false))
+    const { wrapper } = await mountRunning(inRun)
+
+    await wrapper.findAll('[data-testid="remove-turn-player"]')[1].trigger('click')
+    await flushPromises()
+
+    expect(sessionsApi.removeParticipant).not.toHaveBeenCalled()
+  })
+
+  it('removing someone who is not acting says they leave the turn order', async () => {
+    const confirmFn = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirmFn)
+    const { wrapper } = await mountRunning(inRun)
+
+    await wrapper.findAll('[data-testid="remove-turn-player"]')[2].trigger('click')
+
+    const asked = confirmFn.mock.calls[0][0] as string
+    expect(asked).toContain('Remove Cara from this session?')
+    expect(asked).toContain("leave the adventure's turn order")
+    expect(asked).not.toContain('turn moves on')
+  })
+
+  it('shows who is connected, and follows the hub as people come and go', async () => {
+    const { wrapper } = await mountRunning(inRun)
+    const dots = () => wrapper.findAll('[data-testid="turn-presence-dot"]').map((d) => d.attributes('aria-label'))
+    expect(dots()).toEqual(['Connected', 'Connected', 'Connected'])
+
+    hub.handlers.get('ParticipantPresenceChanged')!({ sessionId: 'play-1', participantId: 'p-bob', isConnected: false })
+    await flushPromises()
+
+    expect(dots()).toEqual(['Connected', 'Away', 'Connected'])
+  })
+
+  it('says when the acting player is disconnected, beside Pass the turn, and offers Remove there', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => false))
+    const { wrapper } = await mountRunning(inRun)
+    expect(wrapper.find('[data-testid="acting-player-away"]').exists()).toBe(false)
+
+    hub.handlers.get('ParticipantPresenceChanged')!({ sessionId: 'play-1', participantId: 'p-alice', isConnected: false })
+    await flushPromises()
+
+    const away = wrapper.find('[data-testid="acting-player-away"]')
+    expect(away.text()).toContain('Alice is disconnected')
+    // Nothing changed by itself: Alice still holds the turn.
+    expect(wrapper.find('[data-testid="active-player"]').text()).toBe('Alice')
+    await away.find('[data-testid="remove-acting-player"]').trigger('click')
+    expect(vi.mocked(confirm)).toHaveBeenCalledWith(expect.stringContaining('Remove Alice from this session?'))
+  })
+
+  it('with nobody in the turn order, says there is no acting player', async () => {
+    const empty = groupRunState({ sessionId: 'play-1' })
+    empty.turnOrder = []
+    empty.activeParticipantId = null
+    empty.activeParticipantName = null
+    const { wrapper } = await mountRunning([], empty)
+
+    expect(wrapper.find('[data-testid="no-acting-player"]').text()).toBe('No acting player. Approve and add a player to continue.')
+    expect(wrapper.find('[data-testid="advance-turn-button"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('re-reads the roster on each roster event, and the run when it changes', async () => {
+    await mountRunning(inRun)
+    vi.mocked(sessionsApi.getParticipants).mockClear()
+    vi.mocked(adventuresApi.getAdventureSession).mockClear()
+
+    for (const name of ['ParticipantJoined', 'ParticipantApproved', 'ParticipantDenied', 'ParticipantRemoved', 'ParticipantLeft']) {
+      hub.handlers.get(name)!({ sessionId: 'play-1', participantId: 'x', displayName: 'X' })
+    }
+    hub.handlers.get('AdventureStateChanged')!({ sessionId: 'run-1', reason: 'ParticipantRemoved', changedAt: '' })
+    await flushPromises()
+
+    expect(sessionsApi.getParticipants).toHaveBeenCalledTimes(5)
+    expect(adventuresApi.getAdventureSession).toHaveBeenCalledWith('run-1')
+  })
+
+  it('polls slowly only while the hub connection is down', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    await mountRunning(inRun)
+    vi.mocked(sessionsApi.getParticipants).mockClear()
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(sessionsApi.getParticipants).not.toHaveBeenCalled()
+
+    // The connection drops: a slow poll stands in.
+    const reconnecting = hub.connection.onreconnecting.mock.calls[0][0] as () => void
+    reconnecting()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(sessionsApi.getParticipants).toHaveBeenCalledTimes(1)
+
+    // It comes back: the poll stops (after one catch-up read).
+    const reconnected = hub.connection.onreconnected.mock.calls[0][0] as () => Promise<void>
+    await reconnected()
+    vi.mocked(sessionsApi.getParticipants).mockClear()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(sessionsApi.getParticipants).not.toHaveBeenCalled()
   })
 })

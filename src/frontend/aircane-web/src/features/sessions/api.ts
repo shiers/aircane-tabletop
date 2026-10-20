@@ -79,6 +79,13 @@ export interface ParticipantDto {
   lastSeenAt: string
   /** Only ever true on the response to a denial; denied people are not on the roster. */
   isDenied?: boolean
+  /** Only ever true on the response to a removal; removed people are not on the roster. */
+  isRemoved?: boolean
+  /**
+   * Host only: whether the participant has the session open right now (a live connection). Kept in the server's
+   * memory, so after a server restart everyone reads as away until their browser reconnects. Null for players.
+   */
+  isConnected?: boolean | null
   /**
    * Host only, on a waiting request: another participant already in the session has the same display name
    * (ignoring case). Probably the same person on a new device or tab; the host can approve or replace that seat.
@@ -223,6 +230,31 @@ export async function getParticipants(sessionId: string): Promise<ParticipantDto
   const response = await apiClient.get<ParticipantDto[]>(
     `/api/sessions/${sessionId}/participants`,
   )
+  return response.data
+}
+
+/** Decline a pending join request (host only). The person is told, and their login stops working. */
+export async function denyParticipant(sessionId: string, participantId: string): Promise<ParticipantDto> {
+  const response = await apiClient.post<ParticipantDto>(`/api/sessions/${sessionId}/deny-participant`, { participantId })
+  return response.data
+}
+
+/** What removing a participant changed: which adventure runs, and in which of them the turn moved on. */
+export interface RemoveParticipantResult {
+  participant: ParticipantDto
+  adventureRunIds: string[]
+  turnPassedInRunIds: string[]
+}
+
+/**
+ * Take an approved participant out of the session (host only). They lose their seat and their login, their
+ * character is unassigned, and they leave the turn order of the running adventure (the turn moves on if it was
+ * theirs).
+ */
+export async function removeParticipant(sessionId: string, participantId: string): Promise<RemoveParticipantResult> {
+  const response = await apiClient.post<RemoveParticipantResult>(`/api/sessions/${sessionId}/remove-participant`, {
+    participantId,
+  })
   return response.data
 }
 

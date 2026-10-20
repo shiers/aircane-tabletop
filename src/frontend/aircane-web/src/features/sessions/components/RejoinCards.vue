@@ -4,15 +4,15 @@
  * to (it holds a rejoin secret for it; see rejoinSecrets.ts).
  *
  * On load each secret is checked with the status-only call, which logs nobody in: a card shows the session's name,
- * the player's name and where they stand. Secrets for sessions that ended, that the server does not know, or where
- * the host declined the request are removed without a word. One click on "Rejoin" takes the seat back (a fresh
+ * the player's name and where they stand. Secrets for sessions that ended, that the server does not know, where
+ * the host declined the request, or that the host removed the player from, are removed without a word. One click on "Rejoin" takes the seat back (a fresh
  * token, no new request) and goes to the session (approved) or the waiting screen (pending); a request declined in
  * the meantime is said on the card. A host's own browser has no participant record, so its sessions never appear.
  */
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getRejoinStatus, type RejoinStatusValue } from '../api'
-import { DENIED_MESSAGE, mapRejoinError, rejoinFailure } from '../playerErrors'
+import { DENIED_MESSAGE, REMOVED_MESSAGE, mapRejoinError, rejoinFailure } from '../playerErrors'
 import { forgetRejoinSecret, listRejoinSecrets, rememberRejoinName } from '../rejoinSecrets'
 import { rejoinWithStoredSecret } from '../rejoin'
 
@@ -76,8 +76,8 @@ async function checkAll(): Promise<void> {
       return
     }
     const failure = rejoinFailure(outcome.reason)
-    if (failure === 'gone' || failure === 'denied') {
-      forgetRejoinSecret(card.sessionId)   // ended, unknown or declined: removed silently
+    if (failure === 'gone' || failure === 'denied' || failure === 'removed') {
+      forgetRejoinSecret(card.sessionId)   // ended, unknown, declined or removed: no card
       return
     }
     kept.push({ ...card, problem: mapRejoinError(outcome.reason) })
@@ -107,6 +107,9 @@ async function rejoin(card: Card): Promise<void> {
       card.closed = true
       card.status = 'denied'
       card.problem = DENIED_MESSAGE
+    } else if (outcome.failure === 'removed') {
+      card.closed = true
+      card.problem = REMOVED_MESSAGE
     } else if (outcome.failure === 'gone') {
       card.closed = true
       card.problem = outcome.message

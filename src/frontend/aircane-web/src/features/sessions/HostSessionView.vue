@@ -12,6 +12,10 @@
  *   - Run: once the campaign has a group run in progress (found by asking the server, so it also
  *     survives a reload), the run view replaces the lobby: acting player, round, pass the turn,
  *     advance the scene, abandon.
+ *
+ * The roster follows the session hub: joins, approvals, denials, removals and departures re-read it, and presence
+ * (who has the session open) is updated in place. Only while the hub connection is down does a slow poll stand in.
+ * Denying a request and removing a player are confirmed here, naming the person and what happens.
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -19,7 +23,11 @@ import * as signalR from '@microsoft/signalr'
 import { useSessionStore } from './store'
 import { endSession, getNetworkInfo, getParticipants, SessionStatus, type NetworkInfo } from './api'
 import type { RollRecordedEvent } from '../dice/api'
-import type { ChatMessageEvent } from './playerHub'
+import type {
+  AdventureStateChangedEvent,
+  ChatMessageEvent,
+  ParticipantPresenceChangedEvent,
+} from './playerHub'
 import LanJoinScreen from './LanJoinScreen.vue'
 import InternetPlayPanel from './components/InternetPlayPanel.vue'
 import ParticipantApprovalPanel from './ParticipantApprovalPanel.vue'
@@ -30,12 +38,14 @@ import { useGroupRunStore } from '../adventures/stores/groupRunStore'
 import type {
   AdventureSessionStateDto,
   ParticipantJoinedAdventureEvent,
+  TurnAdvanceChoice,
   TurnAdvancedEvent,
 } from '../adventures/api'
 import { getAdventureDraft } from '../adventure-generation/api'
 import { listCharacters, CharacterRole } from '../characters/api'
 import { buildJoinLink, eligiblePlayers } from './lobby'
 import { clearInviteCode, loadInviteCode } from './inviteCodeStorage'
+import { denyConfirmation, removeConfirmation } from './hostActions'
 import ChatPanel from './ChatPanel.vue'
 import RollLog from './components/RollLog.vue'
 import { useChatHistory } from './chatHistory'
@@ -65,6 +75,11 @@ const groupRun = useGroupRunStore()
 
 /** Set when the host arrived from "Start Group Session": the adventure the lobby will start. */
 const adventureId = computed(() => (typeof route.query.adventure === 'string' ? route.query.adventure : null))
+
+/** How the turn moves on in the adventure the lobby will start, as chosen when the group session was set up. */
+const turnAdvance = computed<TurnAdvanceChoice>(() =>
+  route.query.turnAdvance === 'AfterEachAction' ? 'AfterEachAction' : 'ManualOnly',
+)
 
 // ---------------------------------------------------------------------------
 // Local state
@@ -155,6 +170,11 @@ const pendingPlayers = computed(() => store.participants.filter((p) => !p.isAppr
 /** An approve or add is in flight, so the invite panel's buttons wait. */
 const inviteBusy = computed(() => groupRun.busy !== null || store.loading)
 
+/** Who has the session open right now, by participant id (the host's roster carries it). */
+const presence = computed(() =>
+  Object.fromEntries(store.participants.map((p) => [p.id, p.isConnected])) as Record<string, boolean | null | undefined>,
+)
+
 async function loadGroupContext(): Promise<void> {
   const campaignId = store.currentSession?.campaignId
   if (!campaignId) return
@@ -191,29 +211,33 @@ function handleRunStarted(state: AdventureSessionStateDto): void {
   groupRun.setRun(state)
 }
 
-// The server does not announce REST joins or approvals, so the lobby polls for them. This reads
-// quietly (no loading flag, no error banner) so the buttons do not flicker.
-const POLL_INTERVAL_MS = 4000
-let pollTimer: ReturnType<typeof setInterval> | null = null
-
+/**
+ * Reads the roster again, quietly (no loading flag, no error banner) so the buttons do not flicker. The hub's
+ * roster events call it; a failure is corrected by the next event or the fallback poll.
+ */
 async function pollParticipants(): Promise<void> {
   try {
     store.participants = await getParticipants(sessionId)
   } catch {
-    // A missed poll is corrected by the next one.
+    // A missed read is corrected by the next one.
   }
 }
 
-function startPolling(): void {
-  if (pollTimer || (!adventureId.value && !showRun.value)) return
-  pollTimer = setInterval(() => {
+// The hub tells this screen about joins, approvals, denials, removals and presence. Only while its connection is
+// down (it never came up, or it is reconnecting) does a slow poll keep the roster from going stale.
+const FALLBACK_POLL_MS = 15_000
+let fallbackTimer: ReturnType<typeof setInterval> | null = null
+
+function startFallbackPoll(): void {
+  if (fallbackTimer) return
+  fallbackTimer = setInterval(() => {
     if (sessionIsLive.value) void pollParticipants()
-  }, POLL_INTERVAL_MS)
+  }, FALLBACK_POLL_MS)
 }
 
-function stopPolling(): void {
-  if (pollTimer) clearInterval(pollTimer)
-  pollTimer = null
+function stopFallbackPoll(): void {
+  if (fallbackTimer) clearInterval(fallbackTimer)
+  fallbackTimer = null
 }
 
 /** Every run event for the group adventure just means "read the state again". */
@@ -275,14 +299,23 @@ async function connectHub(): Promise<void> {
       rolls.addLive(roll)
     })
 
-    connection.on('ParticipantJoined', async () => {
-      pushEvent({ actor: 'Host', eventType: 'ParticipantJoined' })
-      await store.fetchParticipants(sessionId)
+    // The roster changed: someone asked to join, was let in, was declined, removed, or left.
+    for (const name of ['ParticipantJoined', 'ParticipantApproved', 'ParticipantDenied', 'ParticipantRemoved', 'ParticipantLeft']) {
+      connection.on(name, () => {
+        pushEvent({ actor: 'Host', eventType: name })
+        void pollParticipants()
+      })
+    }
+
+    // Someone's connection came up or went away: shown on the roster and the run view, and nothing else changes.
+    connection.on('ParticipantPresenceChanged', (event: ParticipantPresenceChangedEvent) => {
+      if (event?.participantId) store.setPresence(event.participantId, !!event.isConnected)
     })
 
-    connection.on('ParticipantLeft', async () => {
-      pushEvent({ actor: 'Host', eventType: 'ParticipantLeft' })
-      await store.fetchParticipants(sessionId)
+    // The run changed in a way the table sees (a turn, a scene, a player removed): read it again.
+    connection.on('AdventureStateChanged', (event: AdventureStateChangedEvent) => {
+      pushEvent({ actor: 'Host', eventType: 'AdventureStateChanged', keyField: event?.reason })
+      void groupRun.onRunEvent(event)
     })
 
     connection.on('StateUpdated', async () => {
@@ -315,10 +348,15 @@ async function connectHub(): Promise<void> {
       })
     }
 
+    // While the connection is down the roster is polled instead (slowly).
+    connection.onreconnecting(() => startFallbackPoll())
+    connection.onclose(() => startFallbackPoll())
+
     // Group membership is per connection, so a reconnect has to join again (and catch up).
     connection.onreconnected(async () => {
       try {
         await joinHubGroup(connection)
+        stopFallbackPoll()
         // Whatever was said or rolled while the connection was down was not delivered: read it again.
         await Promise.all([pollParticipants(), groupRun.refresh(), chat.refresh(), rolls.refresh()])
       } catch {
@@ -330,8 +368,10 @@ async function connectHub(): Promise<void> {
     await joinHubGroup(connection)
     hubConnection.value = connection
     hubError.value = null
+    stopFallbackPoll()
   } catch (err) {
     hubError.value = err instanceof Error ? err.message : 'Could not connect to session hub.'
+    startFallbackPoll()
   }
 }
 
@@ -411,6 +451,41 @@ async function handleReplace(newParticipantId: string, oldParticipantId: string)
   if (groupRun.run) await groupRun.refresh()
 }
 
+/** Declines a waiting request, after asking. The server tells the person and revokes their login. */
+async function handleDeny(participantId: string): Promise<void> {
+  const person = store.participants.find((p) => p.id === participantId)
+  if (!confirm(denyConfirmation(person?.displayName ?? 'this person'))) return
+  try {
+    await store.denyParticipant(sessionId, participantId)
+  } catch {
+    // store.error (the server's message) is shown in the banner.
+  }
+}
+
+/**
+ * Takes an approved player out of the session, after saying exactly what happens: they lose their seat, the turn
+ * moves on if it is theirs, and their character is unassigned.
+ */
+async function handleRemove(participantId: string): Promise<void> {
+  const person = store.participants.find((p) => p.id === participantId)
+  const order = groupRun.run?.status === 'InProgress' ? groupRun.run.turnOrder : []
+  const index = order.findIndex((t) => t.participantId === participantId)
+  const holdsTurn = index >= 0 && order[index].isActive
+  const nextName = holdsTurn && order.length > 1 ? order[(index + 1) % order.length].participantName : null
+  const characterName = person?.characterId
+    ? availableCharacters.value.find((c) => c.id === person.characterId)?.name ?? null
+    : null
+  const name = person?.displayName ?? (index >= 0 ? order[index].participantName : 'this player')
+
+  if (!confirm(removeConfirmation(name, { inRun: index >= 0, holdsTurn, nextName, characterName }))) return
+  try {
+    await store.removeParticipant(sessionId, participantId)
+  } catch {
+    return   // store.error (the server's message) is shown in the banner.
+  }
+  if (groupRun.run) await groupRun.refresh()
+}
+
 async function handleAssignCharacter(participantId: string, characterId: string): Promise<void> {
   try {
     await store.assignCharacter(sessionId, participantId, characterId)
@@ -454,12 +529,11 @@ onMounted(async () => {
     refreshEncounter(),
   ])
   await loadGroupContext()
-  startPolling()
   await connectHub()
 })
 
 onUnmounted(async () => {
-  stopPolling()
+  stopFallbackPoll()
   if (hubConnection.value) {
     try {
       await hubConnection.value.stop()
@@ -538,7 +612,7 @@ onUnmounted(async () => {
         class="rounded-xl border border-surface-700/50 bg-surface-850 p-4 sm:p-6"
         data-testid="host-run-view"
       >
-        <GroupRunHostPanel>
+        <GroupRunHostPanel :presence="presence" @remove="handleRemove">
           <template #invite>
             <InvitePlayersPanel
               :invite-code="groupInviteCode"
@@ -548,6 +622,7 @@ onUnmounted(async () => {
               :busy="inviteBusy"
               :roster="store.participants"
               @approve="handleApprove"
+              @deny="handleDeny"
               @replace="handleReplace"
               @add="groupRun.addParticipant($event)"
             />
@@ -569,8 +644,11 @@ onUnmounted(async () => {
         :available-characters="availableCharacters"
         :loading="store.loading"
         :run-blocked-reason="soloRunReason"
+        :turn-advance="turnAdvance"
         @approve="handleApprove"
         @replace="handleReplace"
+        @deny="handleDeny"
+        @remove="handleRemove"
         @assign-character="handleAssignCharacter"
         @refresh="pollParticipants"
         @started="handleRunStarted"
@@ -601,6 +679,8 @@ onUnmounted(async () => {
               :loading="store.loading"
               @approve="handleApprove"
               @replace="handleReplace"
+              @deny="handleDeny"
+              @remove="handleRemove"
               @assign-character="handleAssignCharacter"
             />
           </div>

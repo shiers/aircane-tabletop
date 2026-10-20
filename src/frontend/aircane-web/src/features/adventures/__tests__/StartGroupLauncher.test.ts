@@ -93,6 +93,14 @@ async function mountLauncher(props: Props, campaigns: CampaignDto[] = [campaign(
   return { wrapper, router }
 }
 
+/** Opens the panel and presses "Create lobby" (an adventure that has a campaign needs no picking). */
+async function createLobby(wrapper: Awaited<ReturnType<typeof mountLauncher>>['wrapper']): Promise<void> {
+  await wrapper.find('[data-testid="start-group-button"]').trigger('click')
+  await flushPromises()
+  await wrapper.find('[data-testid="start-button"]').trigger('click')
+  await flushPromises()
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
@@ -161,7 +169,7 @@ describe('StartGroupLauncher', () => {
   })
 
   describe('adventure already in a campaign', () => {
-    it('creates the play session straight away, with no picker', async () => {
+    it('asks no campaign, only the options, then creates the play session', async () => {
       startSession.mockResolvedValue(session())
       const { wrapper, router } = await mountLauncher({
         adventureId: 'adventure-1',
@@ -171,8 +179,13 @@ describe('StartGroupLauncher', () => {
 
       await wrapper.find('[data-testid="start-group-button"]').trigger('click')
       await flushPromises()
+      expect(wrapper.find('[data-testid="campaign-select"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="require-approval"]').exists()).toBe(true)
+      expect(startSession).not.toHaveBeenCalled()
 
-      expect(wrapper.find('[data-testid="start-group-panel"]').exists()).toBe(false)
+      await wrapper.find('[data-testid="start-button"]').trigger('click')
+      await flushPromises()
+
       expect(startSession).toHaveBeenCalledWith('campaign-1', {
         name: 'Group: The Sunken Archive',
         accessMode: SessionAccessMode.LocalLan, // 1
@@ -186,8 +199,7 @@ describe('StartGroupLauncher', () => {
       startSession.mockResolvedValue(session({ inviteCode: 'WXYZ9876' }))
       const { wrapper } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
 
       expect(loadInviteCode('play-session-1')).toBe('WXYZ9876')
     })
@@ -196,8 +208,7 @@ describe('StartGroupLauncher', () => {
       startSession.mockResolvedValue(session({ inviteCode: null }))
       const { wrapper, router } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
 
       expect(router.currentRoute.value.name).toBe('host-session')
       expect(loadInviteCode('play-session-1')).toBeNull()
@@ -207,8 +218,7 @@ describe('StartGroupLauncher', () => {
       startSession.mockResolvedValue(session())
       const { wrapper } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
 
       expect(startSession).toHaveBeenCalledWith('campaign-1', expect.objectContaining({ name: 'Group session' }))
     })
@@ -218,8 +228,7 @@ describe('StartGroupLauncher', () => {
       const endSession = vi.spyOn(sessionsApi, 'endSession')
       const { wrapper } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
 
       expect(endSession).not.toHaveBeenCalled()
     })
@@ -231,8 +240,7 @@ describe('StartGroupLauncher', () => {
       getRun.mockResolvedValue(groupRunState({ id: 'run-1', generatedAdventureId: 'adventure-1', sessionId: 'play-9' }))
       const { wrapper } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
 
       expect(startSession).not.toHaveBeenCalled()
       expect(wrapper.find('[data-testid="launcher-error"]').text()).toContain('already running this adventure')
@@ -244,8 +252,7 @@ describe('StartGroupLauncher', () => {
       getRun.mockResolvedValue(groupRunState({ generatedAdventureId: 'other', adventureTitle: 'The Drowned Bell' }))
       const { wrapper } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
 
       expect(startSession).not.toHaveBeenCalled()
       expect(wrapper.find('[data-testid="launcher-error"]').text()).toContain('The Drowned Bell')
@@ -255,8 +262,7 @@ describe('StartGroupLauncher', () => {
       getActive.mockResolvedValue({ id: 'run-1' } as never)
       getRun.mockResolvedValue(groupRunState({ id: 'run-1', generatedAdventureId: 'adventure-1', sessionId: 'play-9' }))
       const { wrapper, router } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
 
       await wrapper.find('[data-testid="open-run-button"]').trigger('click')
       await flushPromises()
@@ -270,8 +276,7 @@ describe('StartGroupLauncher', () => {
       startSession.mockRejectedValue(httpError(403))
       const { wrapper } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
 
       expect(wrapper.find('[data-testid="launcher-error"]').text()).toMatch(/only the host/i)
     })
@@ -280,8 +285,7 @@ describe('StartGroupLauncher', () => {
       startSession.mockRejectedValue(httpError(409, { detail: 'That conflicts.' }))
       const { wrapper } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
 
       expect(wrapper.find('[data-testid="launcher-error"]').text()).toBe('That conflicts.')
     })
@@ -290,13 +294,54 @@ describe('StartGroupLauncher', () => {
       startSession.mockRejectedValueOnce(httpError(500)).mockResolvedValueOnce(session())
       const { wrapper, router } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
-      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
-      await flushPromises()
+      await createLobby(wrapper)
       expect(router.currentRoute.value.path).toBe('/')
+
+      // The panel stays open with the error: press "Create lobby" again.
+      await wrapper.find('[data-testid="start-button"]').trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.name).toBe('host-session')
+    })
+  })
+
+  describe('options', () => {
+    it('requires host approval by default, and sends the real value when it is turned off', async () => {
+      startSession.mockResolvedValue(session())
+      const { wrapper } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
 
       await wrapper.find('[data-testid="start-group-button"]').trigger('click')
       await flushPromises()
-      expect(router.currentRoute.value.name).toBe('host-session')
+      const box = wrapper.find('[data-testid="require-approval"]')
+      expect((box.element as HTMLInputElement).checked).toBe(true)
+      await box.setValue(false)
+      await wrapper.find('[data-testid="start-button"]').trigger('click')
+      await flushPromises()
+
+      expect(startSession).toHaveBeenCalledWith('campaign-1', expect.objectContaining({ requireHostApproval: false }))
+    })
+
+    it('turn advance defaults to manual and carries "after each action" to the lobby', async () => {
+      startSession.mockResolvedValue(session())
+      const { wrapper, router } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
+
+      await wrapper.find('[data-testid="start-group-button"]').trigger('click')
+      await flushPromises()
+      const select = wrapper.find('[data-testid="turn-advance-select"]')
+      expect((select.element as HTMLSelectElement).value).toBe('ManualOnly')
+      await select.setValue('AfterEachAction')
+      await wrapper.find('[data-testid="start-button"]').trigger('click')
+      await flushPromises()
+
+      expect(router.currentRoute.value.query).toEqual({ adventure: 'adventure-1', turnAdvance: 'AfterEachAction' })
+    })
+
+    it('leaves the default turn advance out of the lobby link', async () => {
+      startSession.mockResolvedValue(session())
+      const { wrapper, router } = await mountLauncher({ adventureId: 'adventure-1', campaignId: 'campaign-1' })
+
+      await createLobby(wrapper)
+
+      expect(router.currentRoute.value.query).toEqual({ adventure: 'adventure-1' })
     })
   })
 })

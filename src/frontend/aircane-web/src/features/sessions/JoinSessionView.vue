@@ -30,7 +30,8 @@ import {
   loadParticipantSessionFor,
   type ParticipantSession,
 } from './participantSession'
-import { DENIED_MESSAGE, isParticipantDenied, isTokenRejected } from './playerErrors'
+import { DENIED_MESSAGE, REMOVED_MESSAGE, isParticipantDenied, isParticipantRemoved, isTokenRejected } from './playerErrors'
+import { forgetRejoinSecret } from './rejoinSecrets'
 import { rejoinWithStoredSecret } from './rejoin'
 
 // ---------------------------------------------------------------------------
@@ -56,8 +57,11 @@ const returning = ref(route.query?.returning === '1')
 /** Taking the seat back with the rejoin secret is in flight. */
 const rejoining = ref(false)
 
-/** Said above the join form when the rejoin secret could not bring the seat back. */
-const rejoinNotice = ref<string | null>(null)
+/**
+ * Said above the join form when the rejoin secret could not bring the seat back, or when the player arrives here
+ * because the host removed them (`?removed=1`).
+ */
+const rejoinNotice = ref<string | null>(route.query?.removed === '1' ? REMOVED_MESSAGE : null)
 
 /**
  * Dedicated lookup state, tracked locally and independent of the shared store.
@@ -103,6 +107,13 @@ async function returnToStoredSession(): Promise<boolean> {
   } catch (err) {
     if (isParticipantDenied(err)) {
       await router?.replace({ name: 'join-session', params: { sessionId: saved.sessionId } })
+      return true
+    }
+    if (isParticipantRemoved(err)) {
+      // Removed by the host: the login and the rejoin secret are of no more use; say so on that session's page.
+      clearParticipantSession()
+      forgetRejoinSecret(saved.sessionId)
+      await router?.replace({ name: 'join-session', params: { sessionId: saved.sessionId }, query: { removed: '1' } })
       return true
     }
     if (isTokenRejected(err)) {
@@ -154,6 +165,7 @@ async function rejoinSeat(): Promise<boolean> {
     if (outcome.kind === 'none') return false
     if (outcome.kind === 'failed') {
       if (outcome.failure === 'denied') rejoinNotice.value = DENIED_MESSAGE
+      else if (outcome.failure === 'removed') rejoinNotice.value = REMOVED_MESSAGE
       else if (outcome.failure !== 'gone') rejoinNotice.value = outcome.message
       return false
     }

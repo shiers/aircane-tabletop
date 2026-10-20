@@ -16,9 +16,19 @@ export interface StartAdventureSessionRequest {
 export interface StartGroupAdventureSessionRequest {
   generatedAdventureId: string
   campaignId: string
-  /** Approved players of the campaign's current play session, in turn order. */
+  /** Approved players of the play session, in turn order. */
   participantIds: string[]
+  /**
+   * The play session the players joined. The server refuses (409) when the campaign is already running this
+   * adventure in a different one. Left out, the campaign's most recent open play session is used.
+   */
+  playSessionId?: string
+  /** How the turn moves on: only when ended ("ManualOnly", the default) or also after each answered action. */
+  turnAdvance?: TurnAdvanceChoice
 }
+
+/** How a group run's turn moves on (mirrors the server's TurnAdvanceMode, sent as text). */
+export type TurnAdvanceChoice = 'ManualOnly' | 'AfterEachAction'
 
 export interface AdventureSessionDto {
   id: string
@@ -296,9 +306,9 @@ export async function abandonAdventureSession(id: string): Promise<AdventureSess
 }
 
 /**
- * Start a group run: the listed participants of the campaign's most recent open play session take
- * turns, in this order. Host only. 201 for a new run, 200 when the campaign is already running this
- * adventure as a group (the existing run comes back, with its own turn order).
+ * Start a group run: the listed participants of the play session take turns, in this order. Host only. 201 for a
+ * new run, 200 when the campaign is already running this adventure as a group in the same play session (the
+ * existing run comes back, with its own turn order), 409 when it is running in another one.
  */
 export async function startGroupAdventureSession(
   request: StartGroupAdventureSessionRequest,

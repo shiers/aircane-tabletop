@@ -8,7 +8,8 @@ import { forgetRejoinSecret, getRejoinSecret, rememberRejoinName } from './rejoi
  * token in this tab) and the sessions page's "Rejoin" cards.
  *
  * On success the fresh token is kept like a join's (participantSession.ts), so everything after works as if the
- * player had never left. When the server has nothing to go back to, or the host declined the request, the secret is
+ * player had never left. When the server has nothing to go back to, or the host declined the request or removed the
+ * player, the secret is
  * forgotten: a stale secret must never stand in the way of joining again. When the host cannot be reached (or the
  * rate limit bit), the secret is kept for the next try.
  */
@@ -42,7 +43,7 @@ export async function rejoinWithStoredSecret(
     return { kind: 'rejoined', result }
   } catch (err) {
     const failure = rejoinFailure(err)
-    if (failure === 'gone' || failure === 'denied') forgetRejoinSecret(sessionId)
+    if (failure === 'gone' || failure === 'denied' || failure === 'removed') forgetRejoinSecret(sessionId)
     return { kind: 'failed', failure, message: mapRejoinError(err) }
   }
 }

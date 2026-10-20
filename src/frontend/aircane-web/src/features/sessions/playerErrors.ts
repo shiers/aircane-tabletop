@@ -12,6 +12,12 @@ import axios from 'axios'
 /** The code the backend puts on the 403 it sends a participant the host denied. */
 export const PARTICIPANT_DENIED_CODE = 'participant-denied'
 
+/** The code the backend puts on the 403 it sends a participant the host removed from the session. */
+export const PARTICIPANT_REMOVED_CODE = 'participant-removed'
+
+export const REMOVED_MESSAGE =
+  'The host removed you from this session. If you think that was a mistake, ask the host, then join again with the invite code.'
+
 export const DENIED_MESSAGE =
   'The host declined your request to join this session. If you think that was a mistake, ask the host, then join again with the invite code.'
 
@@ -29,6 +35,12 @@ function problemOf(err: unknown): { status: number | null; detail: string | null
 export function isParticipantDenied(err: unknown): boolean {
   const { status, code } = problemOf(err)
   return status === 403 && code === PARTICIPANT_DENIED_CODE
+}
+
+/** True when the failure is the refusal sent to a participant the host removed. */
+export function isParticipantRemoved(err: unknown): boolean {
+  const { status, code } = problemOf(err)
+  return status === 403 && code === PARTICIPANT_REMOVED_CODE
 }
 
 /** True when the server rejected the stored token (expired, revoked, wrong session). */
@@ -81,15 +93,17 @@ export function mapJoinError(err: unknown): string {
  * Why taking a seat back with the rejoin secret did not work, as the screens act on it:
  *  - `gone`: the server has nothing to go back to (unknown secret, ended or unknown session): forget the secret;
  *  - `denied`: the host declined this request: forget the secret, say so;
+ *  - `removed`: the host removed this participant: forget the secret, say so;
  *  - `unreachable`: no answer: keep the secret, say the host cannot be reached;
  *  - `busy`: rate limited: keep the secret, try again in a minute;
  *  - `other`: anything else: keep the secret.
  */
-export type RejoinFailure = 'gone' | 'denied' | 'unreachable' | 'busy' | 'other'
+export type RejoinFailure = 'gone' | 'denied' | 'removed' | 'unreachable' | 'busy' | 'other'
 
 export function rejoinFailure(err: unknown): RejoinFailure {
   if (isUnreachable(err)) return 'unreachable'
   if (isParticipantDenied(err)) return 'denied'
+  if (isParticipantRemoved(err)) return 'removed'
   const { status } = problemOf(err)
   if (status === 404) return 'gone'
   if (status === 429) return 'busy'
@@ -103,6 +117,8 @@ export function mapRejoinError(err: unknown): string {
       return UNREACHABLE
     case 'denied':
       return DENIED_MESSAGE
+    case 'removed':
+      return REMOVED_MESSAGE
     case 'gone':
       return 'That session has ended, or no longer has a place for this browser. Join with the invite code.'
     case 'busy':
@@ -143,6 +159,7 @@ export function mapActionError(err: unknown): string {
 
   const { status, detail, code } = problemOf(err)
   if (code === PARTICIPANT_DENIED_CODE) return DENIED_MESSAGE
+  if (code === PARTICIPANT_REMOVED_CODE) return REMOVED_MESSAGE
 
   switch (status) {
     case 400:
@@ -178,6 +195,7 @@ export function mapEndTurnError(err: unknown): string {
 
   const { status, detail, code } = problemOf(err)
   if (code === PARTICIPANT_DENIED_CODE) return DENIED_MESSAGE
+  if (code === PARTICIPANT_REMOVED_CODE) return REMOVED_MESSAGE
 
   switch (status) {
     case 403:

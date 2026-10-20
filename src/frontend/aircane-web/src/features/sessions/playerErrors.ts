@@ -111,6 +111,35 @@ export function mapActionError(err: unknown): string {
   }
 }
 
+/**
+ * A failed "End my turn". A 403 is the server saying the turn is not theirs (any more): it names who has it,
+ * and covers a request that arrived after the turn had already moved on. The view reads the run again.
+ */
+export function mapEndTurnError(err: unknown): string {
+  if (!axios.isAxiosError(err)) {
+    return err instanceof Error && err.message ? err.message : 'Your turn could not be ended.'
+  }
+  if (!err.response) return UNREACHABLE
+
+  const { status, detail, code } = problemOf(err)
+  if (code === PARTICIPANT_DENIED_CODE) return DENIED_MESSAGE
+
+  switch (status) {
+    case 403:
+      return detail ?? 'It is not your turn any more.'
+    case 409:
+      return detail ?? 'The turn has already moved on.'
+    case 400:
+      return detail ?? 'The turn cannot be ended right now.'
+    case 401:
+      return 'Your login for this table is no longer valid. Reload the page to rejoin.'
+    case 404:
+      return 'This adventure is no longer running.'
+    default:
+      return detail ?? 'Your turn could not be ended. Try again in a moment.'
+  }
+}
+
 /** A failed read of the adventure state; the view keeps the last state it had. */
 export function mapRunLoadError(err: unknown): string {
   if (isUnreachable(err)) return UNREACHABLE

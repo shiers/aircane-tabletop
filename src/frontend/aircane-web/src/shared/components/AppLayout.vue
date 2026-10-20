@@ -97,7 +97,7 @@ function toggleSidebar() {
       </header>
 
       <!-- Page content -->
-      <main class="flex-1 overflow-y-auto pt-6" :class="{ 'page-plain': isPlainBackground }">
+      <main class="flex-1 overflow-y-auto pt-[var(--page-top-gap)]" :class="{ 'page-plain': isPlainBackground }">
         <!-- Shared, centred content column (max-width 1200px). Views must not
              re-impose their own max-width / horizontal padding. -->
         <div class="page-container">

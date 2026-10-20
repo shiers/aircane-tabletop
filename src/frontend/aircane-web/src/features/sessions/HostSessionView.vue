@@ -18,7 +18,8 @@ import { useRoute, useRouter } from 'vue-router'
 import * as signalR from '@microsoft/signalr'
 import { useSessionStore } from './store'
 import { endSession, getNetworkInfo, getParticipants, SessionStatus, type NetworkInfo } from './api'
-import { getRollLog, type RollDto, type RollRecordedEvent } from '../dice/api'
+import type { RollRecordedEvent } from '../dice/api'
+import type { ChatMessageEvent } from './playerHub'
 import LanJoinScreen from './LanJoinScreen.vue'
 import InternetPlayPanel from './components/InternetPlayPanel.vue'
 import ParticipantApprovalPanel from './ParticipantApprovalPanel.vue'
@@ -36,7 +37,9 @@ import { listCharacters, CharacterRole } from '../characters/api'
 import { buildJoinLink, eligiblePlayers } from './lobby'
 import { clearInviteCode, loadInviteCode } from './inviteCodeStorage'
 import ChatPanel from './ChatPanel.vue'
-import type { ChatMessage } from './ChatPanel.vue'
+import RollLog from './components/RollLog.vue'
+import { useChatHistory } from './chatHistory'
+import { useRollLog } from './rollLog'
 import CombatTracker from './CombatTracker.vue'
 import {
   getEncounter,
@@ -67,8 +70,19 @@ const adventureId = computed(() => (typeof route.query.adventure === 'string' ? 
 // Local state
 // ---------------------------------------------------------------------------
 
-const chatMessages = ref<ChatMessage[]>([])
-const rollLog = ref<RollDto[]>([])
+// The host's identity on the hub. The host has no participant record, so this is made up.
+const hostHubId =
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : 'host-' + Math.random().toString(16).slice(2)
+
+// Chat: the stored history merged with what arrives live. The host's own lines are the ones sent under hostHubId.
+const chat = useChatHistory(sessionId, (senderId) => senderId === hostHubId)
+const chatMessages = chat.messages
+
+// Roll log: the stored log merged with live rolls. The host sees every roll, private ones included.
+const rolls = useRollLog(sessionId, () => ({ isHost: true, participantId: null }))
+const rollLog = rolls.rolls
 const hubConnection = ref<signalR.HubConnection | null>(null)
 const hubError = ref<string | null>(null)
 const endingSession = ref(false)
@@ -152,19 +166,24 @@ async function loadGroupContext(): Promise<void> {
     groupLoading.value = false
   }
 
+  // The campaign's characters are what the Participants panel offers to assign, whatever the session is
+  // for: without them the panel has nothing to put in its "Character" dropdown.
+  try {
+    const characters = await listCharacters(campaignId)
+    availableCharacters.value = characters
+      .filter((c) => c.role === CharacterRole.Player)
+      .map((c) => ({ id: c.id, name: c.name }))
+  } catch {
+    // Non-critical: the panel shows the current assignments without the dropdown.
+  }
+
   // The rest is only needed while setting up or running a group adventure.
   if (!adventureId.value && !showRun.value) return
-  const [info, characters, draft] = await Promise.allSettled([
+  const [info, draft] = await Promise.allSettled([
     getNetworkInfo(),
-    listCharacters(campaignId),
     adventureId.value ? getAdventureDraft(adventureId.value) : Promise.resolve(null),
   ])
   networkInfo.value = info.status === 'fulfilled' ? info.value : null
-  if (characters.status === 'fulfilled') {
-    availableCharacters.value = characters.value
-      .filter((c) => c.role === CharacterRole.Player)
-      .map((c) => ({ id: c.id, name: c.name }))
-  }
   if (draft.status === 'fulfilled' && draft.value) adventureTitle.value = draft.value.title
 }
 
@@ -196,12 +215,6 @@ function stopPolling(): void {
   if (pollTimer) clearInterval(pollTimer)
   pollTimer = null
 }
-
-/** The host's identity on the hub. The host has no participant record, so this is made up. */
-const hostHubId =
-  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : 'host-' + Math.random().toString(16).slice(2)
 
 /** Every run event for the group adventure just means "read the state again". */
 const RUN_EVENTS = [
@@ -244,16 +257,10 @@ async function connectHub(): Promise<void> {
     // The hub sends one notification object: { sessionId, participantId, displayName, text, sentAt }.
     connection.on(
       'ChatMessageReceived',
-      (n: { participantId: string; displayName: string; text: string; sentAt: string }) => {
+      (n: ChatMessageEvent) => {
         // Diagnostics: record sender name only, never the message text.
         pushEvent({ actor: 'Player', eventType: 'ChatMessageReceived', keyField: n.displayName })
-        chatMessages.value.push({
-          id: `${n.participantId}-${n.sentAt}`,
-          senderName: n.displayName,
-          text: n.text,
-          timestamp: n.sentAt,
-          isOwn: n.participantId === hostHubId,
-        })
+        chat.addLive(n)
       },
     )
 
@@ -265,7 +272,7 @@ async function connectHub(): Promise<void> {
         eventType: 'RollRecorded',
         keyField: roll.formula ? `${roll.formula} = ${roll.total}` : `total: ${roll.total}`,
       })
-      rollLog.value.unshift(roll)
+      rolls.addLive(roll)
     })
 
     connection.on('ParticipantJoined', async () => {
@@ -312,7 +319,8 @@ async function connectHub(): Promise<void> {
     connection.onreconnected(async () => {
       try {
         await joinHubGroup(connection)
-        await Promise.all([pollParticipants(), groupRun.refresh()])
+        // Whatever was said or rolled while the connection was down was not delivered: read it again.
+        await Promise.all([pollParticipants(), groupRun.refresh(), chat.refresh(), rolls.refresh()])
       } catch {
         // Still disconnected; the next reconnect attempt retries.
       }
@@ -419,37 +427,16 @@ async function handleEndSession(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Roll log helpers
-// ---------------------------------------------------------------------------
-
-function rollSummary(roll: RollDto): string {
-  const who = roll.rollerName ? `${roll.rollerName}: ` : ''
-  const formula = roll.formula ? `${roll.formula} = ` : ''
-  const context = roll.context ? ` (${roll.context})` : ''
-  return `${who}${formula}${roll.total}${context}`
-}
-
-function formatRollTime(timestamp: string): string {
-  try {
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  } catch {
-    return ''
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
 onMounted(async () => {
+  // The chat history and the roll log load alongside: they are not needed to show the rest.
+  void chat.refresh()
+  void rolls.refresh()
   await Promise.all([
     store.fetchSession(sessionId),
     store.fetchParticipants(sessionId),
-    getRollLog(sessionId).then((rolls) => {
-      rollLog.value = rolls
-    }).catch(() => {
-      // Roll log is non-critical; ignore errors on load
-    }),
     refreshEncounter(),
   ])
   await loadGroupContext()
@@ -604,7 +591,7 @@ onUnmounted(async () => {
           <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-6">
             <h2 class="mb-3 text-lg font-semibold text-white">Pending AI Proposals</h2>
             <p class="text-sm text-gray-500">
-              AI proposals will appear here when the AI DM runtime is active.
+              AI proposals will appear here when the AI GM runtime is active.
             </p>
           </div>
         </div>
@@ -628,9 +615,13 @@ onUnmounted(async () => {
             <ChatPanel
               :messages="chatMessages"
               :disabled="!hubConnection"
+              :has-more="chat.hasMore.value"
+              :loading-older="chat.loadingOlder.value"
+              :history-error="chat.error.value"
               placeholder="Message players…"
               class="flex-1 min-h-0"
               @send="handleSendChat"
+              @load-older="chat.loadOlder"
             />
           </div>
 
@@ -639,29 +630,7 @@ onUnmounted(async () => {
             <h3 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
               Roll Log
             </h3>
-            <div
-              role="log"
-              aria-label="Roll log"
-              aria-live="polite"
-              class="max-h-64 overflow-y-auto space-y-1"
-            >
-              <p v-if="rollLog.length === 0" class="text-xs text-gray-600 text-center py-4">
-                No rolls yet.
-              </p>
-              <div
-                v-for="roll in rollLog"
-                :key="roll.id"
-                class="flex items-baseline justify-between gap-2 rounded-md px-2 py-1 text-sm hover:bg-gray-800"
-              >
-                <span class="text-gray-300 truncate">{{ rollSummary(roll) }}</span>
-                <time
-                  :datetime="roll.createdAt"
-                  class="shrink-0 text-xs text-gray-600"
-                >
-                  {{ formatRollTime(roll.createdAt) }}
-                </time>
-              </div>
-            </div>
+            <RollLog :rolls="rollLog" :error="rolls.error.value" />
           </div>
         </div>
       </div>

@@ -1,4 +1,7 @@
 :root {
+  /* The gap above a page's content, inside the scrolling <main> (AppLayout). A sticky bar inside it must
+     pull itself up by this much to sit flush with the top; see PlayerSessionView. */
+  --page-top-gap: 1.5rem;
   /* Colours */
   --color-bg:           #0a0a1a;
   --color-bg-panel:     #0d0d2a;

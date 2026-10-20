@@ -7,6 +7,7 @@ import {
   isTokenRejected,
   isUnreachable,
   mapActionError,
+  mapEndTurnError,
   mapJoinError,
   mapRunLoadError,
 } from '../playerErrors'
@@ -128,5 +129,34 @@ describe('mapRunLoadError', () => {
 
   it('keeps the host-unreachable wording', () => {
     expect(mapRunLoadError(networkError())).toContain("Can't reach the host")
+  })
+})
+
+describe('mapEndTurnError', () => {
+  it("shows the server's message for a 403 (not your turn, or the turn already moved on)", () => {
+    expect(mapEndTurnError(httpError(403, { detail: 'It is not your turn. Waiting for Bob.' }))).toBe('It is not your turn. Waiting for Bob.')
+  })
+
+  it('explains a bare 403', () => {
+    expect(mapEndTurnError(httpError(403))).toContain('not your turn')
+  })
+
+  it('shows the declined message if the host denied this participant meanwhile', () => {
+    expect(mapEndTurnError(httpError(403, { code: PARTICIPANT_DENIED_CODE }))).toBe(DENIED_MESSAGE)
+  })
+
+  it("shows the server's detail for a 409 and a 400", () => {
+    expect(mapEndTurnError(httpError(409, { detail: 'The turn has already passed to Bob.' }))).toBe('The turn has already passed to Bob.')
+    expect(mapEndTurnError(httpError(400, { detail: 'This adventure run is not a group run.' }))).toContain('not a group run')
+  })
+
+  it('says the host cannot be reached, and what to do about an expired login', () => {
+    expect(mapEndTurnError(networkError())).toContain("Can't reach the host")
+    expect(mapEndTurnError(httpError(401))).toContain('Reload the page')
+  })
+
+  it("never shows axios's status-code text", () => {
+    expect(mapEndTurnError(httpError(500))).not.toContain('status code')
+    expect(mapEndTurnError(httpError(404))).toContain('no longer running')
   })
 })

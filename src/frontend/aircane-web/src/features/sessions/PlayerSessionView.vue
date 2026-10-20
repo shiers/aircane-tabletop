@@ -11,14 +11,17 @@
  * A player who arrives without a remembered login, or whose login the server no longer accepts, is
  * sent back to the join page; a player the host has not approved yet waits there.
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from './store'
 import { SessionStatus, reconnectSession } from './api'
 import { rollDice, RollVisibility, type RollDto, type RollRecordedEvent } from '../dice/api'
+import { listCharacters, listAllCharacters } from '../characters/api'
 import ManualRollForm from '../dice/ManualRollForm.vue'
 import ChatPanel from './ChatPanel.vue'
-import type { ChatMessage } from './ChatPanel.vue'
+import RollLog from './components/RollLog.vue'
+import { useChatHistory } from './chatHistory'
+import { useRollLog } from './rollLog'
 import CombatTracker from './CombatTracker.vue'
 import { getEncounter, type EncounterStateDto, type CombatTurnChangedNotification } from './combat'
 import { pushEvent } from '@/features/feedback/composables/useFeedbackEventBuffer'
@@ -36,7 +39,7 @@ import {
 } from './playerHub'
 import { isParticipantDenied, isTokenRejected } from './playerErrors'
 import { onPageVisible } from './visibility'
-import { actionBoxState, isMyTurn, narrationLines, turnRows, usePlayerRun } from './playerRun'
+import { actionBoxState, endTurnState, isMyTurn, narrationLines, turnRows, usePlayerRun } from './playerRun'
 
 // ---------------------------------------------------------------------------
 // Route / store
@@ -66,8 +69,12 @@ function goToJoinPage(): void {
 // Local state
 // ---------------------------------------------------------------------------
 
-const chatMessages = ref<ChatMessage[]>([])
-const rollLog = ref<RollDto[]>([])
+// Chat and roll log: what the server has stored, merged with what arrives live. The player's own rolls and
+// messages are recognised by their participant id; private rolls of other people are never shown.
+const chat = useChatHistory(sessionId, (senderId) => senderId === participantId.value)
+const chatMessages = chat.messages
+const rolls = useRollLog(sessionId, () => ({ isHost: false, participantId: participantId.value }))
+const rollLog = rolls.rolls
 const hub = ref<PlayerHub | null>(null)
 const hubUp = ref(false)
 const hubError = ref<string | null>(null)
@@ -127,9 +134,36 @@ const party = computed(() =>
 )
 
 const rows = computed(() => turnRows(run.value, participantId.value))
+const endTurn = computed(() =>
+  endTurnState(run.value, participantId.value, {
+    submitting: adventure.submitting.value,
+    ending: adventure.endingTurn.value,
+  }),
+)
 const myTurn = computed(() => isMyTurn(run.value, participantId.value))
 const actionBox = computed(() => actionBoxState(run.value, participantId.value, adventure.submitting.value))
 const story = computed(() => narrationLines(run.value))
+
+/** The name of the player's character, when they have one (the id alone tells a player nothing). */
+const myCharacterName = ref<string | null>(null)
+
+async function loadMyCharacterName(): Promise<void> {
+  const characterId = myParticipant.value?.characterId
+  if (!characterId) {
+    myCharacterName.value = null
+    return
+  }
+  try {
+    // A Player is only ever sent their own characters, so either read finds it.
+    const campaignId = store.currentSession?.campaignId
+    const mine = campaignId ? await listCharacters(campaignId) : await listAllCharacters()
+    myCharacterName.value = mine.find((c) => c.id === characterId)?.name ?? null
+  } catch {
+    myCharacterName.value = null
+  }
+}
+
+watch(() => myParticipant.value?.characterId, () => void loadMyCharacterName())
 
 /** The roll being asked for: the live request (which names a formula) first, else the run's pending roll. */
 const rollPrompt = computed<RollRequest | null>(() => {
@@ -153,7 +187,8 @@ async function refreshParticipants(): Promise<void> {
 
 /** Everything the screen shows that can change while the player is away from it. */
 async function catchUp(): Promise<void> {
-  await Promise.all([adventure.refresh(), refreshParticipants(), refreshEncounter()])
+  // Chat and rolls sent while the connection was down (or the phone was away) were not delivered: read them again.
+  await Promise.all([adventure.refresh(), refreshParticipants(), refreshEncounter(), chat.refresh(), rolls.refresh()])
 }
 
 async function connectHub(): Promise<void> {
@@ -178,13 +213,7 @@ async function connectHub(): Promise<void> {
         ChatMessageReceived: (n: ChatMessageEvent) => {
           // Diagnostics: record sender name only, never the message text.
           pushEvent({ actor: 'Player', eventType: 'ChatMessageReceived', keyField: n.displayName })
-          chatMessages.value.push({
-            id: `${n.participantId}-${n.sentAt}`,
-            senderName: n.displayName,
-            text: n.text,
-            timestamp: n.sentAt,
-            isOwn: n.participantId === participantId.value,
-          })
+          chat.addLive(n)
         },
 
         // The hub sends { sessionId, roll }; someone else's private roll never arrives here.
@@ -195,7 +224,7 @@ async function connectHub(): Promise<void> {
             eventType: 'RollRecorded',
             keyField: roll.formula ? `${roll.formula} = ${roll.total}` : `total: ${roll.total}`,
           })
-          rollLog.value.unshift(roll)
+          rolls.addLive(roll)
         },
 
         RollRequested: (n: RollRequestedEvent) => {
@@ -322,6 +351,15 @@ async function handleSubmitAction(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Ending your own turn
+// ---------------------------------------------------------------------------
+
+async function handleEndTurn(): Promise<void> {
+  if (!endTurn.value.enabled) return
+  await adventure.endTurn()
+}
+
+// ---------------------------------------------------------------------------
 // Dice tray
 // ---------------------------------------------------------------------------
 
@@ -382,20 +420,44 @@ function handleUseRollInAction(): void {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatRollTime(timestamp: string): string {
-  try {
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  } catch {
-    return ''
+// ---------------------------------------------------------------------------
+// Tabs and scrolling
+// ---------------------------------------------------------------------------
+
+const tabsEl = ref<HTMLElement | null>(null)
+const storyEl = ref<HTMLElement | null>(null)
+
+/** The element that scrolls the page: the nearest ancestor with its own vertical scroll. */
+function scrollParent(from: HTMLElement | null): HTMLElement | null {
+  let el = from?.parentElement ?? null
+  while (el) {
+    const overflowY = getComputedStyle(el).overflowY
+    if (overflowY === 'auto' || overflowY === 'scroll') return el
+    el = el.parentElement
   }
+  return null
 }
 
-function rollSummary(roll: RollDto): string {
-  const who = roll.rollerName ? `${roll.rollerName}: ` : ''
-  const formula = roll.formula ? `${roll.formula} = ` : ''
-  const context = roll.context ? ` (${roll.context})` : ''
-  return `${who}${formula}${roll.total}${context}`
-}
+// Opening a tab starts at its top, whatever the last tab was scrolled to (it would otherwise open with its
+// first lines behind the tab bar), and refreshes what the tab shows.
+watch(activeTab, async (tab) => {
+  await nextTick()
+  scrollParent(tabsEl.value)?.scrollTo?.({ top: 0 })
+  if (tab === 'chat') void chat.refresh()
+  if (tab === 'dice') void rolls.refresh()
+})
+
+// The story grows with the page. When a new entry arrives, bring it into view (clear of the tab bar, see
+// scroll-mt on the entries); the first load shows the scene from its top instead.
+watch(
+  () => story.value.length,
+  async (now, before) => {
+    if (before === 0 || now <= before) return
+    await nextTick()
+    const last = storyEl.value?.lastElementChild as HTMLElement | null
+    last?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+  },
+)
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -443,6 +505,10 @@ onMounted(async () => {
     adventure.refresh(),
     refreshEncounter(),
   ])
+  // Alongside, not in the way of the hub connection and the first look at the table.
+  void chat.refresh()
+  void rolls.refresh()
+  void loadMyCharacterName()
   await connectHub()
   scheduleNextPoll()
   stopWatchingVisibility = onPageVisible(() => void handlePageVisible())
@@ -512,7 +578,7 @@ onUnmounted(async () => {
       data-testid="your-turn-banner"
     >
       <p class="text-base font-semibold text-white">Your turn</p>
-      <p class="text-xs text-aircane-200">Tell the DM what you do.</p>
+      <p class="text-xs text-aircane-200">Tell the GM what you do.</p>
     </div>
 
     <!-- The roll the DM is waiting for -->
@@ -567,7 +633,8 @@ onUnmounted(async () => {
 
     <!-- Mobile tab bar -->
     <nav
-      class="sticky top-0 z-10 -mx-1 border-b border-surface-700/50 bg-gray-950 px-1 lg:hidden"
+      ref="tabsEl"
+      class="session-tabs z-10 border-b border-surface-700/50 bg-gray-950 lg:hidden"
       aria-label="Session sections"
     >
       <div class="flex gap-1 overflow-x-auto py-2">
@@ -658,7 +725,8 @@ onUnmounted(async () => {
                 role="log"
                 aria-label="Story"
                 aria-live="polite"
-                class="max-h-80 space-y-3 overflow-y-auto pr-1"
+                ref="storyEl"
+                class="space-y-3"
                 data-testid="story"
               >
                 <p v-if="story.length === 0 && !adventure.submitting.value" class="text-xs text-gray-600">
@@ -668,7 +736,7 @@ onUnmounted(async () => {
                   v-for="(line, index) in story"
                   :key="index"
                   :class="[
-                    'rounded-md px-3 py-2 text-sm leading-relaxed break-words',
+                    'scroll-mt-24 rounded-md px-3 py-2 text-sm leading-relaxed break-words',
                     line.kind === 'PlayerAction'
                       ? 'bg-surface-800 text-gray-300'
                       : 'border-l-2 border-aircane-500 bg-surface-900 text-gray-200',
@@ -725,6 +793,32 @@ onUnmounted(async () => {
                 <span v-else>Send</span>
               </button>
             </form>
+
+            <!-- Ending your own turn -->
+            <div v-if="endTurn.kind !== 'hidden'" class="mt-3" data-testid="end-turn">
+              <p
+                v-if="endTurn.kind === 'automatic'"
+                class="text-sm text-gray-400"
+                role="status"
+                data-testid="auto-advance-note"
+              >
+                {{ endTurn.reason }}
+              </p>
+              <button
+                v-else
+                type="button"
+                :disabled="!endTurn.enabled"
+                :aria-busy="adventure.endingTurn.value"
+                class="min-h-[44px] w-full rounded-lg border border-aircane-500 px-4 py-2 text-sm font-semibold text-aircane-200 hover:bg-aircane-900/40 focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-400 disabled:hover:bg-transparent transition-colors sm:w-auto"
+                data-testid="end-turn-button"
+                @click="handleEndTurn"
+              >
+                {{ endTurn.enabled ? 'End my turn' : endTurn.reason }}
+              </button>
+              <p v-if="adventure.endTurnError.value" role="alert" class="mt-2 text-sm text-red-400" data-testid="end-turn-error">
+                {{ adventure.endTurnError.value }}
+              </p>
+            </div>
             <p v-if="adventure.loadError.value && !adventure.refused.value" role="status" class="mt-2 text-xs text-orange-300">
               {{ adventure.loadError.value }}
             </p>
@@ -773,9 +867,9 @@ onUnmounted(async () => {
 
           <!-- Character assigned -->
           <div v-else>
-            <p class="text-sm text-gray-300">
-              Character ID:
-              <code class="font-mono text-aircane-400 break-all">{{ myParticipant?.characterId }}</code>
+            <p class="text-sm text-gray-300" data-testid="my-character">
+              Your character:
+              <strong class="text-white break-words">{{ myCharacterName ?? 'Assigned by the host' }}</strong>
             </p>
             <p class="mt-2 text-xs text-gray-500">
               Full character sheet view will be available in a future update.
@@ -921,9 +1015,13 @@ onUnmounted(async () => {
           <ChatPanel
             :messages="chatMessages"
             :disabled="!isConnected"
+            :has-more="chat.hasMore.value"
+            :loading-older="chat.loadingOlder.value"
+            :history-error="chat.error.value"
             placeholder="Type a message…"
             class="flex-1 min-h-0"
             @send="handleSendChat"
+            @load-older="chat.loadOlder"
           />
         </div>
 
@@ -935,29 +1033,23 @@ onUnmounted(async () => {
           <h3 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
             Roll Log
           </h3>
-          <div
-            role="log"
-            aria-label="Roll log"
-            aria-live="polite"
-            class="max-h-48 overflow-y-auto space-y-1"
-          >
-            <p v-if="rollLog.length === 0" class="text-xs text-gray-600 text-center py-4">
-              No rolls yet.
-            </p>
-            <div
-              v-for="roll in rollLog"
-              :key="roll.id"
-              class="flex items-baseline justify-between gap-2 rounded-md px-2 py-1 text-sm hover:bg-gray-800"
-            >
-              <span class="text-gray-300 truncate">{{ rollSummary(roll) }}</span>
-              <time :datetime="roll.createdAt" class="shrink-0 text-xs text-gray-600">
-                {{ formatRollTime(roll.createdAt) }}
-              </time>
-            </div>
-          </div>
+          <RollLog :rolls="rollLog" :self-participant-id="participantId" :error="rolls.error.value" />
         </div>
       </div>
     </div>
     </template>
   </div>
 </template>
+
+<style scoped>
+/*
+ * The tab bar stays in view while the page scrolls. The page scrolls inside <main>, whose top padding
+ * (--page-top-gap) is part of that scroller, and a sticky element sticks at the edge of its scroller's content, not
+ * at its padding: with top: 0 the bar stopped one gap below the top and scrolled-by content showed above it. Pulling
+ * it up by the gap pins it flush with the top of the scroller, so nothing shows above it.
+ */
+.session-tabs {
+  position: sticky;
+  top: calc(var(--page-top-gap, 1.5rem) * -1);
+}
+</style>

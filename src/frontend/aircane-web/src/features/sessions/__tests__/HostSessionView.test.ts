@@ -165,7 +165,7 @@ describe('HostSessionView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Thorin: 1d20+5 = 17 (secret insight)')
+    expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Thorin: 1d20+5 [12] +5 = 17 (secret insight)')
   })
 
   it('renders the session name in the header', async () => {

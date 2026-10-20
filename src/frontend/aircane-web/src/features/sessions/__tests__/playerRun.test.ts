@@ -2,15 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { AxiosError, type AxiosResponse } from 'axios'
 import * as api from '../api'
 import type { PlayerAdventureRun } from '../api'
-import { actionBoxState, isMyTurn, narrationLines, turnRows, usePlayerRun } from '../playerRun'
+import { actionBoxState, endTurnState, isMyTurn, narrationLines, turnRows, usePlayerRun } from '../playerRun'
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
-  return { ...actual, getAdventureRun: vi.fn(), submitPlayerAction: vi.fn() }
+  return { ...actual, getAdventureRun: vi.fn(), submitPlayerAction: vi.fn(), endMyTurn: vi.fn() }
 })
 
 const mockedGetRun = vi.mocked(api.getAdventureRun)
 const mockedSubmit = vi.mocked(api.submitPlayerAction)
+const mockedEndTurn = vi.mocked(api.endMyTurn)
 
 function httpError(status: number, data?: unknown): AxiosError {
   const response = { status, data, statusText: '', headers: {}, config: {} } as AxiosResponse
@@ -222,5 +223,129 @@ describe('usePlayerRun', () => {
     await older
 
     expect(state.run.value?.currentRound).toBe(5)
+  })
+})
+
+describe('the "End my turn" control', () => {
+  const idle = { submitting: false, ending: false }
+
+  it('is an enabled button for the acting player', () => {
+    expect(endTurnState(makeRun(), 'alice', idle)).toEqual({ kind: 'button', enabled: true, reason: null })
+  })
+
+  it('is a disabled button saying "Waiting for <name>" for everyone else', () => {
+    expect(endTurnState(makeRun(), 'bob', idle)).toEqual({ kind: 'button', enabled: false, reason: 'Waiting for Alice' })
+  })
+
+  it('falls back to a generic name when the acting player has none', () => {
+    expect(endTurnState(makeRun({ activeParticipantName: null }), 'bob', idle).reason).toBe('Waiting for the next player')
+  })
+
+  it("is disabled while the AI answers the player's action, and while ending the turn is in flight", () => {
+    expect(endTurnState(makeRun(), 'alice', { submitting: true, ending: false }).enabled).toBe(false)
+    expect(endTurnState(makeRun(), 'alice', { submitting: false, ending: true })).toMatchObject({ enabled: false, reason: 'Ending your turn…' })
+  })
+
+  it('is replaced by a note when the run moves the turn on by itself', () => {
+    const state = endTurnState(makeRun({ turnAdvance: 'AfterEachAction' }), 'alice', idle)
+
+    expect(state.kind).toBe('automatic')
+    expect(state.enabled).toBe(false)
+    expect(state.reason).toContain('by itself')
+  })
+
+  it('shows the note to everyone at the table, not only the acting player', () => {
+    expect(endTurnState(makeRun({ turnAdvance: 'AfterEachAction' }), 'bob', idle).kind).toBe('automatic')
+  })
+
+  it('is hidden with no adventure, a solo run, or a finished one', () => {
+    expect(endTurnState(null, 'alice', idle).kind).toBe('hidden')
+    expect(endTurnState(makeRun({ isGroup: false, turnOrder: [], activeParticipantId: null }), 'alice', idle).kind).toBe('hidden')
+    expect(endTurnState(makeRun({ status: 'Completed' }), 'alice', idle).kind).toBe('hidden')
+  })
+
+  it('treats a run from a server without the setting as manual', () => {
+    expect(endTurnState(makeRun({ turnAdvance: undefined }), 'alice', idle).kind).toBe('button')
+  })
+})
+
+describe('usePlayerRun.endTurn', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('ends the turn and takes the table view the server returns as the new state', async () => {
+    mockedGetRun.mockResolvedValue(makeRun())
+    mockedEndTurn.mockResolvedValue(makeRun({ activeParticipantId: 'bob', activeParticipantName: 'Bob' }))
+    const state = usePlayerRun('session-1')
+    await state.refresh()
+
+    const moved = await state.endTurn()
+
+    expect(moved).toBe(true)
+    expect(mockedEndTurn).toHaveBeenCalledWith('run-1')
+    expect(state.run.value?.activeParticipantId).toBe('bob')
+    expect(state.endTurnError.value).toBeNull()
+    expect(state.endingTurn.value).toBe(false)
+  })
+
+  it('reads the run again when the server had nothing to return (204)', async () => {
+    mockedGetRun.mockResolvedValue(makeRun())
+    mockedEndTurn.mockResolvedValue(null)
+    const state = usePlayerRun('session-1')
+    await state.refresh()
+    mockedGetRun.mockClear()
+    mockedGetRun.mockResolvedValue(makeRun({ activeParticipantId: 'bob' }))
+
+    expect(await state.endTurn()).toBe(true)
+
+    expect(mockedGetRun).toHaveBeenCalledTimes(1)
+    expect(state.run.value?.activeParticipantId).toBe('bob')
+  })
+
+  it("shows the server's \"not your turn\" message and reads the run again, when the turn had already moved on", async () => {
+    mockedGetRun.mockResolvedValue(makeRun())
+    mockedEndTurn.mockRejectedValue(httpError(403, { title: 'Not your turn', detail: 'It is not your turn. Waiting for Bob.' }))
+    const state = usePlayerRun('session-1')
+    await state.refresh()
+    mockedGetRun.mockClear()
+    mockedGetRun.mockResolvedValue(makeRun({ activeParticipantId: 'bob', activeParticipantName: 'Bob' }))
+
+    const moved = await state.endTurn()
+
+    expect(moved).toBe(false)
+    expect(state.endTurnError.value).toBe('It is not your turn. Waiting for Bob.')
+    expect(mockedGetRun).toHaveBeenCalledTimes(1)
+    expect(state.run.value?.activeParticipantName).toBe('Bob')   // the screen now shows who has it
+  })
+
+  it('does not send twice while one request is in flight, or with no run', async () => {
+    let finish: (run: PlayerAdventureRun) => void = () => undefined
+    mockedGetRun.mockResolvedValue(makeRun())
+    mockedEndTurn.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const state = usePlayerRun('session-1')
+    expect(await state.endTurn()).toBe(false)   // no run yet
+    await state.refresh()
+
+    const first = state.endTurn()
+    expect(state.endingTurn.value).toBe(true)
+    expect(await state.endTurn()).toBe(false)
+    finish(makeRun({ activeParticipantId: 'bob' }))
+    await first
+
+    expect(mockedEndTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears an earlier error when the next attempt works', async () => {
+    mockedGetRun.mockResolvedValue(makeRun())
+    mockedEndTurn.mockRejectedValueOnce(httpError(500)).mockResolvedValueOnce(makeRun({ activeParticipantId: 'bob' }))
+    const state = usePlayerRun('session-1')
+    await state.refresh()
+
+    await state.endTurn()
+    expect(state.endTurnError.value).toBeTruthy()
+    await state.endTurn()
+
+    expect(state.endTurnError.value).toBeNull()
   })
 })

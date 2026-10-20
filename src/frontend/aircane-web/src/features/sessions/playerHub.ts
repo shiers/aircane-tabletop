@@ -147,6 +147,10 @@ export interface ChatMessageEvent {
   displayName: string
   text: string
   sentAt: string
+  /** The stored message's id (the one chat history returns); absent from a server without stored chat. */
+  messageId?: string | null
+  /** The sender's role name ("Player", "Host"...). */
+  role?: string | null
 }
 
 export interface RollRequestedEvent {

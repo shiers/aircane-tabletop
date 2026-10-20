@@ -2,6 +2,7 @@ using Aircane.Api.Controllers;
 using Aircane.Application.DTOs.Adventures;
 using Aircane.Domain.Entities;
 using Aircane.Domain.Enums;
+using Aircane.Infrastructure.GameSystems;
 using Aircane.Infrastructure.Persistence;
 using Aircane.UnitTests.TestDoubles;
 using Microsoft.AspNetCore.Mvc;
@@ -23,14 +24,14 @@ public sealed class UnassignedAdventuresTests : IDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         _controller = new AdventuresController(
             validator: null!, retrievalService: null!, adventureIndexingService: null!,
-            jobQueue: null!, dbContext: _db, logger: NullLogger<AdventuresController>.Instance);
+            jobQueue: null!, dbContext: _db, gameSystems: new GameSystemCanonicalizer(_db), logger: NullLogger<AdventuresController>.Instance);
     }
 
     public void Dispose() => _db.Dispose();
 
     private async Task<Campaign> AddCampaignAsync()
     {
-        var c = new Campaign("Camp", "D&D 5e", "2014", AiRole.FullDm, AiAuthority.FullSessionControl);
+        var c = new Campaign("Camp", "D&D 5e 2014", "2014", AiRole.FullDm, AiAuthority.FullSessionControl);
         _db.Campaigns.Add(c);
         await _db.SaveChangesAsync();
         return c;

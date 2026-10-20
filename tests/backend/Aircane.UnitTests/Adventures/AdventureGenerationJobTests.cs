@@ -123,7 +123,7 @@ public sealed class AdventureGenerationJobTests
 
     private static AdventuresController Controller(IBackgroundJobQueue queue) => new(
         new GenerateAdventureValidator(), retrievalService: null!, adventureIndexingService: null!,
-        jobQueue: queue, dbContext: null!, logger: NullLogger<AdventuresController>.Instance);
+        jobQueue: queue, dbContext: null!, gameSystems: null!, logger: NullLogger<AdventuresController>.Instance);
 
     [Fact]
     public async Task AdventuresController_GenerateAdventure_Returns202WithJobId()

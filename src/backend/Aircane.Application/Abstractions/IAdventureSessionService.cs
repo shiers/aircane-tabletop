@@ -1,5 +1,6 @@
 using Aircane.Application.DTOs.Adventures;
 using Aircane.Domain.Entities;
+using Aircane.Domain.Enums;
 
 namespace Aircane.Application.Abstractions;
 
@@ -45,6 +46,7 @@ public interface IAdventureSessionService
         Guid campaignId,
         IReadOnlyList<Guid> participantIds,
         Guid? playSessionId = null,
+        TurnAdvanceMode turnAdvance = TurnAdvanceMode.ManualOnly,
         CancellationToken ct = default);
 
     /// <summary>
@@ -66,6 +68,27 @@ public interface IAdventureSessionService
     /// <exception cref="KeyNotFoundException">The run does not exist.</exception>
     /// <exception cref="InvalidOperationException">The run is not a group run, or is no longer in progress.</exception>
     Task<AdventureSession> AdvanceTurnAsync(Guid sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Passes the turn like <see cref="AdvanceTurnAsync"/>, but only if the turn is still where the caller
+    /// thought it was, and records who passed it. The check and the move happen together under a lock on
+    /// the run, so two requests for the same turn (a double click, a player and the host at once) move it
+    /// once, never twice.
+    /// </summary>
+    /// <exception cref="TurnAlreadyMovedException">
+    /// <see cref="TurnPass.ExpectedActiveParticipantId"/> is set and is no longer the acting participant.
+    /// </exception>
+    Task<AdventureSession> PassTurnAsync(Guid sessionId, TurnPass pass, CancellationToken ct = default);
+
+    /// <summary>
+    /// Moves a group run to the next player after the acting player's action was answered, when the run is set
+    /// to <see cref="TurnAdvanceMode.AfterEachAction"/>. Returns whether the turn moved. It does not move when
+    /// the run is on <see cref="TurnAdvanceMode.ManualOnly"/>, is no longer in progress (the AI completed the
+    /// adventure), the AI is waiting for the player to report a roll (passing would drop it), or the turn is no
+    /// longer <paramref name="actingParticipantId"/>'s (the host passed it while the AI was answering). Call it
+    /// only after the answer came back: a failed AI call must leave the turn where it is.
+    /// </summary>
+    Task<bool> AutoAdvanceAfterActionAsync(Guid sessionId, Guid actingParticipantId, CancellationToken ct = default);
 
     /// <summary>
     /// Adds a participant of the run's play session to the end of a group run's turn order.

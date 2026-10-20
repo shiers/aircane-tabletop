@@ -79,6 +79,7 @@ public static class DependencyInjection
             c.DefaultRequestHeaders.UserAgent.ParseAdd("Aircane-Tabletop/1.0");
         });
         services.AddScoped<ISessionHostingService, SessionHostingService>();
+        services.AddScoped<IChatService, Aircane.Infrastructure.Chat.ChatService>();
         // Token revocation is a singleton so the in-memory fast-path set survives across
         // requests. Persistent (per-jti) revocation is backed by the RevokedTokens table,
         // which the singleton reaches through a scoped DbContext via IServiceScopeFactory.

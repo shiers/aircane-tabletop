@@ -98,6 +98,9 @@ namespace Aircane.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<int>("TurnAdvance")
+                        .HasColumnType("integer");
+
                     b.Property<string>("TurnOrder")
                         .IsRequired()
                         .HasColumnType("jsonb");
@@ -397,6 +400,42 @@ namespace Aircane.Infrastructure.Migrations
                         .HasDatabaseName("IX_CharacterTemplates_GameSystem");
 
                     b.ToTable("CharacterTemplates");
+                });
+
+            modelBuilder.Entity("Aircane.Domain.Entities.ChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SenderName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("SenderRole")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId", "CreatedAt", "Id")
+                        .HasDatabaseName("IX_ChatMessages_Session_Time");
+
+                    b.ToTable("ChatMessages");
                 });
 
             modelBuilder.Entity("Aircane.Domain.Entities.DocumentChunk", b =>
@@ -1073,6 +1112,15 @@ namespace Aircane.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("GameSystemDefinition");
+                });
+
+            modelBuilder.Entity("Aircane.Domain.Entities.ChatMessage", b =>
+                {
+                    b.HasOne("Aircane.Domain.Entities.Session", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Aircane.Domain.Entities.GameSystems.GameSystemAlias", b =>

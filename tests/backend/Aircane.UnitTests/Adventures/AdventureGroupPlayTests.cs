@@ -36,10 +36,12 @@ public sealed class AdventureGroupPlayTests : IDisposable
     private SessionParticipant _bob = null!;
     private SessionParticipant _cara = null!;
 
+    private readonly string _dbName = Guid.NewGuid().ToString();
+
     public AdventureGroupPlayTests()
     {
         _db = new AircaneDbContext(new DbContextOptionsBuilder<AircaneDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+            .UseInMemoryDatabase(_dbName).Options);
         _sut = new AdventureSessionService(
             _db,
             new AdventureRetrievalService(_db, NullLogger<AdventureRetrievalService>.Instance),
@@ -634,7 +636,7 @@ public sealed class AdventureGroupPlayTests : IDisposable
     {
         var run = await StartGroupAsync();
 
-        var result = await CreateController(Host()).AdvanceTurn(run.Id, default);
+        var result = await CreateController(Host()).AdvanceTurn(run.Id, null, default);
 
         var state = Assert.IsType<AdventureSessionStateDto>(Assert.IsType<OkObjectResult>(result).Value);
         Assert.Equal(_bob.Id, state.ActiveParticipantId);
@@ -642,15 +644,16 @@ public sealed class AdventureGroupPlayTests : IDisposable
         Assert.Equal(1, state.CurrentRound);
     }
 
+    // The acting Player may end their own turn (see AdventureTurnEndTests); a human DM or a spectator may not
+    // pass anyone's, even when their token carries the acting participant's id.
     [Theory]
-    [InlineData("Player")]
     [InlineData("HumanDm")]
     [InlineData("Spectator")]
-    public async Task AdventureSessionsController_AdvanceTurn_Returns403ForPlayer(string role)
+    public async Task AdventureSessionsController_AdvanceTurn_Returns403ForOtherRoles(string role)
     {
         var run = await StartGroupAsync();
 
-        var result = await CreateController(Token(role, _playSession.Id, _alice.Id)).AdvanceTurn(run.Id, default);
+        var result = await CreateController(Token(role, _playSession.Id, _alice.Id)).AdvanceTurn(run.Id, null, default);
 
         Assert.IsType<ForbidResult>(result);   // rendered as 403
         Assert.Equal(_alice.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
@@ -806,7 +809,359 @@ public sealed class AdventureGroupPlayTests : IDisposable
         Assert.Empty(state.TurnOrder);
     }
 
+    // ── Ending a turn: the acting player, the host, and a request that arrives late ─────────────
+
+    private AdventureSessionsController CreateControllerWith(IPlayerActionService ai, ClaimsPrincipal? user)
+        => new(_sut, ai, new DbBackedSessionHosting(_db), NullLogger<AdventureSessionsController>.Instance)
+        {
+            ControllerContext = new ControllerContext { HttpContext = LocalHostHttpContext.Create(user) },
+        };
+
+    private async Task<AdventureSession> StartGroupAsync(TurnAdvanceMode mode)
+    {
+        await SeedAsync();
+        return await _sut.StartGroupSessionAsync(
+            _adventure.Id, _campaign.Id, [_alice.Id, _bob.Id, _cara.Id], null, mode);
+    }
+
+    private async Task<SessionParticipant> AddWaitingParticipantAsync()
+    {
+        var dana = new SessionParticipant(_playSession.Id, "Dana", ParticipantRole.Player, isApproved: false);
+        _db.SessionParticipants.Add(dana);
+        await _db.SaveChangesAsync();
+        return dana;
+    }
+
+    [Fact]
+    public async Task EndTurn_ActingPlayer_MovesTheTurn_ClearsThePendingRoll_AndRecordsWhoEndedIt()
+    {
+        var run = await StartGroupAsync();
+        await _sut.UpdatePendingRollAsync(run.Id, "Dexterity (Stealth)", 14);
+
+        var result = await CreateController(Player(_alice)).AdvanceTurn(run.Id, null, default);
+
+        var view = Assert.IsType<PlayerAdventureRunDto>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(_bob.Id, view.ActiveParticipantId);
+        var saved = await ReloadAsync(run.Id);
+        Assert.Equal(_bob.Id, saved.ActiveParticipantId);
+        Assert.Null(saved.PendingRollLabel);
+        Assert.Null(saved.PendingRollDC);
+
+        // Broadcast: the existing adventure-state signal, and the turn event says a player ended it.
+        Assert.Contains(_hub.StateChanges, c => c.Group == _playSession.Id && c.Event.Reason == "TurnAdvanced");
+        Assert.Equal("Player", Assert.Single(_hub.TurnsAdvanced).Event.PassedBy);
+
+        // Recorded: the event log has who ended it.
+        var logged = await _db.CampaignEvents.AsNoTracking().SingleAsync(e => e.EventType == "Adventure:TurnAdvanced");
+        Assert.Contains("\"passedBy\":\"Player\"", logged.PayloadJson);
+        Assert.Contains(_alice.Id.ToString(), logged.PayloadJson);
+    }
+
+    [Fact]
+    public async Task EndTurn_ThePlayerGetsTheTableView_NeverTheFullRunState()
+    {
+        var run = await StartGroupAsync();
+
+        var result = await CreateController(Player(_alice)).AdvanceTurn(run.Id, null, default);
+
+        Assert.IsType<PlayerAdventureRunDto>(Assert.IsType<OkObjectResult>(result).Value);
+    }
+
+    [Fact]
+    public async Task EndTurn_NonActingPlayer_Gets403NotYourTurn_AndNothingMoves()
+    {
+        var run = await StartGroupAsync();   // Alice holds the turn
+
+        var result = await CreateController(Player(_bob)).AdvanceTurn(run.Id, null, default);
+
+        var refused = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, refused.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(refused.Value);
+        Assert.Equal("Not your turn", problem.Title);
+        Assert.Contains("Waiting for Alice", problem.Detail);
+        Assert.Equal(_alice.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+        Assert.Empty(_hub.TurnsAdvanced);
+    }
+
+    [Fact]
+    public async Task EndTurn_ParticipantWaitingForApproval_IsRefusedWithTheirOwnReason()
+    {
+        var run = await StartGroupAsync();
+        var dana = await AddWaitingParticipantAsync();
+
+        var result = await CreateController(Player(dana)).AdvanceTurn(run.Id, null, default);
+
+        var refused = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, refused.StatusCode);
+        Assert.Equal("Waiting for approval", Assert.IsType<ProblemDetails>(refused.Value).Title);
+    }
+
+    [Fact]
+    public async Task EndTurn_DeniedActingPlayer_IsRefusedWithTheParticipantDeniedCode()
+    {
+        var run = await StartGroupAsync();
+        _alice.IsApproved = false;
+        _alice.IsDenied = true;
+        await _db.SaveChangesAsync();
+
+        var result = await CreateController(Player(_alice)).AdvanceTurn(run.Id, null, default);
+
+        var refused = Assert.IsType<ObjectResult>(result);
+        Assert.Equal("participant-denied", Assert.IsType<ProblemDetails>(refused.Value).Extensions["code"]);
+        Assert.Equal(_alice.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+    }
+
+    [Fact]
+    public async Task EndTurn_ATokenForAnotherSession_IsForbidden()
+    {
+        var run = await StartGroupAsync();
+
+        var result = await CreateController(Token("Player", Guid.NewGuid(), _alice.Id)).AdvanceTurn(run.Id, null, default);
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.Equal(_alice.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+    }
+
+    [Fact]
+    public async Task EndTurn_Host_MayPassAnyTurn_AndItIsRecordedAsTheHost()
+    {
+        var run = await StartGroupAsync();
+
+        var result = await CreateController(Host()).AdvanceTurn(run.Id, null, default);
+
+        Assert.IsType<AdventureSessionStateDto>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(_bob.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+        Assert.Equal("Host", Assert.Single(_hub.TurnsAdvanced).Event.PassedBy);
+    }
+
+    // A request that arrives just after the turn already moved on ───────────────────────────
+
+    [Fact]
+    public async Task EndTurn_PlayersLateRequest_AfterTheHostPassed_IsA403_AndDoesNotMoveBobsTurn()
+    {
+        var run = await StartGroupAsync();
+        await CreateController(Host()).AdvanceTurn(run.Id, null, default);   // Alice -> Bob
+
+        // Alice's click arrives afterwards.
+        var result = await CreateController(Player(_alice)).AdvanceTurn(run.Id, null, default);
+
+        var refused = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, refused.StatusCode);
+        Assert.Contains("Waiting for Bob", Assert.IsType<ProblemDetails>(refused.Value).Detail);
+        Assert.Equal(_bob.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);   // Bob still has it
+        Assert.Single(_hub.TurnsAdvanced);
+    }
+
+    [Fact]
+    public async Task EndTurn_PlayersDoubleClick_MovesTheTurnOnce()
+    {
+        var run = await StartGroupAsync();
+
+        await CreateController(Player(_alice)).AdvanceTurn(run.Id, null, default);
+        var second = await CreateController(Player(_alice)).AdvanceTurn(run.Id, null, default);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(second).StatusCode);
+        Assert.Equal(_bob.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);   // not Cara
+        Assert.Single(_hub.TurnsAdvanced);
+    }
+
+    [Fact]
+    public async Task EndTurn_HostWhoseScreenWasStale_Gets409_AndNothingMoves()
+    {
+        var run = await StartGroupAsync();
+        await CreateController(Player(_alice)).AdvanceTurn(run.Id, null, default);   // Alice ended her turn: Bob's
+
+        // The host's screen still showed Alice as acting and asks to pass *her* turn.
+        var result = await CreateController(Host()).AdvanceTurn(run.Id, _alice.Id, default);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.Contains("already passed to Bob", Assert.IsType<ProblemDetails>(conflict.Value).Detail);
+        Assert.Equal(_bob.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+        Assert.Single(_hub.TurnsAdvanced);
+    }
+
+    [Fact]
+    public async Task PassTurn_TwoRequestsForTheSameTurnAtOnce_MoveItExactlyOnce()
+    {
+        var run = await StartGroupAsync();
+        // Two requests are two scopes, each with its own context over the same database. The in-memory provider
+        // finishes each call before the next begins unless they really run in parallel, so the race is run on
+        // pool threads, many times: without the lock some round would move the turn twice.
+        var contexts = new List<AircaneDbContext>();
+        AdventureSessionService NewService()
+        {
+            var ctx = new AircaneDbContext(new DbContextOptionsBuilder<AircaneDbContext>().UseInMemoryDatabase(_dbName).Options);
+            contexts.Add(ctx);
+            return new AdventureSessionService(
+                ctx,
+                new AdventureRetrievalService(ctx, NullLogger<AdventureRetrievalService>.Instance),
+                new CampaignStateService(ctx, NullLogger<CampaignStateService>.Instance),
+                NullLogger<AdventureSessionService>.Instance,
+                _hub);
+        }
+        var pass = new TurnPass(TurnPassedBy.Player, _alice.Id, _alice.Id);
+
+        for (var round = 0; round < 40; round++)
+        {
+            // Back to Alice's turn.
+            var tracked = await _db.AdventureSessions.SingleAsync(s => s.Id == run.Id);
+            await _db.Entry(tracked).ReloadAsync();
+            tracked.ActiveParticipantId = _alice.Id;
+            await _db.SaveChangesAsync();
+            _hub.TurnsAdvanced.Clear();
+
+            var first = NewService();
+            var second = NewService();
+            using var start = new ManualResetEventSlim(false);
+            var attempts = new[] { first, second }
+                .Select(service => Task.Run(async () =>
+                {
+                    start.Wait();
+                    try { await service.PassTurnAsync(run.Id, pass); return (Exception?)null; }
+                    catch (Exception ex) { return ex; }
+                }))
+                .ToArray();
+            start.Set();
+            var results = await Task.WhenAll(attempts);
+
+            Assert.True(results.Count(r => r is null) == 1, $"Round {round}: {results.Count(r => r is null)} requests moved the turn.");
+            Assert.True(results.Count(r => r is TurnAlreadyMovedException) == 1, $"Round {round}: the late request was not told the turn had moved.");
+            Assert.Equal(_bob.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);   // once: Bob, not Cara
+            Assert.Single(_hub.TurnsAdvanced);
+        }
+
+        contexts.ForEach(c => c.Dispose());
+    }
+
+    // ── Auto-advance ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StartGroup_DefaultsToManualOnly_AndTheStateSaysSo()
+    {
+        var run = await StartGroupAsync();
+
+        Assert.Equal(TurnAdvanceMode.ManualOnly, (await ReloadAsync(run.Id)).TurnAdvance);
+        Assert.Equal(TurnAdvanceMode.ManualOnly, (await _sut.GetSessionStateAsync(run.Id)).TurnAdvance);
+    }
+
+    [Fact]
+    public async Task StartGroup_WithAfterEachAction_IsStored_AndShownInTheStateAndThePlayerView()
+    {
+        var run = await StartGroupAsync(TurnAdvanceMode.AfterEachAction);
+
+        Assert.Equal(TurnAdvanceMode.AfterEachAction, (await _sut.GetSessionStateAsync(run.Id)).TurnAdvance);
+        var view = await _sut.GetPlayerRunViewAsync(_playSession.Id, _alice.Id);
+        Assert.Equal(TurnAdvanceMode.AfterEachAction, view!.TurnAdvance);
+    }
+
+    [Fact]
+    public async Task AutoAdvance_ManualOnly_NeverMovesTheTurn()
+    {
+        var run = await StartGroupAsync(TurnAdvanceMode.ManualOnly);
+
+        Assert.False(await _sut.AutoAdvanceAfterActionAsync(run.Id, _alice.Id));
+
+        Assert.Equal(_alice.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+        Assert.Empty(_hub.TurnsAdvanced);
+    }
+
+    [Fact]
+    public async Task AutoAdvance_AfterEachAction_MovesToTheNextPlayer_AndSaysItWasAutomatic()
+    {
+        var run = await StartGroupAsync(TurnAdvanceMode.AfterEachAction);
+
+        Assert.True(await _sut.AutoAdvanceAfterActionAsync(run.Id, _alice.Id));
+
+        Assert.Equal(_bob.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+        Assert.Equal("Auto", Assert.Single(_hub.TurnsAdvanced).Event.PassedBy);
+        Assert.Contains(_hub.StateChanges, c => c.Event.Reason == "TurnAdvanced");
+    }
+
+    [Fact]
+    public async Task AutoAdvance_WhenTheAiAskedForARoll_StaysOnTheSamePlayer()
+    {
+        var run = await StartGroupAsync(TurnAdvanceMode.AfterEachAction);
+        await _sut.UpdatePendingRollAsync(run.Id, "Dexterity (Stealth)", 14);   // the AI is waiting for Alice's result
+
+        Assert.False(await _sut.AutoAdvanceAfterActionAsync(run.Id, _alice.Id));
+
+        var saved = await ReloadAsync(run.Id);
+        Assert.Equal(_alice.Id, saved.ActiveParticipantId);
+        Assert.Equal("Dexterity (Stealth)", saved.PendingRollLabel);   // not dropped
+    }
+
+    [Fact]
+    public async Task AutoAdvance_WhenTheHostAlreadyPassedTheTurn_DoesNotSkipAnotherPlayer()
+    {
+        var run = await StartGroupAsync(TurnAdvanceMode.AfterEachAction);
+        await _sut.AdvanceTurnAsync(run.Id);   // the host passed Alice's turn while the AI was answering her
+
+        Assert.False(await _sut.AutoAdvanceAfterActionAsync(run.Id, _alice.Id));
+
+        Assert.Equal(_bob.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);   // Bob, not Cara
+    }
+
+    [Fact]
+    public async Task AutoAdvance_WhenTheAiCompletedTheAdventure_DoesNothing()
+    {
+        var run = await StartGroupAsync(TurnAdvanceMode.AfterEachAction);
+        await _sut.CompleteAdventureAsync(run.Id, "The party won.");
+
+        Assert.False(await _sut.AutoAdvanceAfterActionAsync(run.Id, _alice.Id));
+    }
+
+    [Fact]
+    public async Task AutoAdvance_ThroughTheEndpoint_MovesOnAfterTheAiAnswered()
+    {
+        var run = await StartGroupAsync(TurnAdvanceMode.AfterEachAction);
+
+        var result = await CreateController(Player(_alice))
+            .SubmitPlayerAction(run.Id, new AdventureSessionActionRequest("I light a torch"), default);
+
+        var body = Assert.IsType<AdventureSessionActionResponse>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal("The torch flares.", body.Narration);
+        Assert.Equal(_bob.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+        Assert.Equal("Auto", Assert.Single(_hub.TurnsAdvanced).Event.PassedBy);
+    }
+
+    [Fact]
+    public async Task AutoAdvance_ThroughTheEndpoint_ManualOnlyStaysPut()
+    {
+        var run = await StartGroupAsync(TurnAdvanceMode.ManualOnly);
+
+        await CreateController(Player(_alice))
+            .SubmitPlayerAction(run.Id, new AdventureSessionActionRequest("I light a torch"), default);
+
+        Assert.Equal(_alice.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+    }
+
+    [Fact]
+    public async Task AutoAdvance_WhenTheAiCallFails_TheTurnDoesNotMove()
+    {
+        var run = await StartGroupAsync(TurnAdvanceMode.AfterEachAction);
+        var controller = CreateControllerWith(new ThrowingPlayerActionService(), Player(_alice));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            controller.SubmitPlayerAction(run.Id, new AdventureSessionActionRequest("I light a torch"), default));
+
+        Assert.Equal(_alice.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+        Assert.Empty(_hub.TurnsAdvanced);
+
+        // Alice can simply try again.
+        var retry = await CreateController(Player(_alice))
+            .SubmitPlayerAction(run.Id, new AdventureSessionActionRequest("I light a torch"), default);
+        Assert.IsType<OkObjectResult>(retry);
+        Assert.Equal(_bob.Id, (await ReloadAsync(run.Id)).ActiveParticipantId);
+    }
+
     // ── Doubles ───────────────────────────────────────────────────────────────
+
+    private sealed class ThrowingPlayerActionService : IPlayerActionService
+    {
+        public Task<PlayerActionResponse> ProcessActionAsync(
+            PlayerActionRequest request, CancellationToken cancellationToken = default)
+            => throw new HttpRequestException("The AI provider is unreachable.");
+    }
 
     private sealed class CountingPlayerActionService : IPlayerActionService
     {

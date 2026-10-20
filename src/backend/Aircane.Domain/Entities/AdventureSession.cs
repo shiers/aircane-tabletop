@@ -1,3 +1,5 @@
+using Aircane.Domain.Enums;
+
 namespace Aircane.Domain.Entities;
 
 /// <summary>
@@ -89,6 +91,11 @@ public class AdventureSession
     /// last participant back to the first. 0 for solo runs.
     /// </summary>
     public int CurrentRound { get; set; }
+
+    /// <summary>
+    /// How the turn moves on (group runs only): <see cref="TurnAdvanceMode.ManualOnly"/> by default.
+    /// </summary>
+    public TurnAdvanceMode TurnAdvance { get; set; } = TurnAdvanceMode.ManualOnly;
 }
 
 /// <summary>

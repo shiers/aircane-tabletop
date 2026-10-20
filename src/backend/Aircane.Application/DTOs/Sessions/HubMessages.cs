@@ -98,14 +98,17 @@ public sealed record ParticipantLeftNotification(
     string DisplayName);
 
 /// <summary>
-/// Broadcast when a chat message is received.
+/// Broadcast when a chat message is received. <paramref name="MessageId"/> is the stored message's id, the
+/// same one <c>GET /api/sessions/{id}/chat</c> returns, so a client that loaded history can tell it already has it.
 /// </summary>
 public sealed record ChatMessageReceivedNotification(
     Guid SessionId,
     Guid ParticipantId,
     string DisplayName,
     string Text,
-    DateTimeOffset SentAt);
+    DateTimeOffset SentAt,
+    Guid? MessageId = null,
+    string? Role = null);
 
 /// <summary>
 /// Broadcast when a roll is recorded (public rolls go to all; private rolls go to roller + host).
@@ -264,12 +267,14 @@ public sealed record AdventureCompletedNotification(
 /// </summary>
 /// <param name="PreviousParticipantId">Who had the turn before; null if no one did.</param>
 /// <param name="CurrentRound">The round now in progress (goes up when the turn wraps to the first player).</param>
+/// <param name="PassedBy">Who moved the turn on: <c>"Host"</c>, <c>"Player"</c> (the acting player ended it) or <c>"Auto"</c>.</param>
 public sealed record TurnAdvancedNotification(
     Guid SessionId,
     Guid? PreviousParticipantId,
     Guid ActiveParticipantId,
     string ActiveParticipantName,
-    int CurrentRound);
+    int CurrentRound,
+    string? PassedBy = null);
 
 /// <summary>
 /// Broadcast when a participant is added to the end of a group run's turn order (SignalR event

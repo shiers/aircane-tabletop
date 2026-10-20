@@ -623,4 +623,124 @@ public sealed class SessionHubSecurityTests : IClassFixture<DesktopModeWebApplic
             Assert.DoesNotContain(bob.ParticipantToken, payload.GetRawText());
         }
     }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // Chat is stored (identity from the token), length-limited and rate-limited
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private async Task<JsonElement> ChatHistoryAsync(string token, Guid sessionId)
+    {
+        using var client = Lan(token);
+        return await client.GetFromJsonAsync<JsonElement>($"/api/sessions/{sessionId}/chat");
+    }
+
+    [Fact]
+    public async Task ChatSentOverTheHub_IsStoredWithTheTokensIdentity_AndHistoryMatchesTheBroadcast()
+    {
+        var session = await StartSessionAsync();
+        var alice = await JoinApprovedAsync(session, "Alice");
+        var bob = await JoinApprovedAsync(session, "Bob");
+        await using var aliceHub = await JoinedAsync(alice.ParticipantToken, session.Id, alice.ParticipantId, "Alice");
+        await using var bobHub = await JoinedAsync(bob.ParticipantToken, session.Id, bob.ParticipantId, "Bob");
+
+        // Bob puts Alice's name, id and the Host role in the message: none of it is used.
+        await ChatAsync(bobHub, session.Id, alice.ParticipantId, "Alice", "  I give Bob all my gold.  ");
+        var live = await aliceHub.WaitFor("ChatMessageReceived");
+
+        var history = await ChatHistoryAsync(alice.ParticipantToken, session.Id);
+        var stored = Assert.Single(history.GetProperty("messages").EnumerateArray());
+        Assert.Equal("I give Bob all my gold.", stored.GetProperty("text").GetString());
+        Assert.Equal("Bob", stored.GetProperty("senderName").GetString());
+        Assert.Equal(bob.ParticipantId, stored.GetProperty("senderId").GetGuid());
+        Assert.Equal((int)ParticipantRole.Player, stored.GetProperty("senderRole").GetInt32());
+
+        // The live event carries the stored message's id and the real sender, so a client can de-duplicate.
+        Assert.Equal(stored.GetProperty("id").GetGuid(), live.GetProperty("messageId").GetGuid());
+        Assert.Equal("Bob", live.GetProperty("displayName").GetString());
+        Assert.Equal("Player", live.GetProperty("role").GetString());
+    }
+
+    [Fact]
+    public async Task HostChat_IsStoredAsTheHost()
+    {
+        var session = await StartSessionAsync();
+        var alice = await JoinApprovedAsync(session, "Alice");
+        await using var host = await HostOnHubAsync(session);
+
+        await ChatAsync(host, session.Id, Guid.NewGuid(), "Anything", "Welcome to the table.");
+        await host.WaitFor("ChatMessageReceived");
+
+        var stored = Assert.Single((await ChatHistoryAsync(alice.ParticipantToken, session.Id)).GetProperty("messages").EnumerateArray());
+        Assert.Equal("Host", stored.GetProperty("senderName").GetString());
+        Assert.Equal((int)ParticipantRole.Host, stored.GetProperty("senderRole").GetInt32());
+    }
+
+    [Fact]
+    public async Task ATooLongMessage_IsRefused_AndNotStoredOrSent()
+    {
+        var session = await StartSessionAsync();
+        var alice = await JoinApprovedAsync(session, "Alice");
+        await using var host = await HostOnHubAsync(session);
+        await using var aliceHub = await JoinedAsync(alice.ParticipantToken, session.Id, alice.ParticipantId, "Alice");
+
+        var refused = await Assert.ThrowsAsync<HubException>(() =>
+            ChatAsync(aliceHub, session.Id, alice.ParticipantId, "Alice", new string('x', 501)));
+
+        Assert.Contains("at most 500 characters", refused.Message);
+        await Task.Delay(Quiet);
+        Assert.False(host.Got("ChatMessageReceived"));
+        Assert.Empty((await ChatHistoryAsync(alice.ParticipantToken, session.Id)).GetProperty("messages").EnumerateArray());
+
+        await ChatAsync(aliceHub, session.Id, alice.ParticipantId, "Alice", new string('x', 500));   // the limit itself is fine
+        await host.WaitFor("ChatMessageReceived");
+    }
+
+    [Fact]
+    public async Task SendingTooFast_IsRefused_AndOnlyTheAllowedMessagesAreStored()
+    {
+        var session = await StartSessionAsync();
+        var alice = await JoinApprovedAsync(session, "Alice");
+        await using var aliceHub = await JoinedAsync(alice.ParticipantToken, session.Id, alice.ParticipantId, "Alice");
+
+        for (var i = 0; i < Aircane.Api.Hubs.ChatRateLimiter.MaxMessages; i++)
+            await ChatAsync(aliceHub, session.Id, alice.ParticipantId, "Alice", $"message {i}");
+        var refused = await Assert.ThrowsAsync<HubException>(() =>
+            ChatAsync(aliceHub, session.Id, alice.ParticipantId, "Alice", "one too many"));
+
+        Assert.Contains("too fast", refused.Message);
+        var texts = (await ChatHistoryAsync(alice.ParticipantToken, session.Id)).GetProperty("messages")
+            .EnumerateArray().Select(m => m.GetProperty("text").GetString()).ToList();
+        Assert.Equal(Aircane.Api.Hubs.ChatRateLimiter.MaxMessages, texts.Count);
+        Assert.DoesNotContain("one too many", texts);
+    }
+
+    [Fact]
+    public async Task ChatFromAWaitingParticipant_IsRefused_AndNeverStored()
+    {
+        var session = await StartSessionAsync();
+        var alice = await JoinApprovedAsync(session, "Alice");
+        var wanda = await JoinAsync(session, "Wanda");
+        await using var wandaHub = await JoinedAsync(wanda.ParticipantToken, session.Id, wanda.ParticipantId, "Wanda");
+
+        await Assert.ThrowsAsync<HubException>(() => ChatAsync(wandaHub, session.Id, wanda.ParticipantId, "Wanda", "let me in!"));
+
+        Assert.Empty((await ChatHistoryAsync(alice.ParticipantToken, session.Id)).GetProperty("messages").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task ADeniedOrAnotherSessionsParticipant_CannotReadTheHistoryOfATableTheyAreNotAt()
+    {
+        var a = await StartSessionAsync();
+        var b = await StartSessionAsync();
+        var aliceOfA = await JoinApprovedAsync(a, "Alice");
+        var bobOfB = await JoinApprovedAsync(b, "Bob");
+        await using var bobHub = await JoinedAsync(bobOfB.ParticipantToken, b.Id, bobOfB.ParticipantId, "Bob");
+        await ChatAsync(bobHub, b.Id, bobOfB.ParticipantId, "Bob", "table B only");
+
+        using var client = Lan(aliceOfA.ParticipantToken);
+        using var response = await client.GetAsync($"/api/sessions/{b.Id}/chat");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.DoesNotContain("table B only", await response.Content.ReadAsStringAsync());
+    }
 }

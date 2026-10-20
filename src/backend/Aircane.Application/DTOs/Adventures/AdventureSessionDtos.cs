@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using Aircane.Application.DTOs.Ai;
+using Aircane.Domain.Enums;
 
 namespace Aircane.Application.DTOs.Adventures;
 
@@ -43,11 +45,18 @@ public sealed record AdventureSessionActionRequest(string ActionText);
 /// campaign and not have ended. When omitted the campaign's most recent play session that has not ended is
 /// used, which is only right if the host has one open at a time.
 /// </param>
+/// <param name="TurnAdvance">
+/// Optional. How the turn moves on: <c>"ManualOnly"</c> (the default: the acting player says they are done, or
+/// the host passes it) or <c>"AfterEachAction"</c> (it also moves to the next player once the AI has answered the
+/// acting player's action, unless the AI is waiting for that player to report a roll). Ignored when the call
+/// resumes a run that is already going: the run keeps the setting it started with.
+/// </param>
 public sealed record StartGroupAdventureSessionRequest(
     Guid GeneratedAdventureId,
     Guid CampaignId,
     IReadOnlyList<Guid> ParticipantIds,
-    Guid? PlaySessionId = null);
+    Guid? PlaySessionId = null,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] TurnAdvanceMode? TurnAdvance = null);
 
 /// <summary>
 /// Request body for adding a participant to the end of a group run's turn order.
@@ -160,7 +169,8 @@ public sealed record AdventureSessionStateDto(
     Guid? ActiveParticipantId,
     string? ActiveParticipantName,
     int CurrentRound,
-    IReadOnlyList<ParticipantTurnDto> TurnOrder);
+    IReadOnlyList<ParticipantTurnDto> TurnOrder,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] TurnAdvanceMode TurnAdvance = TurnAdvanceMode.ManualOnly);
 
 /// <summary>
 /// What happened to one action the AI DM proposed. Names rather than enum numbers, so clients
@@ -220,7 +230,8 @@ public sealed record PlayerAdventureRunDto(
     int CurrentRound,
     IReadOnlyList<ParticipantTurnDto> TurnOrder,
     PlayerPendingRollDto? PendingRoll,
-    IReadOnlyList<PlayerNarrationEntryDto> RecentNarration);
+    IReadOnlyList<PlayerNarrationEntryDto> RecentNarration,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] TurnAdvanceMode TurnAdvance = TurnAdvanceMode.ManualOnly);
 
 /// <summary>The current scene as a Player sees it: its title and the text meant to be read to the table.</summary>
 /// <param name="Description">The read-aloud text; null when the scene has none.</param>

@@ -116,6 +116,66 @@ None of these carries an invite code or a token. `AdventureStateChanged` is a si
 `GET /api/sessions/{id}/adventure-run`, where the player-safe filtering lives. Approval is announced once: approving
 someone who is already approved sends nothing.
 
+## Passing the turn
+
+`POST /api/adventure-sessions/{runId}/advance-turn[?fromParticipantId=]` moves a group run to the next participant
+(wrapping to the first starts a new round). It clears the pending roll (it was owed by the player whose turn just
+ended), sends the existing `AdventureStateChanged` signal (reason `TurnAdvanced`) and `TurnAdvanced` to the table, and
+records who passed it: the event log entry and `TurnAdvanced.passedBy` say `Host`, `Player` or `Auto`.
+
+| Caller | Result |
+| --- | --- |
+| The host | any turn; with `fromParticipantId` only if that participant still holds it (409 otherwise). Returns the full run state |
+| The acting player (approved, not denied, `sid` and `pid` match) | their own turn only. Returns the table view (`adventure-run`) |
+| Any other player | 403 "Not your turn", naming who has it |
+| A waiting or denied participant, a token for another session | 403 (the usual refusal for that case) |
+
+**A request that arrives after the turn already moved on** never moves it again. The check ("is the turn still where
+the caller thinks it is?") and the move are made together under a lock on the run, so two requests for the same turn,
+a double click, or a player and the host at once, move it once. The late one changes nothing: a player gets 403
+"Not your turn. Waiting for <who has it now>"; a host who sent `fromParticipantId` gets 409. A host who sends no
+`fromParticipantId` passes whoever holds the turn, as before.
+
+### Optional auto-advance
+
+`POST /api/adventure-sessions/start-group` takes an optional `turnAdvance`: `"ManualOnly"` (the default: the acting
+player ends their turn, or the host passes it) or `"AfterEachAction"`. The run state and `adventure-run` report it as
+`turnAdvance`. Ignored when the call resumes a run that is already going.
+
+With `AfterEachAction`, once the AI has answered the acting player's action the turn moves to the next player
+(`passedBy: "Auto"`), except:
+
+- **The AI call failed:** nothing moved. The error goes back to the player, the turn is still theirs, and they can try again.
+- **The AI asked for a roll** (a pending roll is set): the turn stays. The player's next message reports the result on
+  the same turn, and that answer moves it on.
+- **The turn already moved** (the host passed it while the AI was answering), or the run ended (the AI completed the
+  adventure): nothing more happens.
+- The action's narration is saved by the AI step itself, best effort (a failure to save the transcript is logged and
+  does not fail the action), so the turn moves when the AI answered, not when the transcript write succeeded.
+
+## Chat history
+
+Chat is broadcast live (`ChatMessageReceived`) and also stored per play session, so late joiners and reloaded clients
+can catch up.
+
+`GET /api/sessions/{sessionId}/chat[?limit=100&before=<messageId>]` returns `{ messages, hasMore }`, oldest first. The
+default `limit` is 100 and the most is 200. Pass the id of the first message you have as `before` to page back while
+`hasMore` is true. Each message has `id`, `senderId`, `senderName`, `senderRole`, `text` and `sentAt`; the live event
+carries the same `messageId`, so a client can tell which it already has.
+
+- **Who:** the host and approved, non-denied participants of this session. A waiting participant gets 403 "Waiting for
+  approval", a denied one 403 with `code: "participant-denied"`, a token for another session 403.
+- **Who sent it:** the token's participant, display name and role; nothing in the message decides it. The host has no
+  participant record, so its messages carry the id its client chose.
+- **Nothing hidden:** there are no private or host-only messages. Every stored message is something every approved
+  participant was shown live, and the history is the same for everyone allowed in.
+- **Limits:** at most 500 characters per message; at most 10 messages per sender in 10 seconds (the hub refuses the
+  rest); waiting participants cannot send.
+- **Retention:** a session keeps its newest 1000 messages; older ones are deleted as new ones arrive, so the table is
+  bounded however long the game runs. There is no timed expiry: an ended session keeps its (at most 1000) messages, as it
+  keeps the rest of its record. Nothing deletes sessions today (deleting a campaign leaves its sessions); if one is ever
+  deleted, its chat goes with it.
+
 ## `GET /api/sessions/{sessionId}/adventure-run`
 
 The adventure in progress in a play session, as a Player may see it. Needs no run id or campaign id.
@@ -163,7 +223,8 @@ What an approved Player may do with a **group** run:
 | `GET .../available-scenes` | **403** | names and descriptions of the scenes that come next |
 | `GET /api/adventure-sessions/active?campaignId=` | **403** | run ids and outcome notes |
 | `POST .../resume`, `advance-scene`, `abandon` | **403** | the course of the game is the Host's |
-| `POST .../advance-turn`, `.../participants`, `start`, `start-group`, `GET in-progress` | **403** | Host only, as before |
+| `POST .../advance-turn` | **only the acting player, on their own turn** | see "Passing the turn" below; any other Player gets 403 |
+| `POST .../participants`, `start`, `start-group`, `GET in-progress` | **403** | Host only, as before |
 | `POST /api/sessions/{id}/ai/player-action` | seat required; 409 during a group run | when it does answer, `privateDmNote` is removed for a Player |
 
 A **solo** run has no table to protect, so its one Player keeps full access (still needing a seat).

@@ -18,6 +18,7 @@ namespace Aircane.IntegrationTests.Persistence;
 public sealed class MigrationChainTests : IAsyncLifetime
 {
     private const string GroupPlayMigration = "AddAdventureSessionGroupPlay";
+    private const string TurnAdvanceAndChatMigration = "AddTurnAdvanceModeAndChatMessages";
 
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
         .WithImage("pgvector/pgvector:pg16")
@@ -98,7 +99,12 @@ public sealed class MigrationChainTests : IAsyncLifetime
 
         // The new jsonb column must default to an empty list: an empty string is not valid JSON and
         // would make the existing run unreadable.
-        var run = await db.AdventureSessions.AsNoTracking().SingleAsync(s => s.Id == runId);
+        // Only the columns this migration added are read: the database is at this migration, not at the latest,
+        // so selecting the whole entity would ask for columns that later migrations add.
+        var run = await db.AdventureSessions.AsNoTracking()
+            .Where(s => s.Id == runId)
+            .Select(s => new { s.IsGroup, s.TurnOrder, s.ActiveParticipantId, s.CurrentRound })
+            .SingleAsync();
         Assert.False(run.IsGroup);
         Assert.Empty(run.TurnOrder);
         Assert.Null(run.ActiveParticipantId);
@@ -122,6 +128,50 @@ public sealed class MigrationChainTests : IAsyncLifetime
         Assert.Equal(
             ["ActiveParticipantId", "CurrentRound", "IsGroup", "TurnOrder"],
             await GroupPlayColumnsAsync(db));
+    }
+
+    [Fact]
+    public async Task TurnAdvanceAndChatMigration_DefaultsExistingRunsToManualOnly_AndCreatesTheChatTable()
+    {
+        await using var db = PostgresFixture.CreateContext(await CreateEmptyDatabaseAsync());
+        var migrator = db.GetService<IMigrator>();
+        var all = db.Database.GetMigrations().ToList();
+        var index = all.FindIndex(m => m.EndsWith(TurnAdvanceAndChatMigration, StringComparison.Ordinal));
+        Assert.True(index > 0, $"Migration {TurnAdvanceAndChatMigration} was not found in the chain.");
+
+        await migrator.MigrateAsync(all[index - 1]);
+
+        // A group run that exists before the setting does. Foreign keys are skipped (superuser connection).
+        var runId = Guid.NewGuid();
+        await db.Database.OpenConnectionAsync();
+        await db.Database.ExecuteSqlRawAsync("SET session_replication_role = replica");
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "AdventureSessions"
+                ("Id", "GeneratedAdventureId", "CampaignId", "CurrentSceneId", "Status", "StartedAt", "LastActivityAt",
+                 "CompletedSceneIds", "NpcStates", "RevealedClueIds", "RevealedSecretIds", "EncounterOutcomes",
+                 "IsGroup", "TurnOrder", "CurrentRound")
+            VALUES
+                ({runId}, {Guid.NewGuid()}, {Guid.NewGuid()}, 'scene-1', 1, now(), now(),
+                 '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
+                 true, '[]'::jsonb, 1)
+            """);
+
+        await migrator.MigrateAsync(all[index]);
+
+        // Existing runs keep today's behaviour: the turn moves only when a player or the host says so.
+        var mode = await db.AdventureSessions.AsNoTracking().Where(s => s.Id == runId).Select(s => s.TurnAdvance).SingleAsync();
+        Assert.Equal(Aircane.Domain.Enums.TurnAdvanceMode.ManualOnly, mode);
+
+        // And the chat table takes a message and pages it back.
+        var sessionId = Guid.NewGuid();
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "ChatMessages" ("Id", "SessionId", "SenderId", "SenderName", "SenderRole", "Text", "CreatedAt")
+            VALUES ({Guid.NewGuid()}, {sessionId}, {Guid.NewGuid()}, 'Alice', 2, 'hello', now())
+            """);
+        Assert.Equal(1, await db.ChatMessages.AsNoTracking().CountAsync(m => m.SessionId == sessionId));
+
+        await migrator.MigrateAsync(all[index - 1]);   // runs Down()
+        await migrator.MigrateAsync(all[index]);       // and applies cleanly again
     }
 
     private static Task<List<string>> GroupPlayColumnsAsync(AircaneDbContext db) =>

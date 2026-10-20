@@ -118,6 +118,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
         Guid campaignId,
         IReadOnlyList<Guid> participantIds,
         Guid? playSessionId = null,
+        TurnAdvanceMode turnAdvance = TurnAdvanceMode.ManualOnly,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(participantIds);
@@ -169,6 +170,7 @@ public sealed class AdventureSessionService : IAdventureSessionService
         session.TurnOrder = participantIds.ToList();
         session.ActiveParticipantId = participantIds[0];
         session.CurrentRound = 1;
+        session.TurnAdvance = turnAdvance;
 
         _db.AdventureSessions.Add(session);
         await _db.SaveChangesAsync(ct);
@@ -221,11 +223,47 @@ public sealed class AdventureSessionService : IAdventureSessionService
     }
 
     /// <inheritdoc />
-    public async Task<AdventureSession> AdvanceTurnAsync(Guid sessionId, CancellationToken ct = default)
+    public Task<AdventureSession> AdvanceTurnAsync(Guid sessionId, CancellationToken ct = default)
+        => PassTurnAsync(sessionId, new TurnPass(TurnPassedBy.Host), ct);
+
+    /// <summary>One lock per run: two requests to pass the same turn are handled one after the other.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> TurnLocks = new();
+
+    /// <inheritdoc />
+    public async Task<AdventureSession> PassTurnAsync(Guid sessionId, TurnPass pass, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(pass);
+
+        // The check ("is the turn still where the caller thinks?") and the move must not interleave with
+        // another request's. Requests run in separate scopes and contexts, so the lock is static; this app is a
+        // single process (the hub's connection registry is too). A second request waits, then sees the new state.
+        var gate = TurnLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            return await PassTurnLockedAsync(sessionId, pass, ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<AdventureSession> PassTurnLockedAsync(Guid sessionId, TurnPass pass, CancellationToken ct)
     {
         var session = await LoadTrackedAsync(sessionId, ct);
+        // The context may already hold this run from earlier in the request: read it again, under the lock.
+        await _db.Entry(session).ReloadAsync(ct);
         RequireInProgress(session);
         RequireGroup(session);
+
+        if (pass.ExpectedActiveParticipantId is { } expected && session.ActiveParticipantId != expected)
+        {
+            var nowNames = await LoadParticipantNamesAsync(session, ct);
+            throw new TurnAlreadyMovedException(
+                session.ActiveParticipantId,
+                session.ActiveParticipantId is { } nowId ? NameOf(nowNames, nowId) : null);
+        }
 
         var previousId = session.ActiveParticipantId;
         var previousIndex = previousId is { } p ? session.TurnOrder.IndexOf(p) : -1;
@@ -248,20 +286,59 @@ public sealed class AdventureSessionService : IAdventureSessionService
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "Adventure session {AdventureSessionId} turn passed from {Previous} to {Next} (round {Round})",
-            sessionId, previousId, nextId, session.CurrentRound);
+            "Adventure session {AdventureSessionId} turn passed from {Previous} to {Next} (round {Round}) by {PassedBy} {PassedByParticipant}",
+            sessionId, previousId, nextId, session.CurrentRound, pass.By, pass.PassedByParticipantId);
 
+        // Who ended the turn is recorded with the event: the host, the acting player (their participant id),
+        // or the run itself (auto-advance).
         await AppendEventAsync(session, "Adventure:TurnAdvanced",
-            new { adventureSessionId = sessionId, from = previousId, to = nextId, round = session.CurrentRound }, ct);
+            new
+            {
+                adventureSessionId = sessionId,
+                from = previousId,
+                to = nextId,
+                round = session.CurrentRound,
+                passedBy = pass.By.ToString(),
+                passedByParticipantId = pass.PassedByParticipantId,
+            }, ct);
 
         var names = await LoadParticipantNamesAsync(session, ct);
         await NotifyAsync(session, hub => hub.NotifyTurnAdvancedAsync(
             session.SessionId!.Value,
-            new TurnAdvancedNotification(sessionId, previousId, nextId, NameOf(names, nextId), session.CurrentRound),
+            new TurnAdvancedNotification(sessionId, previousId, nextId, NameOf(names, nextId), session.CurrentRound, pass.By.ToString()),
             ct));
         await NotifyStateChangedAsync(session.SessionId, sessionId, "TurnAdvanced", ct);
 
         return session;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> AutoAdvanceAfterActionAsync(Guid sessionId, Guid actingParticipantId, CancellationToken ct = default)
+    {
+        // A fresh read: the run may have changed while the AI was answering.
+        var run = await _db.AdventureSessions.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+        if (run is null || !run.IsGroup || run.Status != AdventureSessionStatus.InProgress
+            || run.TurnAdvance != TurnAdvanceMode.AfterEachAction)
+            return false;
+
+        // The AI asked this player for a roll: their next message reports it, on the same turn. Passing now
+        // would drop the roll (and hand the next player a result that is not theirs).
+        if (!string.IsNullOrWhiteSpace(run.PendingRollLabel))
+            return false;
+
+        try
+        {
+            await PassTurnAsync(sessionId, new TurnPass(TurnPassedBy.Auto, ExpectedActiveParticipantId: actingParticipantId), ct);
+            return true;
+        }
+        catch (TurnAlreadyMovedException)
+        {
+            return false;   // the host passed it while the AI was answering: nothing more to do
+        }
+        catch (InvalidOperationException)
+        {
+            return false;   // the run ended in the meantime (the AI completed the adventure)
+        }
     }
 
     /// <inheritdoc />
@@ -373,7 +450,8 @@ public sealed class AdventureSessionService : IAdventureSessionService
             PendingRoll: pending,
             RecentNarration: latest
                 .Select(e => new PlayerNarrationEntryDto(e.EntryType.ToString(), e.Content, e.CreatedAt))
-                .ToList());
+                .ToList(),
+            TurnAdvance: session.TurnAdvance);
     }
 
     private static string? NullIfBlank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
@@ -1110,7 +1188,8 @@ public sealed class AdventureSessionService : IAdventureSessionService
             ActiveParticipantId: session.ActiveParticipantId,
             ActiveParticipantName: session.ActiveParticipantId is { } activeId ? NameOf(participantNames, activeId) : null,
             CurrentRound: session.CurrentRound,
-            TurnOrder: BuildTurnOrder(session, participantNames));
+            TurnOrder: BuildTurnOrder(session, participantNames),
+            TurnAdvance: session.TurnAdvance);
     }
 
     private static List<ParticipantTurnDto> BuildTurnOrder(

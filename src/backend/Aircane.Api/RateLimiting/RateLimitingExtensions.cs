@@ -81,6 +81,29 @@ public static class RateLimitingExtensions
                     });
             });
 
+            // ── rejoin: fixed-window per IP, ALWAYS ON ────────────────────────────
+            // The anonymous rejoin endpoints take a secret, so they are throttled on the LAN too. The limits are
+            // read per request from the registered settings (tests replace them).
+            options.AddPolicy(RateLimitingSettings.RejoinPolicy, httpContext =>
+            {
+                var rejoin = (httpContext.RequestServices.GetService<RateLimitingSettings>() ?? settings).Rejoin;
+                // On the LAN the forwarding headers are the client's own words: key on the socket address, so a
+                // client cannot pick a fresh partition per request. Behind the tunnel the socket is cloudflared.
+                var tunnel = httpContext.RequestServices.GetRequiredService<ITunnelStateService>();
+                var key = tunnel.IsInternetModeActive
+                    ? GetClientIp(httpContext)
+                    : httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: key,
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = rejoin.PermitLimit,
+                        Window = TimeSpan.FromSeconds(rejoin.WindowSeconds),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = rejoin.QueueLimit,
+                    });
+            });
+
             // ── api: sliding-window per IP ────────────────────────────────────────
             // Also registered as a named policy so it can be referenced explicitly, but it
             // is applied to "all other endpoints" via the global limiter below.

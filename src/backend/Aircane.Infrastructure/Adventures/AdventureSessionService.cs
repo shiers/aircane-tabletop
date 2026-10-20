@@ -226,18 +226,14 @@ public sealed class AdventureSessionService : IAdventureSessionService
     public Task<AdventureSession> AdvanceTurnAsync(Guid sessionId, CancellationToken ct = default)
         => PassTurnAsync(sessionId, new TurnPass(TurnPassedBy.Host), ct);
 
-    /// <summary>One lock per run: two requests to pass the same turn are handled one after the other.</summary>
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> TurnLocks = new();
-
     /// <inheritdoc />
     public async Task<AdventureSession> PassTurnAsync(Guid sessionId, TurnPass pass, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(pass);
 
         // The check ("is the turn still where the caller thinks?") and the move must not interleave with
-        // another request's. Requests run in separate scopes and contexts, so the lock is static; this app is a
-        // single process (the hub's connection registry is too). A second request waits, then sees the new state.
-        var gate = TurnLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+        // another request's (see AdventureTurnLocks). A second request waits, then sees the new state.
+        var gate = AdventureTurnLocks.For(sessionId);
         await gate.WaitAsync(ct);
         try
         {

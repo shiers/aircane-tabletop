@@ -21,8 +21,8 @@ namespace Aircane.Api.Controllers;
 /// <para>
 /// The session scope is on the class (<see cref="AuthorizationPolicies.SessionMember"/>), which every
 /// player action needs too: a token is good for its own session only, held by an approved participant.
-/// Reconnect also takes a participant still waiting (it is how they learn their status); join and
-/// join-info are anonymous.
+/// Reconnect also takes a participant still waiting (it is how they learn their status); join, join-info,
+/// rejoin and rejoin-status are anonymous.
 /// </para>
 /// </summary>
 [ApiController]
@@ -134,7 +134,8 @@ public sealed class SessionsController : ControllerBase
             var request = new JoinSessionRequest(
                 SessionId: id,
                 DisplayName: body.DisplayName.Trim(),
-                InviteCode: body.InviteCode.Trim());
+                InviteCode: body.InviteCode.Trim(),
+                RejoinSecret: body.RejoinSecret);
 
             var result = await _sessions.JoinSessionAsync(request, cancellationToken);
             return Ok(result);
@@ -142,6 +143,24 @@ public sealed class SessionsController : ControllerBase
         catch (KeyNotFoundException)
         {
             return NotFound();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation failed",
+                Detail = ex.Message,
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+        catch (RejoinSecretInUseException ex)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Already in this session",
+                Detail = ex.Message,
+                Status = StatusCodes.Status409Conflict,
+            });
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -162,6 +181,65 @@ public sealed class SessionsController : ControllerBase
             });
         }
     }
+
+    /// <summary>
+    /// Takes a seat back with the rejoin secret this browser sent when it joined (anonymous, rate limited in
+    /// every mode). For a participant with a seat, approved or still waiting, it returns that same participant
+    /// (approval, character and turn position unchanged; no new join request) and a fresh token; the previous
+    /// token is revoked. A participant the host declined gets the usual refusal (403, code
+    /// <c>participant-denied</c>) and no token. An unknown or malformed secret, an ended session and a session
+    /// that does not exist all get the same 404, so the response says nothing about which. The secret is never
+    /// logged or returned.
+    /// </summary>
+    [HttpPost("api/sessions/{id:guid}/rejoin")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimitingSettings.RejoinPolicy)]
+    [ProducesResponseType(typeof(RejoinSessionResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Rejoin(
+        Guid id,
+        [FromBody] RejoinBody? body,
+        CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var attempt = await _sessions.RejoinAsync(id, body?.Secret, cancellationToken);
+        return attempt.Outcome switch
+        {
+            RejoinOutcome.Found => Ok(attempt.Result),
+            RejoinOutcome.Denied => PlayerSeat.Refusal(SeatStatus.Denied),
+            _ => NoSeatToReturnTo(),
+        };
+    }
+
+    /// <summary>
+    /// What <see cref="Rejoin"/> would give back, without logging anyone in: the session's name, the
+    /// participant's display name and status (<c>approved</c>, <c>pending</c> or <c>denied</c>). No token is
+    /// minted. Same access, rate limit and 404 as rejoin.
+    /// </summary>
+    [HttpPost("api/sessions/{id:guid}/rejoin-status")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimitingSettings.RejoinPolicy)]
+    [ProducesResponseType(typeof(RejoinStatusResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetRejoinStatus(
+        Guid id,
+        [FromBody] RejoinBody? body,
+        CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var attempt = await _sessions.GetRejoinStatusAsync(id, body?.Secret, cancellationToken);
+        return attempt.Outcome == RejoinOutcome.NotFound ? NoSeatToReturnTo() : Ok(attempt.Result);
+    }
+
+    /// <summary>The one answer for every rejoin that finds nothing, whatever the reason.</summary>
+    private ObjectResult NoSeatToReturnTo() => new(new ProblemDetails
+    {
+        Title = "No place to return to",
+        Detail = "This browser has no place in that session. It may have ended. Join with the invite code.",
+        Status = StatusCodes.Status404NotFound,
+    })
+    { StatusCode = StatusCodes.Status404NotFound };
 
     /// <summary>
     /// What the join page needs before the player has a token: the session's name and whether it can
@@ -332,7 +410,7 @@ public sealed class SessionsController : ControllerBase
             .Select(p => p.IsApproved
                 ? p
                 : new ParticipantDto(p.Id, p.SessionId, p.DisplayName, p.Role, CharacterId: null, IsApproved: false,
-                    JoinedAt: default, LastSeenAt: default))
+                    JoinedAt: default, LastSeenAt: default))   // no same-name flag: that is for the host
             .ToList());
     }
 
@@ -423,6 +501,57 @@ public sealed class SessionsController : ControllerBase
             return Conflict(new ProblemDetails
             {
                 Title = "Cannot deny",
+                Detail = ex.Message,
+                Status = StatusCodes.Status409Conflict,
+            });
+        }
+    }
+
+    /// <summary>
+    /// Gives an approved participant's seat to a waiting join request, typically the same person on a new
+    /// device or tab (Host only). The new participant is approved and takes the old one's character and place
+    /// in the turn order, and the turn if the old one held it (a pending roll is then cleared). The old
+    /// participant leaves the roster, its token and rejoin secret are revoked and its connections closed. The
+    /// group hears <c>ParticipantApproved</c>, <c>ParticipantLeft</c> and, per adventure run whose turn order
+    /// changed, <c>AdventureStateChanged</c>. 409 when the new participant is already approved or was denied, or
+    /// the old one has no seat to give.
+    /// </summary>
+    [HttpPost("api/sessions/{id:guid}/replace-participant")]
+    [Authorize(Policy = AuthorizationPolicies.HostOnly)]
+    [EnableRateLimiting(RateLimitingSettings.JoinPolicy)]
+    [ProducesResponseType(typeof(ReplaceParticipantResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ReplaceParticipant(
+        Guid id,
+        [FromBody] ReplaceParticipantBody body,
+        CancellationToken cancellationToken)
+    {
+        if (body is null || body.OldParticipantId == Guid.Empty || body.NewParticipantId == Guid.Empty)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation failed",
+                Detail = "OldParticipantId and NewParticipantId are required.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+
+        try
+        {
+            var result = await _sessions.ReplaceParticipantAsync(id, body.OldParticipantId, body.NewParticipantId, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Cannot replace",
                 Detail = ex.Message,
                 Status = StatusCodes.Status409Conflict,
             });
@@ -616,7 +745,17 @@ public sealed record EndSessionBody(
 /// </summary>
 public sealed record JoinSessionBody(
     string DisplayName,
-    string InviteCode);
+    string InviteCode,
+    string? RejoinSecret = null);
+
+/// <summary>Request body for the rejoin endpoints: the browser's rejoin secret.</summary>
+public sealed record RejoinBody(
+    string? Secret);
+
+/// <summary>Request body for giving an approved participant's seat to a waiting join request.</summary>
+public sealed record ReplaceParticipantBody(
+    Guid OldParticipantId,
+    Guid NewParticipantId);
 
 /// <summary>
 /// Request body for approving a pending participant.

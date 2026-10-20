@@ -113,6 +113,8 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.IsApproved).IsRequired();
             entity.Property(e => e.TokenId).HasMaxLength(100).IsRequired(false);
             entity.Property(e => e.TokenExpiresAt).IsRequired(false);
+            entity.Property(e => e.RejoinSecretHash).HasMaxLength(64).IsRequired(false);
+            entity.Property(e => e.ReplacedByParticipantId).IsRequired(false);
             entity.Property(e => e.CreatedAt).IsRequired();
 
             entity.HasIndex(e => e.SessionId).HasDatabaseName("IX_SessionParticipants_SessionId");

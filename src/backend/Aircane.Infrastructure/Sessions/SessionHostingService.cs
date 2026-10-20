@@ -4,6 +4,7 @@ using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Sessions;
 using Aircane.Domain.Entities;
 using Aircane.Domain.Enums;
+using Aircane.Infrastructure.Adventures;
 using Aircane.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -122,11 +123,11 @@ public sealed class SessionHostingService : ISessionHostingService
     {
         var participants = await _db.SessionParticipants
             .AsNoTracking()
-            .Where(p => p.SessionId == sessionId && !p.IsDenied)
+            .Where(p => p.SessionId == sessionId && !p.IsDenied && p.ReplacedByParticipantId == null)
             .OrderBy(p => p.JoinedAt)
             .ToListAsync(cancellationToken);
 
-        return participants.Select(ToParticipantDto).ToList();
+        return participants.Select(p => ToParticipantDto(p, SameNameAs(p, participants))).ToList();
     }
 
     /// <inheritdoc />
@@ -135,6 +136,14 @@ public sealed class SessionHostingService : ISessionHostingService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // The secret is optional; one that is sent must be usable, or the browser would believe it can come back.
+        string? secretHash = null;
+        if (request.RejoinSecret is not null)
+        {
+            secretHash = RejoinSecret.TryHash(request.RejoinSecret)
+                ?? throw new ArgumentException("The rejoin secret must be base64url text of at least 128 random bits.");
+        }
 
         var session = await _db.Sessions
             .FirstOrDefaultAsync(s => s.Id == request.SessionId, cancellationToken)
@@ -147,13 +156,30 @@ public sealed class SessionHostingService : ISessionHostingService
         if (!string.Equals(session.InviteCodeHash, expectedHash, StringComparison.Ordinal))
             throw new UnauthorizedAccessException("Invalid invite code.");
 
+        // Everyone already here: to keep a secret to one seat, and to tell the host about a repeated name.
+        var present = await _db.SessionParticipants
+            .Where(p => p.SessionId == request.SessionId && p.ReplacedByParticipantId == null)
+            .ToListAsync(cancellationToken);
+
+        if (secretHash is not null && MatchSecret(present, secretHash) is { } holder)
+        {
+            // A seat this browser already has is taken back with rejoin, never by joining again. A declined
+            // request's secret is only kept to say so; it moves to this new request.
+            if (!holder.IsDenied)
+                throw new RejoinSecretInUseException();
+            holder.RejoinSecretHash = null;
+        }
+
         // The host asked to approve each joiner (the default), or let anyone with the code straight in.
         var autoApproved = !session.RequireHostApproval;
         var participant = new SessionParticipant(
             sessionId: request.SessionId,
             displayName: request.DisplayName,
             role: ParticipantRole.Player,
-            isApproved: autoApproved);
+            isApproved: autoApproved)
+        {
+            RejoinSecretHash = secretHash,
+        };
 
         _db.SessionParticipants.Add(participant);
         await _db.SaveChangesAsync(cancellationToken);
@@ -174,9 +200,10 @@ public sealed class SessionHostingService : ISessionHostingService
             "Participant joined session {SessionId}: {DisplayName} ({ParticipantId}), approved: {IsApproved}",
             request.SessionId, request.DisplayName, participant.Id, participant.IsApproved);
 
-        // Tell the host (and the table) someone joined; the roster DTO carries no token or invite code.
+        // Tell the host (and the table) someone joined; the roster DTO carries no token, invite code or secret.
+        var others = present.Where(p => !p.IsDenied).Append(participant).ToList();
         await NotifyAsync(hub => hub.NotifyParticipantJoinedAsync(
-            request.SessionId, ToParticipantDto(participant), cancellationToken));
+            request.SessionId, ToParticipantDto(participant, SameNameAs(participant, others)), cancellationToken));
         if (autoApproved)
         {
             await NotifyAsync(hub => hub.NotifyParticipantApprovedAsync(
@@ -279,6 +306,204 @@ public sealed class SessionHostingService : ISessionHostingService
     }
 
     /// <inheritdoc />
+    public async Task<RejoinAttempt> RejoinAsync(
+        Guid sessionId,
+        string? secret,
+        CancellationToken cancellationToken = default)
+    {
+        var (session, participant) = await FindBySecretAsync(sessionId, secret, cancellationToken);
+        if (session is null || participant is null)
+            return RejoinAttempt.NotFound;
+        if (participant.IsDenied)
+            return RejoinAttempt.Denied;
+
+        // A fresh token, and the one it replaces stops working: a seat has one live login.
+        var previousTokenId = participant.TokenId;
+        var previousExpiry = participant.TokenExpiresAt;
+        var issued = _tokenService.IssueToken(
+            sessionId: sessionId,
+            participantId: participant.Id,
+            displayName: participant.DisplayName,
+            role: participant.Role.ToString());
+
+        participant.TokenId = issued.TokenId;
+        participant.TokenExpiresAt = issued.ExpiresAt;
+        participant.LastSeenAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(previousTokenId))
+        {
+            await _tokenRevocation.RevokeTokensAsync(
+                [new RevokedTokenRecord(previousTokenId, sessionId, previousExpiry ?? DateTimeOffset.UtcNow.AddDays(7))],
+                cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "Participant {ParticipantId} took their seat in session {SessionId} back (approved: {IsApproved}); the previous token was revoked",
+            participant.Id, sessionId, participant.IsApproved);
+
+        return new RejoinAttempt(RejoinOutcome.Found, new RejoinSessionResult(
+            ParticipantId: participant.Id,
+            DisplayName: participant.DisplayName,
+            Role: participant.Role,
+            IsApproved: participant.IsApproved,
+            Status: participant.IsApproved ? RejoinStatus.Approved : RejoinStatus.Pending,
+            CharacterId: participant.CharacterId,
+            SessionName: session.Name,
+            ParticipantToken: issued.Token));
+    }
+
+    /// <inheritdoc />
+    public async Task<RejoinStatusAttempt> GetRejoinStatusAsync(
+        Guid sessionId,
+        string? secret,
+        CancellationToken cancellationToken = default)
+    {
+        var (session, participant) = await FindBySecretAsync(sessionId, secret, cancellationToken);
+        if (session is null || participant is null)
+            return RejoinStatusAttempt.NotFound;
+
+        var status = participant.IsDenied ? RejoinStatus.Denied
+            : participant.IsApproved ? RejoinStatus.Approved
+            : RejoinStatus.Pending;
+        return new RejoinStatusAttempt(
+            participant.IsDenied ? RejoinOutcome.Denied : RejoinOutcome.Found,
+            new RejoinStatusResult(session.Name, participant.DisplayName, status));
+    }
+
+    /// <inheritdoc />
+    public async Task<ReplaceParticipantResult> ReplaceParticipantAsync(
+        Guid sessionId,
+        Guid oldParticipantId,
+        Guid newParticipantId,
+        CancellationToken cancellationToken = default)
+    {
+        if (oldParticipantId == newParticipantId)
+            throw new InvalidOperationException("A participant cannot take over its own seat.");
+
+        var session = await _db.Sessions.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Session '{sessionId}' not found.");
+        if (session.Status == SessionStatus.Ended)
+            throw new InvalidOperationException("This session has ended.");
+
+        // The runs whose turn order may name the old participant. Their turn locks are held while the order is
+        // rewritten, so a turn cannot pass to (or from) the old participant half way through.
+        var runIds = await _db.AdventureSessions.AsNoTracking()
+            .Where(r => r.SessionId == sessionId && r.IsGroup && r.Status == AdventureSessionStatus.InProgress)
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+        runIds.Sort();
+
+        var held = new List<SemaphoreSlim>();
+        SessionParticipant oldSeat;
+        SessionParticipant newSeat;
+        var changedRuns = new List<Guid>();
+        var tookTheTurn = false;
+        try
+        {
+            foreach (var runId in runIds)
+            {
+                var gate = AdventureTurnLocks.For(runId);
+                await gate.WaitAsync(cancellationToken);
+                held.Add(gate);
+            }
+
+            var pair = await _db.SessionParticipants
+                .Where(p => p.SessionId == sessionId && (p.Id == oldParticipantId || p.Id == newParticipantId))
+                .ToListAsync(cancellationToken);
+            oldSeat = pair.FirstOrDefault(p => p.Id == oldParticipantId)
+                ?? throw new KeyNotFoundException($"Participant '{oldParticipantId}' not found in session '{sessionId}'.");
+            newSeat = pair.FirstOrDefault(p => p.Id == newParticipantId)
+                ?? throw new KeyNotFoundException($"Participant '{newParticipantId}' not found in session '{sessionId}'.");
+            foreach (var participant in pair)
+                await _db.Entry(participant).ReloadAsync(cancellationToken);
+
+            if (newSeat.IsDenied)
+                throw new InvalidOperationException("That join request was denied, so it cannot take over a seat. The person has to join again.");
+            if (newSeat.IsApproved)
+                throw new InvalidOperationException("That participant is already approved. Only a waiting join request can take over a seat.");
+            if (newSeat.ReplacedByParticipantId is not null)
+                throw new InvalidOperationException("That join request has already been replaced.");
+            if (oldSeat.IsDenied || oldSeat.ReplacedByParticipantId is not null || !oldSeat.IsApproved)
+                throw new InvalidOperationException("Only the seat of an approved participant can be replaced.");
+
+            // The seat: approval and character move to the new participant.
+            newSeat.IsApproved = true;
+            if (oldSeat.CharacterId is { } characterId)
+            {
+                newSeat.CharacterId = characterId;
+                oldSeat.CharacterId = null;
+            }
+            oldSeat.IsApproved = false;
+            oldSeat.ReplacedByParticipantId = newSeat.Id;
+            oldSeat.RejoinSecretHash = null;
+
+            // The turn order: the new participant takes the old one's place, and the turn if the old one had it.
+            var runs = await _db.AdventureSessions
+                .Where(r => runIds.Contains(r.Id))
+                .ToListAsync(cancellationToken);
+            foreach (var run in runs)
+            {
+                await _db.Entry(run).ReloadAsync(cancellationToken);
+                if (!run.TurnOrder.Contains(oldParticipantId))
+                    continue;
+
+                run.TurnOrder = run.TurnOrder.Select(id => id == oldParticipantId ? newParticipantId : id).ToList();
+                if (run.ActiveParticipantId == oldParticipantId)
+                {
+                    run.ActiveParticipantId = newParticipantId;
+                    // A pending roll was asked of the old connection: dropped, as when a turn passes (#44).
+                    // The AI asks again if it still needs it.
+                    run.PendingRollLabel = null;
+                    run.PendingRollDC = null;
+                    tookTheTurn = true;
+                }
+                run.LastActivityAt = DateTimeOffset.UtcNow;
+                changedRuns.Add(run.Id);
+            }
+
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            foreach (var gate in held)
+                gate.Release();
+        }
+
+        // The old participant's login stops working.
+        if (!string.IsNullOrWhiteSpace(oldSeat.TokenId))
+        {
+            await _tokenRevocation.RevokeTokensAsync(
+                [new RevokedTokenRecord(oldSeat.TokenId, sessionId, oldSeat.TokenExpiresAt ?? DateTimeOffset.UtcNow.AddDays(7))],
+                cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "Participant {NewParticipantId} took over the seat of {OldParticipantId} in session {SessionId} (runs: {RunCount}, took the turn: {TookTheTurn})",
+            newSeat.Id, oldSeat.Id, sessionId, changedRuns.Count, tookTheTurn);
+
+        // The existing events: the new participant is approved (into the table's group first, so the approval
+        // reaches them there), the old one left (and its connections are closed), and each run changed.
+        await ChangeMembershipAsync(m => m.AdmitParticipantAsync(sessionId, newSeat.Id, cancellationToken));
+        await NotifyAsync(hub => hub.NotifyParticipantApprovedAsync(
+            sessionId,
+            new ParticipantApprovedNotification(sessionId, newSeat.Id, newSeat.DisplayName, AutoApproved: false),
+            cancellationToken));
+        await NotifyAsync(hub => hub.NotifyParticipantLeftAsync(sessionId, oldSeat.Id, oldSeat.DisplayName, cancellationToken));
+        await ChangeMembershipAsync(m => m.RemoveParticipantAsync(sessionId, oldSeat.Id, cancellationToken));
+        foreach (var runId in changedRuns)
+        {
+            await NotifyAsync(hub => hub.NotifyAdventureStateChangedAsync(
+                sessionId,
+                new AdventureStateChangedNotification(runId, "ParticipantReplaced", DateTimeOffset.UtcNow),
+                cancellationToken));
+        }
+
+        return new ReplaceParticipantResult(ToParticipantDto(newSeat), oldSeat.Id, changedRuns, tookTheTurn);
+    }
+
+    /// <inheritdoc />
     public async Task<ParticipantDto> AssignCharacterAsync(
         Guid sessionId,
         Guid participantId,
@@ -315,6 +540,13 @@ public sealed class SessionHostingService : ISessionHostingService
         session.Status = SessionStatus.Ended;
         session.EndedAt = DateTimeOffset.UtcNow;
         session.Summary = summary;
+
+        // No way back into an ended session: its rejoin secrets go with it.
+        var withSecrets = await _db.SessionParticipants
+            .Where(p => p.SessionId == sessionId && p.RejoinSecretHash != null)
+            .ToListAsync(cancellationToken);
+        foreach (var participant in withSecrets)
+            participant.RejoinSecretHash = null;
 
         await _db.SaveChangesAsync(cancellationToken);
 
@@ -394,6 +626,62 @@ public sealed class SessionHostingService : ISessionHostingService
             RestoredAiAuthority: campaign.AiAuthority);
     }
 
+    // ── Rejoin and same-name helpers ──────────────────────────────────────────
+
+    /// <summary>
+    /// The session and the participant holding this rejoin secret, or nulls when there is nothing to give back
+    /// (a malformed or unknown secret, an ended session, no such session). A replaced participant has no seat.
+    /// </summary>
+    private async Task<(Session? Session, SessionParticipant? Participant)> FindBySecretAsync(
+        Guid sessionId, string? secret, CancellationToken cancellationToken)
+    {
+        var hash = RejoinSecret.TryHash(secret);
+        if (hash is null)
+            return (null, null);
+
+        var session = await _db.Sessions.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
+        if (session is null || session.Status == SessionStatus.Ended)
+            return (null, null);
+
+        var holders = await _db.SessionParticipants
+            .Where(p => p.SessionId == sessionId && p.RejoinSecretHash != null && p.ReplacedByParticipantId == null)
+            .ToListAsync(cancellationToken);
+        return (session, MatchSecret(holders, hash));
+    }
+
+    /// <summary>The participant whose stored hash equals <paramref name="hash"/>. Every row is compared in constant time.</summary>
+    private static SessionParticipant? MatchSecret(IEnumerable<SessionParticipant> participants, string hash)
+    {
+        SessionParticipant? match = null;
+        foreach (var participant in participants)
+        {
+            if (RejoinSecret.Matches(participant.RejoinSecretHash, hash) && match is null)
+                match = participant;
+        }
+        return match;
+    }
+
+    /// <summary>
+    /// For a pending request, the participant already in the session under the same display name (ignoring case
+    /// and surrounding spaces): an approved one first, else the earliest earlier request. Null otherwise.
+    /// </summary>
+    private static Guid? SameNameAs(SessionParticipant participant, IReadOnlyList<SessionParticipant> present)
+    {
+        if (participant.IsApproved || participant.IsDenied)
+            return null;
+
+        var name = participant.DisplayName.Trim();
+        return present
+            .Where(p => p.Id != participant.Id && !p.IsDenied && p.ReplacedByParticipantId == null
+                        && string.Equals(p.DisplayName.Trim(), name, StringComparison.OrdinalIgnoreCase)
+                        && (p.IsApproved || p.JoinedAt < participant.JoinedAt))
+            .OrderByDescending(p => p.IsApproved)
+            .ThenBy(p => p.JoinedAt)
+            .Select(p => (Guid?)p.Id)
+            .FirstOrDefault();
+    }
+
     // ── Invite Code Helpers ───────────────────────────────────────────────────
 
     /// <summary>
@@ -443,7 +731,9 @@ public sealed class SessionHostingService : ISessionHostingService
             InviteCode: inviteCode,
             JoinUrl: joinUrl);
 
-    private static ParticipantDto ToParticipantDto(SessionParticipant p) => new(
+    private static ParticipantDto ToParticipantDto(SessionParticipant p) => ToParticipantDto(p, sameNameAs: null);
+
+    private static ParticipantDto ToParticipantDto(SessionParticipant p, Guid? sameNameAs) => new(
         Id: p.Id,
         SessionId: p.SessionId,
         DisplayName: p.DisplayName,
@@ -452,7 +742,9 @@ public sealed class SessionHostingService : ISessionHostingService
         IsApproved: p.IsApproved,
         JoinedAt: p.JoinedAt,
         LastSeenAt: p.LastSeenAt,
-        IsDenied: p.IsDenied);
+        IsDenied: p.IsDenied,
+        SameNameAsParticipantId: sameNameAs,
+        IsReplaced: p.ReplacedByParticipantId is not null);
 
     /// <summary>Applies a host decision to open hub connections. Best effort, like <see cref="NotifyAsync"/>.</summary>
     private async Task ChangeMembershipAsync(Func<ISessionHubMembership, Task> change)

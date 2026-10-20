@@ -28,10 +28,12 @@ vi.mock('@microsoft/signalr', () => ({
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  listUnassignedAdventures: vi.fn(),
+  listAllAdventures: vi.fn(),
   assignAdventureToCampaign: vi.fn(),
   approveAdventure: vi.fn(),
   deleteAdventure: vi.fn(),
+  getAdventureDeleteImpact: vi.fn(),
+  unassignAdventure: vi.fn(),
   generateAdventure: vi.fn(),
 }))
 
@@ -70,7 +72,7 @@ const Stub = defineComponent({ render: () => h('div') })
 const Host = defineComponent({ render: () => h('div', [h(RouterView), h(GenerationToast)]) })
 
 async function mountPage(unassigned: CampaignAdventure[]) {
-  vi.mocked(api.listUnassignedAdventures).mockResolvedValue(unassigned)
+  vi.mocked(api.listAllAdventures).mockResolvedValue(unassigned)
   const pinia = createPinia()
   setActivePinia(pinia)
   const campaigns = useCampaignStore(pinia)
@@ -114,9 +116,9 @@ describe('Adventure Forge: unassigned adventures', () => {
   it('AdventureForge_ShowsUnassignedAdventures_OnLoad', async () => {
     const { wrapper } = await mountPage([adventure(), DRAFT()])
 
-    expect(api.listUnassignedAdventures).toHaveBeenCalledTimes(1)
+    expect(api.listAllAdventures).toHaveBeenCalledTimes(1)
     expect(wrapper.find('h1').text()).toBe('Adventure Forge')
-    expect(wrapper.find('#unassigned-heading').text()).toBe('Unassigned Adventures')
+    expect(wrapper.find('#adventures-heading').text()).toBe('Your Adventures')
     expect(cards(wrapper)).toHaveLength(2)
     expect(cards(wrapper)[0].find('[data-testid="adventure-title"]').text()).toBe('✦ The Last Light of the First Dawn')
     expect(cards(wrapper)[0].find('[data-testid="adventure-meta"]').text()).toBe('D&D 5e 2014 · Solo · One-shot · Level 1')
@@ -127,19 +129,19 @@ describe('Adventure Forge: unassigned adventures', () => {
     const [approved, draft] = cards(wrapper)
 
     expect(approved.find('[data-testid="adventure-status"]').text()).toBe('Approved')
-    expect(buttons(approved)).toEqual(['Assign to Campaign', 'Review', '▶ Play Solo', 'Delete'])
+    expect(buttons(approved)).toEqual(['Assign to Campaign', 'Review', '▶ Play Solo', '🗑 Delete adventure'])
     expect(draft.find('[data-testid="adventure-status"]').text()).toBe('Draft')
-    expect(buttons(draft)).toEqual(['Assign to Campaign', 'Approve', 'Review', 'Delete'])
+    expect(buttons(draft)).toEqual(['Assign to Campaign', 'Approve', 'Review', '🗑 Delete adventure'])
   })
 
   it('AdventureForge_ShowsEmptyState_WhenNoUnassigned', async () => {
     const { wrapper } = await mountPage([])
 
-    expect(wrapper.find('[data-testid="unassigned-empty"]').text()).toBe('No unassigned adventures.')
+    expect(wrapper.find('[data-testid="unassigned-empty"]').text()).toBe('No adventures yet.')
     expect(cards(wrapper)).toHaveLength(0)
   })
 
-  it('AdventureForge_AssignToCampaign_RemovesFromUnassignedList', async () => {
+  it('AdventureForge_AssignToCampaign_LabelsTheCardWithItsCampaign', async () => {
     vi.mocked(api.assignAdventureToCampaign).mockResolvedValue(adventure())
     const { wrapper } = await mountPage([adventure(), DRAFT()])
 
@@ -151,10 +153,11 @@ describe('Adventure Forge: unassigned adventures', () => {
     await cards(wrapper)[0].find('[data-testid="assign-select"]').setValue('c2')
     await flushPromises()
 
-    expect(api.assignAdventureToCampaign).toHaveBeenCalledWith('adv-1', 'c2')
-    expect(cards(wrapper)).toHaveLength(1)
-    expect(wrapper.text()).not.toContain('The Last Light of the First Dawn')
-    expect(wrapper.text()).toContain('The Last Light of Dawnspire')
+    expect(api.assignAdventureToCampaign).toHaveBeenCalledWith('adv-1', 'c2', {})
+    // It stays in the list, now labelled with its campaign and listed after the unassigned one.
+    expect(cards(wrapper)).toHaveLength(2)
+    expect(cards(wrapper)[0].find('[data-testid="adventure-title"]').text()).toContain('The Last Light of Dawnspire')
+    expect(cards(wrapper)[1].find('[data-testid="adventure-campaign"]').text()).toBe('In campaign: Solo Nights')
   })
 
   it('a failed assignment keeps the adventure in the list and says why', async () => {
@@ -180,14 +183,18 @@ describe('Adventure Forge: unassigned adventures', () => {
     await flushPromises()
 
     expect(api.approveAdventure).toHaveBeenCalledWith('adv-2')
-    expect(api.listUnassignedAdventures).toHaveBeenCalledTimes(1) // no reload
+    expect(api.listAllAdventures).toHaveBeenCalledTimes(1) // no reload
     const card = cards(wrapper)[0]
     expect(card.find('[data-testid="adventure-status"]').text()).toBe('Approved')
-    expect(buttons(card)).toEqual(['Assign to Campaign', 'Review', '▶ Play Solo', 'Delete'])
+    expect(buttons(card)).toEqual(['Assign to Campaign', 'Review', '▶ Play Solo', '🗑 Delete adventure'])
   })
 
   it('AdventureForge_DeleteButton_RemovesAdventureAfterConfirmation', async () => {
     vi.mocked(api.deleteAdventure).mockResolvedValue(undefined)
+    vi.mocked(api.getAdventureDeleteImpact).mockResolvedValue({
+      id: 'adv-1', title: 'The Last Light of the First Dawn', totalRuns: 0, notStartedRuns: 0, inProgressRuns: 0,
+      completedRuns: 0, abandonedRuns: 0, transcriptEntries: 0, indexedChunks: 0,
+    })
     const confirmFn = vi.fn(() => false)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountPage([adventure(), DRAFT()])
@@ -229,7 +236,7 @@ describe('Adventure Forge: unassigned adventures', () => {
     const [first, second] = cards(wrapper)
 
     expect(first.find('[data-testid="adventure-progress"]').text()).toBe('Scene 2 of 5 — In Progress')
-    expect(buttons(first)).toEqual(['Assign to Campaign', 'Review', 'Resume', 'Delete'])
+    expect(buttons(first)).toEqual(['Assign to Campaign', 'Review', 'Resume', '🗑 Delete adventure'])
     expect(first.find('[data-testid="play-solo-button"]').exists()).toBe(false)
     expect(buttons(second)).toContain('▶ Play Solo')   // an idle one is unchanged
 
@@ -274,7 +281,7 @@ describe('Adventure Forge: unassigned adventures', () => {
     const { wrapper } = await mountPage([adventure({ mode: 'Group' })])
     const [card] = cards(wrapper)
 
-    expect(buttons(card)).toEqual(['Assign to Campaign', 'Review', '👥 Start Group Session', 'Delete'])
+    expect(buttons(card)).toEqual(['Assign to Campaign', 'Review', '👥 Start Group Session', '🗑 Delete adventure'])
     expect(card.find('[data-testid="start-group-button"]').exists()).toBe(true)
     expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(false)
   })
@@ -316,7 +323,7 @@ describe('Adventure Forge: unassigned adventures', () => {
     })
     const { wrapper } = await mountPage([running])
 
-    expect(buttons(cards(wrapper)[0])).toEqual(['Assign to Campaign', 'Review', 'Resume', 'Delete'])
+    expect(buttons(cards(wrapper)[0])).toEqual(['Assign to Campaign', 'Review', 'Resume', '🗑 Delete adventure'])
   })
 
   // ── The assign picker must tell "no campaigns" from "could not load them" ──
@@ -391,12 +398,12 @@ describe('Adventure Forge: unassigned adventures', () => {
     const { pinia } = await mountPage([])
     const store = useAdventureGenerationStore(pinia)
     await store.start(REQUEST)
-    vi.mocked(api.listUnassignedAdventures).mockResolvedValue([adventure({ title: 'Fresh' })])
+    vi.mocked(api.listAllAdventures).mockResolvedValue([adventure({ title: 'Fresh' })])
 
     hub.handlers.get('AdventureGenerationCompleted')!({ jobId: 'job-1', adventureId: 'adv-new', adventureTitle: 'Fresh' })
     await flushPromises()
 
-    expect(api.listUnassignedAdventures).toHaveBeenCalledTimes(2)
+    expect(api.listAllAdventures).toHaveBeenCalledTimes(2)
   })
 })
 

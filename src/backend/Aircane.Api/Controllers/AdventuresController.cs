@@ -27,6 +27,7 @@ public sealed class AdventuresController : ControllerBase
     private readonly IAdventureIndexingService _adventureIndexingService;
     private readonly IBackgroundJobQueue _jobQueue;
     private readonly AircaneDbContext _dbContext;
+    private readonly IGameSystemCanonicalizer _gameSystems;
     private readonly ILogger<AdventuresController> _logger;
 
     public AdventuresController(
@@ -35,6 +36,7 @@ public sealed class AdventuresController : ControllerBase
         IAdventureIndexingService adventureIndexingService,
         IBackgroundJobQueue jobQueue,
         AircaneDbContext dbContext,
+        IGameSystemCanonicalizer gameSystems,
         ILogger<AdventuresController> logger)
     {
         _validator = validator;
@@ -42,13 +44,15 @@ public sealed class AdventuresController : ControllerBase
         _adventureIndexingService = adventureIndexingService;
         _jobQueue = jobQueue;
         _dbContext = dbContext;
+        _gameSystems = gameSystems;
         _logger = logger;
     }
 
     /// <summary>
     /// Lists adventures with optional filters. <c>status</c> narrows by status; <c>unassigned=true</c>
     /// returns only adventures that belong to no campaign, newest first (otherwise the order is
-    /// most recently updated first). Returns an empty array when nothing matches.
+    /// most recently updated first). Each item names its campaign (id and name) when it has one.
+    /// Returns an empty array when nothing matches.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<AdventureListItemDto>), StatusCodes.Status200OK)]
@@ -77,6 +81,7 @@ public sealed class AdventuresController : ControllerBase
             .Select(a => new
             {
                 a.Id, a.Title, a.Status, a.Ruleset, a.GameSystem, a.CampaignId,
+                CampaignName = _dbContext.Campaigns.Where(c => c.Id == a.CampaignId).Select(c => c.Name).FirstOrDefault(),
                 a.RequestJson, a.CreatedAt, a.UpdatedAt,
             })
             .ToListAsync(cancellationToken);
@@ -86,16 +91,26 @@ public sealed class AdventuresController : ControllerBase
 
         return Ok(rows.Select(r => ToListItem(
             r.Id, r.Title, r.Status, r.Ruleset, r.GameSystem, r.CampaignId, r.RequestJson, r.CreatedAt, r.UpdatedAt,
-            active.GetValueOrDefault(r.Id))).ToList());
+            r.CampaignName, active.GetValueOrDefault(r.Id))).ToList());
     }
 
     /// <summary>
-    /// Assigns an adventure to a campaign (moving it off the unassigned list). Returns the updated
-    /// adventure; 404 if the adventure or the campaign does not exist.
+    /// Assigns an adventure to a campaign. Returns the updated adventure; 404 if the adventure or the
+    /// campaign does not exist. Refused with 409 (a <c>code</c> in the problem body says why) when:
+    /// <list type="bullet">
+    ///   <item><c>adventure-run-in-progress</c>: the adventure belongs to another campaign and has a run in
+    ///   progress. Never overridable.</item>
+    ///   <item><c>adventure-in-other-campaign</c>: it belongs to another campaign (named in the body) and
+    ///   <c>confirmMove</c> is not set.</item>
+    ///   <item><c>game-system-mismatch</c>: the campaign's game system differs from the adventure's (both
+    ///   named in the body) and <c>confirmMismatch</c> is not set.</item>
+    /// </list>
+    /// Assigning to the campaign it is already in changes nothing. Runs keep the campaign they were played in.
     /// </summary>
     [HttpPatch("{id:guid}/assign")]
     [ProducesResponseType(typeof(AdventureListItemDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> AssignCampaign(
         Guid id,
         [FromBody] AssignAdventureRequest request,
@@ -105,18 +120,122 @@ public sealed class AdventuresController : ControllerBase
         if (adventure is null)
             return NotFound(new ProblemDetails { Title = "Adventure not found", Status = StatusCodes.Status404NotFound });
 
-        if (!await _dbContext.Campaigns.AnyAsync(c => c.Id == request.CampaignId, cancellationToken))
+        var campaign = await _dbContext.Campaigns.AsNoTracking()
+            .Select(c => new { c.Id, c.Name, c.GameSystem })
+            .FirstOrDefaultAsync(c => c.Id == request.CampaignId, cancellationToken);
+        if (campaign is null)
             return NotFound(new ProblemDetails { Title = "Campaign not found", Status = StatusCodes.Status404NotFound });
 
-        adventure.CampaignId = request.CampaignId;
-        adventure.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        if (adventure.CampaignId != campaign.Id)
+        {
+            if (adventure.CampaignId is { } otherId)
+            {
+                if (await HasRunInProgressAsync(id, cancellationToken))
+                    return RunInProgress(adventure.Title, "moved to another campaign");
 
-        _logger.LogInformation("Adventure {AdventureId} assigned to campaign {CampaignId}", id, request.CampaignId);
+                if (!request.ConfirmMove)
+                {
+                    var otherName = await _dbContext.Campaigns.AsNoTracking()
+                        .Where(c => c.Id == otherId).Select(c => c.Name).FirstOrDefaultAsync(cancellationToken);
+                    return Conflict(Problem409(
+                        "adventure-in-other-campaign",
+                        "Adventure is in another campaign",
+                        $"\"{adventure.Title}\" is in the campaign \"{otherName}\". Attaching it here takes it out of that campaign.",
+                        ("currentCampaignId", otherId), ("currentCampaignName", otherName)));
+                }
+            }
+
+            if (!request.ConfirmMismatch && !await SameGameSystemAsync(adventure.GameSystem, campaign.GameSystem, cancellationToken))
+            {
+                return Conflict(Problem409(
+                    "game-system-mismatch",
+                    "Game systems differ",
+                    $"\"{adventure.Title}\" is for {adventure.GameSystem}, but the campaign \"{campaign.Name}\" uses {campaign.GameSystem}.",
+                    ("adventureGameSystem", adventure.GameSystem), ("campaignGameSystem", campaign.GameSystem)));
+            }
+
+            adventure.CampaignId = campaign.Id;
+            adventure.UpdatedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("Adventure {AdventureId} assigned to campaign {CampaignId}", id, campaign.Id);
+        }
+
+        return Ok(ToListItem(
+            adventure.Id, adventure.Title, adventure.Status, adventure.Ruleset, adventure.GameSystem,
+            adventure.CampaignId, adventure.RequestJson, adventure.CreatedAt, adventure.UpdatedAt, campaign.Name));
+    }
+
+    /// <summary>
+    /// Takes an adventure out of its campaign. Only the link is cleared: the adventure, its indexed content and
+    /// every run (with its history) stay, and the runs keep the campaign they were played in. 404 if the
+    /// adventure does not exist; 409 (<c>adventure-run-in-progress</c>) while any run of it is in progress. An
+    /// adventure that is in no campaign is left as it is.
+    /// </summary>
+    [HttpPatch("{id:guid}/unassign")]
+    [ProducesResponseType(typeof(AdventureListItemDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UnassignCampaign(Guid id, CancellationToken cancellationToken)
+    {
+        var adventure = await _dbContext.GeneratedAdventures.FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+        if (adventure is null)
+            return NotFound(new ProblemDetails { Title = "Adventure not found", Status = StatusCodes.Status404NotFound });
+
+        if (adventure.CampaignId is not null)
+        {
+            if (await HasRunInProgressAsync(id, cancellationToken))
+                return RunInProgress(adventure.Title, "taken out of its campaign");
+
+            var campaignId = adventure.CampaignId;
+            adventure.CampaignId = null;
+            adventure.UpdatedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("Adventure {AdventureId} removed from campaign {CampaignId}", id, campaignId);
+        }
 
         return Ok(ToListItem(
             adventure.Id, adventure.Title, adventure.Status, adventure.Ruleset, adventure.GameSystem,
             adventure.CampaignId, adventure.RequestJson, adventure.CreatedAt, adventure.UpdatedAt));
+    }
+
+    private Task<bool> HasRunInProgressAsync(Guid adventureId, CancellationToken cancellationToken)
+        => _dbContext.AdventureSessions.AsNoTracking().AnyAsync(
+            r => r.GeneratedAdventureId == adventureId && r.Status == AdventureSessionStatus.InProgress, cancellationToken);
+
+    private ObjectResult RunInProgress(string title, string what) => Conflict(Problem409(
+        "adventure-run-in-progress",
+        "Adventure is being played",
+        $"\"{title}\" has a run in progress, so it cannot be {what}. Finish or abandon the run first."));
+
+    private static ProblemDetails Problem409(string code, string title, string detail, params (string Key, object? Value)[] extra)
+    {
+        var problem = new ProblemDetails { Title = title, Detail = detail, Status = StatusCodes.Status409Conflict };
+        problem.Extensions["code"] = code;
+        foreach (var (key, value) in extra)
+            problem.Extensions[key] = value;
+        return problem;
+    }
+
+    /// <summary>
+    /// Whether an adventure's game system and a campaign's name the same system. Both are free text, so each is
+    /// canonicalized against the known game system definitions first (name or identifier, ignoring case and
+    /// surrounding space), then compared ignoring case; the campaign's known aliases count as the same too.
+    /// When either side is blank there is nothing to compare, so it is not a mismatch.
+    /// </summary>
+    private async Task<bool> SameGameSystemAsync(string adventureSystem, string campaignSystem, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(adventureSystem) || string.IsNullOrWhiteSpace(campaignSystem))
+            return true;
+
+        var adventureName = await _gameSystems.CanonicalizeAsync(adventureSystem, cancellationToken);
+        var campaignName = await _gameSystems.CanonicalizeAsync(campaignSystem, cancellationToken);
+        if (string.Equals(adventureName.Trim(), campaignName.Trim(), StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var equivalents = await _gameSystems.GetEquivalentNamesAsync(campaignSystem, cancellationToken);
+        return equivalents.Any(n => string.Equals(n.Trim(), adventureName.Trim(), StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -126,7 +245,7 @@ public sealed class AdventuresController : ControllerBase
     private static AdventureListItemDto ToListItem(
         Guid id, string title, GeneratedAdventureStatus status, string ruleset, string gameSystem,
         Guid? campaignId, string requestJson, DateTime createdAt, DateTime updatedAt,
-        AdventureActiveSessionDto? activeSession = null)
+        string? campaignName = null, AdventureActiveSessionDto? activeSession = null)
     {
         GenerateAdventureRequest? request = null;
         try
@@ -149,6 +268,7 @@ public sealed class AdventuresController : ControllerBase
             CreatedAt = createdAt,
             UpdatedAt = updatedAt,
             CampaignId = campaignId,
+            CampaignName = campaignName,
             Mode = request?.Mode,
             Length = request?.Length,
             AverageLevel = request?.AverageLevel,
@@ -285,11 +405,59 @@ public sealed class AdventuresController : ControllerBase
     }
 
     /// <summary>
-    /// Deletes a generated adventure and its indexed chunks.
+    /// What deleting an adventure would remove: its runs by status, their transcript lines and its indexed
+    /// content. 404 if the adventure does not exist.
+    /// </summary>
+    [HttpGet("{id:guid}/delete-impact")]
+    [ProducesResponseType(typeof(AdventureDeleteImpactDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDeleteImpact(Guid id, CancellationToken cancellationToken)
+    {
+        var title = await _dbContext.GeneratedAdventures.AsNoTracking()
+            .Where(a => a.Id == id).Select(a => a.Title).FirstOrDefaultAsync(cancellationToken);
+        if (title is null)
+            return NotFound();
+
+        var runs = await _dbContext.AdventureSessions.AsNoTracking()
+            .Where(r => r.GeneratedAdventureId == id)
+            .Select(r => new { r.Id, r.Status })
+            .ToListAsync(cancellationToken);
+        var runIds = runs.Select(r => r.Id).ToList();
+
+        var entries = runIds.Count == 0
+            ? 0
+            : await _dbContext.AdventureSessionEntries.AsNoTracking()
+                .CountAsync(e => runIds.Contains(e.AdventureSessionId), cancellationToken);
+
+        var documentId = await _dbContext.SourceDocuments.AsNoTracking()
+            .Where(d => d.SourcePath == $"generated://{id}").Select(d => (Guid?)d.Id).FirstOrDefaultAsync(cancellationToken);
+        var chunks = documentId is null
+            ? 0
+            : await _dbContext.DocumentChunks.AsNoTracking().CountAsync(c => c.SourceDocumentId == documentId, cancellationToken);
+
+        return Ok(new AdventureDeleteImpactDto
+        {
+            Id = id,
+            Title = title,
+            TotalRuns = runs.Count,
+            NotStartedRuns = runs.Count(r => r.Status == AdventureSessionStatus.NotStarted),
+            InProgressRuns = runs.Count(r => r.Status == AdventureSessionStatus.InProgress),
+            CompletedRuns = runs.Count(r => r.Status == AdventureSessionStatus.Completed),
+            AbandonedRuns = runs.Count(r => r.Status == AdventureSessionStatus.Abandoned),
+            TranscriptEntries = entries,
+            IndexedChunks = chunks,
+        });
+    }
+
+    /// <summary>
+    /// Deletes a generated adventure for good: its indexed content, and every run of it with the transcripts.
+    /// 404 if it does not exist; 409 (<c>adventure-run-in-progress</c>) while any run of it is in progress.
+    /// <c>GET .../delete-impact</c> says what goes.
     /// </summary>
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteAdventure(Guid id, CancellationToken cancellationToken)
     {
         var adventure = await _dbContext.GeneratedAdventures
@@ -297,6 +465,21 @@ public sealed class AdventuresController : ControllerBase
 
         if (adventure is null)
             return NotFound();
+
+        if (await HasRunInProgressAsync(id, cancellationToken))
+            return RunInProgress(adventure.Title, "deleted");
+
+        // The runs and their transcripts go with the adventure (the database cascades; removing them here too
+        // keeps that true for a store that does not).
+        var runs = await _dbContext.AdventureSessions.Where(r => r.GeneratedAdventureId == id).ToListAsync(cancellationToken);
+        var runIds = runs.Select(r => r.Id).ToList();
+        if (runIds.Count > 0)
+        {
+            var entries = await _dbContext.AdventureSessionEntries
+                .Where(e => runIds.Contains(e.AdventureSessionId)).ToListAsync(cancellationToken);
+            _dbContext.AdventureSessionEntries.RemoveRange(entries);
+            _dbContext.AdventureSessions.RemoveRange(runs);
+        }
 
         // Find the associated SourceDocument (created during indexing)
         var sourceDocument = await _dbContext.SourceDocuments
@@ -316,7 +499,8 @@ public sealed class AdventuresController : ControllerBase
         _dbContext.GeneratedAdventures.Remove(adventure);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Deleted adventure {AdventureId} and its indexed chunks", id);
+        _logger.LogInformation(
+            "Deleted adventure {AdventureId}, its {RunCount} run(s) and its indexed chunks", id, runs.Count);
 
         return NoContent();
     }

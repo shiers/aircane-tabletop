@@ -42,6 +42,6 @@ onMounted(async () => {
       </p>
     </header>
 
-    <CampaignAdventures :campaign-id="props.campaignId" />
+    <CampaignAdventures :campaign-id="props.campaignId" :campaign-name="campaign?.name" />
   </div>
 </template>

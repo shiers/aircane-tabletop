@@ -2,23 +2,29 @@
 /**
  * AdventuresView - the Adventure Forge landing page. Route: /adventures
  *
- * Lists the adventures that belong to no campaign yet (generated without one, or before campaigns
- * were linked), with the actions to put them to use, and a button to generate a new one.
+ * Lists every adventure, each labelled with the campaign it is in (if any), with the actions to put it to use,
+ * and a button to generate a new one. Unassigned adventures first.
  *
- *   Draft     Assign to Campaign · Approve · Review · Delete
- *   Approved  Assign to Campaign · Review · Play Solo (solo adventures) or Start Group Session
- *             (group adventures) · Delete
+ *   Not in a campaign   Assign to Campaign · Approve (drafts) · Review · Play Solo (solo adventures) or
+ *                       Start Group Session (group adventures) · Delete adventure
+ *   In a campaign       Move to Campaign · Remove from campaign · Open campaign · Approve (drafts) · Review ·
+ *                       Delete adventure (play it from its campaign)
+ *
+ * Attaching asks for agreement when it would take the adventure out of another campaign or the game systems
+ * differ. A run in progress holds an adventure: it can be neither detached, moved nor deleted until it is done.
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  listUnassignedAdventures,
-  assignAdventureToCampaign,
+  listAllAdventures,
   approveAdventure,
   deleteAdventure,
+  getAdventureDeleteImpact,
+  unassignAdventure,
   isGroupAdventure,
   type CampaignAdventure,
 } from './api'
+import { attachWithConfirmation, describeDelete, messageOf } from './adventureActions'
 import { useAdventureGenerationStore } from './store'
 import { useCampaignStore } from '@/features/campaigns/store'
 import PlaySoloLauncher from '@/features/adventures/components/PlaySoloLauncher.vue'
@@ -39,22 +45,32 @@ const assigningId = ref<string | null>(null)
 /** The campaign list could not be loaded, so the picker must not claim there are none. */
 const campaignsLoadFailed = ref(false)
 
-const isEmpty = computed(() => !loading.value && adventures.value.length === 0)
+/** The list could not be loaded: the page says so, rather than claiming there are no adventures. */
+const loadFailed = ref(false)
+
+const isEmpty = computed(() => !loading.value && !loadFailed.value && adventures.value.length === 0)
 const campaigns = computed(() => campaignStore.campaigns)
 const canPlay = (a: CampaignAdventure) => a.status === 'Approved' || a.status === 'Active'
 
-function messageOf(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-  return detail ?? (e instanceof Error ? e.message : fallback)
-}
+/** Unassigned adventures first (the ones waiting to be put to use), then the rest, each newest first. */
+const ordered = computed(() => {
+  const list = adventures.value
+  return [...list.filter((a) => !a.campaignId), ...list.filter((a) => !!a.campaignId)]
+})
+
+/** A run in progress holds the adventure: it can be neither detached, moved nor deleted until it is done. */
+const runHolds = (a: CampaignAdventure) => !!a.activeSession
+const HELD_REASON = 'A run of this adventure is in progress. Finish or abandon it first.'
 
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
+  loadFailed.value = false
   try {
-    adventures.value = await listUnassignedAdventures()
+    adventures.value = await listAllAdventures()
   } catch (e) {
     error.value = messageOf(e, 'Could not load adventures.')
+    loadFailed.value = true
   } finally {
     loading.value = false
   }
@@ -62,7 +78,7 @@ async function load(): Promise<void> {
 
 onMounted(load)
 
-// An adventure generated without a campaign lands here: show it as soon as it is ready.
+// A freshly generated adventure lands here: show it as soon as it is ready.
 watch(
   () => generation.status,
   (status) => {
@@ -107,12 +123,32 @@ async function assign(a: CampaignAdventure, campaignId: string): Promise<void> {
   busyId.value = a.id
   error.value = null
   try {
-    await assignAdventureToCampaign(a.id, campaignId)
-    // It now belongs to the campaign, so it leaves this list and shows up on the campaign's page.
-    adventures.value = adventures.value.filter((x) => x.id !== a.id)
-    assigningId.value = null
+    const name = campaigns.value.find((c) => c.id === campaignId)?.name ?? 'this campaign'
+    const updated = await attachWithConfirmation(a, campaignId, name)
+    if (updated) {
+      // In place: the card now says which campaign it is in.
+      a.campaignId = updated.campaignId ?? campaignId
+      a.campaignName = updated.campaignName ?? name
+      assigningId.value = null
+    }
   } catch (e) {
     error.value = messageOf(e, 'Could not assign the adventure.')
+  } finally {
+    busyId.value = null
+  }
+}
+
+/** Take the adventure out of its campaign. It stays here, with its runs and history. */
+async function removeFromCampaign(a: CampaignAdventure): Promise<void> {
+  if (!confirm(`Remove "${a.title}" from the campaign "${a.campaignName ?? 'its campaign'}"?\n\nThe adventure stays in the Adventure Forge, and you can attach it again later.`)) return
+  busyId.value = a.id
+  error.value = null
+  try {
+    await unassignAdventure(a.id)
+    a.campaignId = null
+    a.campaignName = null
+  } catch (e) {
+    error.value = messageOf(e, 'Could not remove the adventure from the campaign.')
   } finally {
     busyId.value = null
   }
@@ -131,11 +167,17 @@ async function approve(a: CampaignAdventure): Promise<void> {
   }
 }
 
+/** Erase the adventure for good, after saying exactly what goes. */
 async function remove(a: CampaignAdventure): Promise<void> {
-  if (!confirm(`Delete "${a.title}"? This cannot be undone.`)) return
   busyId.value = a.id
   error.value = null
   try {
+    const impact = await getAdventureDeleteImpact(a.id)
+    if (impact.inProgressRuns > 0) {
+      error.value = `"${a.title}" has a run in progress, so it cannot be deleted. Finish or abandon the run first.`
+      return
+    }
+    if (!confirm(describeDelete(impact))) return
     await deleteAdventure(a.id)
     adventures.value = adventures.value.filter((x) => x.id !== a.id)
   } catch (e) {
@@ -160,9 +202,9 @@ async function remove(a: CampaignAdventure): Promise<void> {
       </button>
     </div>
 
-    <section aria-labelledby="unassigned-heading" class="space-y-4">
-      <h2 id="unassigned-heading" class="border-b border-surface-700/50 pb-2 text-lg font-semibold text-white">
-        Unassigned Adventures
+    <section aria-labelledby="adventures-heading" class="space-y-4">
+      <h2 id="adventures-heading" class="border-b border-surface-700/50 pb-2 text-lg font-semibold text-white">
+        Your Adventures
       </h2>
 
       <div
@@ -172,6 +214,15 @@ async function remove(a: CampaignAdventure): Promise<void> {
         data-testid="adventures-error"
       >
         {{ error }}
+        <button
+          v-if="loadFailed"
+          type="button"
+          class="ml-2 underline hover:text-white"
+          data-testid="adventures-retry"
+          @click="load"
+        >
+          Try again
+        </button>
       </div>
 
       <div v-if="loading" class="space-y-3" aria-busy="true">
@@ -179,19 +230,20 @@ async function remove(a: CampaignAdventure): Promise<void> {
       </div>
 
       <p v-else-if="isEmpty" class="rounded-lg border border-dashed border-surface-700/50 px-6 py-10 text-center text-gray-300" data-testid="unassigned-empty">
-        No unassigned adventures.
+        No adventures yet.
       </p>
 
-      <ul v-else class="space-y-3">
-        <AdventureCard v-for="a in adventures" :key="a.id" :adventure="a">
+      <ul v-else-if="!loadFailed" class="space-y-3">
+        <AdventureCard v-for="a in ordered" :key="a.id" :adventure="a">
           <div class="relative">
             <button
               type="button"
               data-testid="assign-button"
               class="adventure-action"
-              :disabled="busyId === a.id"
+              :disabled="busyId === a.id || runHolds(a)"
+              :title="runHolds(a) ? HELD_REASON : undefined"
               @click="openAssign(a)"
-            >Assign to Campaign</button>
+            >{{ a.campaignId ? 'Move to Campaign' : 'Assign to Campaign' }}</button>
             <div
               v-if="assigningId === a.id"
               class="absolute right-0 z-10 mt-1 w-56 rounded-md border border-surface-700/50 bg-surface-850 p-2 shadow-lg"
@@ -215,7 +267,7 @@ async function remove(a: CampaignAdventure): Promise<void> {
                 @change="assign(a, ($event.target as HTMLSelectElement).value)"
               >
                 <option value="" selected disabled>Choose a campaign…</option>
-                <option v-for="c in campaigns" :key="c.id" :value="c.id">{{ c.name }}</option>
+                <option v-for="c in campaigns.filter((x) => x.id !== a.campaignId)" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </div>
           </div>
@@ -229,25 +281,45 @@ async function remove(a: CampaignAdventure): Promise<void> {
           >Approve</button>
           <button type="button" data-testid="review-button" class="adventure-action" @click="review(a)">Review</button>
           <button
+            v-if="a.campaignId"
+            type="button"
+            data-testid="remove-from-campaign-button"
+            class="adventure-action"
+            :disabled="busyId === a.id || runHolds(a)"
+            :title="runHolds(a) ? HELD_REASON : 'Take it out of its campaign. It stays here.'"
+            @click="removeFromCampaign(a)"
+          >Remove from campaign</button>
+          <router-link
+            v-if="a.campaignId"
+            :to="{ name: 'campaign-detail', params: { campaignId: a.campaignId } }"
+            class="adventure-action"
+            data-testid="open-campaign-link"
+          >Open campaign</router-link>
+          <button
             v-if="a.activeSession"
             type="button"
             data-testid="resume-adventure-button"
             class="adventure-action adventure-action--primary"
             @click="resumeRun(a.activeSession.sessionId)"
           >Resume</button>
+          <!-- An adventure in a campaign is played from that campaign's page -->
           <StartGroupLauncher
-            v-else-if="canPlay(a) && isGroupAdventure(a.mode)"
+            v-else-if="!a.campaignId && canPlay(a) && isGroupAdventure(a.mode)"
             :adventure-id="a.id"
             :adventure-title="a.title"
           />
-          <PlaySoloLauncher v-else-if="canPlay(a)" :adventure-id="a.id" />
+          <PlaySoloLauncher v-else-if="!a.campaignId && canPlay(a)" :adventure-id="a.id" />
           <button
             type="button"
             data-testid="delete-button"
-            class="adventure-action adventure-action--danger"
-            :disabled="busyId === a.id"
+            class="adventure-action adventure-action--danger border-dashed"
+            :disabled="busyId === a.id || runHolds(a)"
+            :title="runHolds(a) ? HELD_REASON : 'Erase this adventure and its runs for good.'"
             @click="remove(a)"
-          >Delete</button>
+          >🗑 Delete adventure</button>
+          <p v-if="runHolds(a)" class="basis-full text-right text-xs text-gray-400" data-testid="run-holds-note">
+            {{ HELD_REASON }}
+          </p>
         </AdventureCard>
       </ul>
     </section>

@@ -30,6 +30,9 @@ public sealed record AdventureListItemDto
     /// <summary>The campaign this adventure belongs to; null when unassigned.</summary>
     public Guid? CampaignId { get; init; }
 
+    /// <summary>The name of the campaign this adventure belongs to; null when unassigned.</summary>
+    public string? CampaignName { get; init; }
+
     /// <summary>"Solo" or "Group"; null if the stored generation request could not be read.</summary>
     public string? Mode { get; init; }
 
@@ -44,4 +47,36 @@ public sealed record AdventureListItemDto
 }
 
 /// <summary>Body of <c>PATCH /api/adventures/{id}/assign</c>.</summary>
-public sealed record AssignAdventureRequest(Guid CampaignId);
+/// <param name="CampaignId">The campaign to put the adventure in.</param>
+/// <param name="ConfirmMove">True to take the adventure out of the other campaign it is in.</param>
+/// <param name="ConfirmMismatch">True to attach it although the campaign's game system differs from the adventure's.</param>
+public sealed record AssignAdventureRequest(Guid CampaignId, bool ConfirmMove = false, bool ConfirmMismatch = false);
+
+/// <summary>
+/// What deleting an adventure would remove, so a confirmation can name it. Returned by
+/// <c>GET /api/adventures/{id}/delete-impact</c>.
+/// </summary>
+public sealed record AdventureDeleteImpactDto
+{
+    public required Guid Id { get; init; }
+
+    public required string Title { get; init; }
+
+    /// <summary>Every run of the adventure, whatever its status and campaign.</summary>
+    public required int TotalRuns { get; init; }
+
+    public required int NotStartedRuns { get; init; }
+
+    /// <summary>Runs in progress. While there are any, the adventure cannot be deleted or taken out of its campaign.</summary>
+    public required int InProgressRuns { get; init; }
+
+    public required int CompletedRuns { get; init; }
+
+    public required int AbandonedRuns { get; init; }
+
+    /// <summary>The transcript lines (player actions and narration) of those runs.</summary>
+    public required int TranscriptEntries { get; init; }
+
+    /// <summary>The searchable pieces of the adventure that were indexed for the AI.</summary>
+    public required int IndexedChunks { get; init; }
+}

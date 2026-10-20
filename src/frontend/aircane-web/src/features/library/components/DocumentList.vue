@@ -61,7 +61,7 @@ function thumbnailFor(doc: SourceDocumentDto): string {
     case SourceType.Solo:
       return `${base}/document-thumbnail-lost-mine.png`
     case SourceType.Homebrew:
-      return `${base}/document-thumbnail-homebrew-monsters.png`
+      return `${base}/document-thumbnail-homebrew.png`
     default:
       return `${base}/document-thumbnail-srd.png`
   }

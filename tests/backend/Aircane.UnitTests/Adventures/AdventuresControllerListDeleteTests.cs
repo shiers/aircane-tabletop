@@ -2,6 +2,7 @@ using Aircane.Api.Controllers;
 using Aircane.Application.DTOs.Adventures;
 using Aircane.Domain.Entities;
 using Aircane.Domain.Enums;
+using Aircane.Infrastructure.GameSystems;
 using Aircane.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,7 @@ public sealed class AdventuresControllerListDeleteTests : IDisposable
             retrievalService: null!,
             adventureIndexingService: null!,
             dbContext: _db,
+            gameSystems: new GameSystemCanonicalizer(_db),
             logger: NullLogger<AdventuresController>.Instance);
     }
 

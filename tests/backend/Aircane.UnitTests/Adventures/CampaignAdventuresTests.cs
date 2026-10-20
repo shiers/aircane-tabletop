@@ -6,6 +6,7 @@ using Aircane.Domain.Entities;
 using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Adventures;
 using Aircane.Infrastructure.BackgroundJobs;
+using Aircane.Infrastructure.GameSystems;
 using Aircane.Infrastructure.Persistence;
 using Aircane.UnitTests.TestDoubles;
 using Microsoft.AspNetCore.Mvc;
@@ -30,6 +31,7 @@ public sealed class CampaignAdventuresTests : IDisposable
             new GenerateAdventureValidator(),
             new AdventureRetrievalService(_db, NullLogger<AdventureRetrievalService>.Instance),
             adventureIndexingService: null!, jobQueue: _queue, dbContext: _db,
+            gameSystems: new GameSystemCanonicalizer(_db),
             logger: NullLogger<AdventuresController>.Instance);
     }
 

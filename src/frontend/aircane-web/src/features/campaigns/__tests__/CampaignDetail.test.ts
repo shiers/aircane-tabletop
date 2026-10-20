@@ -30,6 +30,8 @@ vi.mock('@/features/adventure-generation/api', async (importOriginal) => ({
   listCampaignAdventures: vi.fn(),
   approveAdventure: vi.fn(),
   deleteAdventure: vi.fn(),
+  getAdventureDeleteImpact: vi.fn(),
+  unassignAdventure: vi.fn(),
   generateAdventure: vi.fn(),
   getAdventureDraft: vi.fn(),
   // The review screen reads the mode through this; the real one would call the unmocked list endpoints.
@@ -63,6 +65,11 @@ const adventure = (over: Partial<CampaignAdventure> = {}): CampaignAdventure => 
   id: 'adv-1', title: 'The Last Light of the First Dawn', status: 'Approved', gameSystem: 'D&D 5e 2014',
   ruleset: 'D&D 5e 2014', mode: 'Solo', length: 'one-shot', averageLevel: 1, createdAt: '2026-10-12T02:35:00Z', ...over,
 })
+
+const IMPACT = {
+  id: 'adv-1', title: 'The Last Light of the First Dawn', totalRuns: 3, notStartedRuns: 0, inProgressRuns: 0,
+  completedRuns: 2, abandonedRuns: 1, transcriptEntries: 41, indexedChunks: 12,
+}
 
 const Stub = defineComponent({ render: () => h('div') })
 
@@ -117,8 +124,8 @@ describe('CampaignDetail', () => {
 
     // Actions depend on status.
     const labels = (c: typeof approved) => c.findAll('button').map((b) => b.text())
-    expect(labels(draft)).toEqual(['Review', 'Approve', 'Delete'])
-    expect(labels(approved)).toEqual(['Review', 'Play Solo', 'Delete'])
+    expect(labels(draft)).toEqual(['Review', 'Approve', 'Remove from campaign', '🗑 Delete adventure'])
+    expect(labels(approved)).toEqual(['Review', 'Play Solo', 'Remove from campaign', '🗑 Delete adventure'])
   })
 
   it('CampaignDetail_ShowsEmptyState_WhenNoAdventures', async () => {
@@ -141,11 +148,12 @@ describe('CampaignDetail', () => {
     expect(genApi.listCampaignAdventures).toHaveBeenCalledTimes(1) // refreshed in place, not reloaded
     const card = cards(wrapper)[0]
     expect(card.find('[data-testid="adventure-status"]').text()).toBe('Approved')
-    expect(card.findAll('button').map((b) => b.text())).toEqual(['Review', 'Play Solo', 'Delete'])
+    expect(card.findAll('button').map((b) => b.text())).toEqual(['Review', 'Play Solo', 'Remove from campaign', '🗑 Delete adventure'])
   })
 
   it('CampaignDetail_DeleteButton_RemovesAdventureAfterConfirmation', async () => {
     vi.mocked(genApi.deleteAdventure).mockResolvedValue(undefined)
+    vi.mocked(genApi.getAdventureDeleteImpact).mockResolvedValue(IMPACT)
     const confirmFn = vi.fn(() => false)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountDetail([adventure(), adventure({ id: 'adv-2', title: 'Second' })])
@@ -202,7 +210,7 @@ describe('CampaignDetail', () => {
     const { wrapper, router } = await mountDetail([running()])
     const card = cards(wrapper)[0]
 
-    expect(card.findAll('button').map((b) => b.text())).toEqual(['Review', 'Resume', 'Delete'])
+    expect(card.findAll('button').map((b) => b.text())).toEqual(['Review', 'Resume', 'Remove from campaign', '🗑 Delete adventure'])
     expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(false)
 
     // Resume opens the existing run: it does not start a new one.
@@ -230,7 +238,7 @@ describe('CampaignDetail', () => {
     const { wrapper } = await mountDetail([adventure({ mode: 'Group' })])
     const card = cards(wrapper)[0]
 
-    expect(card.findAll('button').map((b) => b.text())).toEqual(['Review', '👥 Start Group Session', 'Delete'])
+    expect(card.findAll('button').map((b) => b.text())).toEqual(['Review', '👥 Start Group Session', 'Remove from campaign', '🗑 Delete adventure'])
     expect(card.find('[data-testid="play-solo-button"]').exists()).toBe(false)
   })
 

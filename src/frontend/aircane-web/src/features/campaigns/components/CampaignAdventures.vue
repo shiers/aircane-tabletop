@@ -3,9 +3,14 @@
  * CampaignAdventures - the "Adventures" section of a campaign's page: the adventures generated for
  * this campaign, each with the actions that make sense for its status.
  *
- *   Draft              Review · Approve · Delete
- *   Approved / Active  Review · Play Solo (solo adventures) or Start Group Session (group adventures) · Delete
- *   Rejected           Review · Delete
+ *   Draft              Review · Approve · Remove from campaign · Delete adventure
+ *   Approved / Active  Review · Play Solo (solo adventures) or Start Group Session (group adventures) ·
+ *                      Remove from campaign · Delete adventure
+ *   Rejected           Review · Remove from campaign · Delete adventure
+ *
+ * "Remove from campaign" only detaches: the adventure stays in the Adventure Forge. "Delete adventure" erases it
+ * (and its runs) for good, after naming exactly what goes. Both wait while a run is in progress. "Attach adventure"
+ * opens a picker for putting an existing adventure in this campaign.
  */
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -13,9 +18,13 @@ import {
   listCampaignAdventures,
   approveAdventure,
   deleteAdventure,
+  getAdventureDeleteImpact,
+  unassignAdventure,
   isGroupAdventure,
   type CampaignAdventure,
 } from '@/features/adventure-generation/api'
+import { describeDelete, messageOf } from '@/features/adventure-generation/adventureActions'
+import AttachAdventurePicker from './AttachAdventurePicker.vue'
 import AdventureCard from '@/features/adventure-generation/components/AdventureCard.vue'
 import StartGroupLauncher from '@/features/adventures/components/StartGroupLauncher.vue'
 import { openRun } from '@/features/adventures/openRun'
@@ -25,6 +34,8 @@ import { getActiveAdventureSession } from '@/features/adventures/api'
 
 const props = defineProps<{
   campaignId: string
+  /** Named in the confirmations when an adventure is attached. */
+  campaignName?: string | null
 }>()
 
 const router = useRouter()
@@ -38,21 +49,23 @@ const error = ref<string | null>(null)
 const busyId = ref<string | null>(null)
 /** Set when Play Solo hit "this campaign already has an adventure in progress". */
 const resumeSessionId = ref<string | null>(null)
+/** The "Attach adventure" picker is open. */
+const attaching = ref(false)
 
-const isEmpty = computed(() => !loading.value && adventures.value.length === 0)
+/** The list could not be loaded: the page says so, rather than claiming there are no adventures. */
+const loadFailed = ref(false)
 
-function messageOf(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-  return detail ?? (e instanceof Error ? e.message : fallback)
-}
+const isEmpty = computed(() => !loading.value && !loadFailed.value && adventures.value.length === 0)
 
 async function load(): Promise<void> {
   loading.value = true
   error.value = null
+  loadFailed.value = false
   try {
     adventures.value = await listCampaignAdventures(props.campaignId)
   } catch (e) {
     error.value = messageOf(e, 'Could not load adventures.')
+    loadFailed.value = true
   } finally {
     loading.value = false
   }
@@ -91,11 +104,36 @@ async function approve(a: CampaignAdventure): Promise<void> {
   }
 }
 
-async function remove(a: CampaignAdventure): Promise<void> {
-  if (!confirm(`Delete "${a.title}"? This cannot be undone.`)) return
+/** A run in progress holds the adventure: it can be neither detached nor deleted until the run is done. */
+const runHolds = (a: CampaignAdventure) => !!a.activeSession
+const HELD_REASON = 'A run of this adventure is in progress. Finish or abandon it first.'
+
+/** Take the adventure out of this campaign. It stays in the Forge, with its runs and history. */
+async function removeFromCampaign(a: CampaignAdventure): Promise<void> {
+  if (!confirm(`Remove "${a.title}" from this campaign?\n\nThe adventure stays in the Adventure Forge, and you can attach it again later.`)) return
   busyId.value = a.id
   error.value = null
   try {
+    await unassignAdventure(a.id)
+    adventures.value = adventures.value.filter((x) => x.id !== a.id)
+  } catch (e) {
+    error.value = messageOf(e, 'Could not remove the adventure from the campaign.')
+  } finally {
+    busyId.value = null
+  }
+}
+
+/** Erase the adventure for good, after saying exactly what goes. */
+async function remove(a: CampaignAdventure): Promise<void> {
+  busyId.value = a.id
+  error.value = null
+  try {
+    const impact = await getAdventureDeleteImpact(a.id)
+    if (impact.inProgressRuns > 0) {
+      error.value = `"${a.title}" has a run in progress, so it cannot be deleted. Finish or abandon the run first.`
+      return
+    }
+    if (!confirm(describeDelete(impact))) return
     await deleteAdventure(a.id)
     adventures.value = adventures.value.filter((x) => x.id !== a.id)
   } catch (e) {
@@ -103,6 +141,11 @@ async function remove(a: CampaignAdventure): Promise<void> {
   } finally {
     busyId.value = null
   }
+}
+
+function attached(a: CampaignAdventure): void {
+  attaching.value = false
+  adventures.value = [a, ...adventures.value.filter((x) => x.id !== a.id)]
 }
 
 async function playSolo(a: CampaignAdventure): Promise<void> {
@@ -143,16 +186,35 @@ async function resume(): Promise<void> {
   <section aria-labelledby="campaign-adventures-heading" class="space-y-4" data-testid="adventures-section">
     <div class="flex items-center justify-between gap-4 border-b border-surface-700/50 pb-2">
       <h2 id="campaign-adventures-heading" class="text-lg font-semibold text-white">Adventures</h2>
-      <button
-        v-if="!isEmpty"
-        type="button"
-        data-testid="generate-adventure"
-        class="rounded-md bg-aircane-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
-        @click="generate"
-      >
-        + Generate Adventure
-      </button>
+      <div class="flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          data-testid="attach-adventure"
+          class="rounded-md border border-surface-700/50 bg-surface-850 px-3 py-1.5 text-sm font-semibold text-gray-100 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          :aria-expanded="attaching"
+          @click="attaching = !attaching"
+        >
+          Attach adventure
+        </button>
+        <button
+          v-if="!isEmpty"
+          type="button"
+          data-testid="generate-adventure"
+          class="rounded-md bg-aircane-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+          @click="generate"
+        >
+          + Generate Adventure
+        </button>
+      </div>
     </div>
+
+    <AttachAdventurePicker
+      v-if="attaching"
+      :campaign-id="campaignId"
+      :campaign-name="campaignName"
+      @attached="attached"
+      @close="attaching = false"
+    />
 
     <div
       v-if="error"
@@ -169,6 +231,15 @@ async function resume(): Promise<void> {
         @click="resume"
       >
         Resume the adventure in progress
+      </button>
+      <button
+        v-if="loadFailed"
+        type="button"
+        class="ml-2 underline hover:text-white"
+        data-testid="adventures-retry"
+        @click="load"
+      >
+        Try again
       </button>
     </div>
 
@@ -193,7 +264,7 @@ async function resume(): Promise<void> {
       </button>
     </div>
 
-    <ul v-else class="space-y-3">
+    <ul v-else-if="!loadFailed" class="space-y-3">
       <AdventureCard v-for="a in adventures" :key="a.id" :adventure="a">
         <button type="button" data-testid="review-button" class="adventure-action" @click="review(a)">Review</button>
         <button
@@ -227,11 +298,23 @@ async function resume(): Promise<void> {
         >Play Solo</button>
         <button
           type="button"
+          data-testid="remove-from-campaign-button"
+          class="adventure-action"
+          :disabled="busyId === a.id || runHolds(a)"
+          :title="runHolds(a) ? HELD_REASON : 'Take it out of this campaign. It stays in the Adventure Forge.'"
+          @click="removeFromCampaign(a)"
+        >Remove from campaign</button>
+        <button
+          type="button"
           data-testid="delete-button"
-          class="adventure-action adventure-action--danger"
-          :disabled="busyId === a.id"
+          class="adventure-action adventure-action--danger border-dashed"
+          :disabled="busyId === a.id || runHolds(a)"
+          :title="runHolds(a) ? HELD_REASON : 'Erase this adventure and its runs for good.'"
           @click="remove(a)"
-        >Delete</button>
+        >🗑 Delete adventure</button>
+        <p v-if="runHolds(a)" class="basis-full text-right text-xs text-gray-400" data-testid="run-holds-note">
+          {{ HELD_REASON }}
+        </p>
       </AdventureCard>
     </ul>
   </section>

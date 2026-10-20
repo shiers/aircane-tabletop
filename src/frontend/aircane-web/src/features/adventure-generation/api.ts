@@ -163,6 +163,10 @@ export interface CampaignAdventure {
   length: string | null
   averageLevel: number | null
   createdAt: string
+  /** The campaign this adventure is in. Only the all-adventures list carries it; null when it is in none. */
+  campaignId?: string | null
+  /** That campaign's name. */
+  campaignName?: string | null
   /** The in-progress run of this adventure, if any (so the card can offer Resume). */
   activeSession?: ActiveSession | null
 }
@@ -195,9 +199,91 @@ export async function listUnassignedAdventures(): Promise<CampaignAdventure[]> {
   return response.data
 }
 
-/** Move an adventure into a campaign. */
-export async function assignAdventureToCampaign(adventureId: string, campaignId: string): Promise<CampaignAdventure> {
-  const response = await apiClient.patch<CampaignAdventure>(`/api/adventures/${adventureId}/assign`, { campaignId })
+/** Every adventure, assigned or not, most recently updated first. Each says which campaign it is in. */
+export async function listAllAdventures(): Promise<CampaignAdventure[]> {
+  const response = await apiClient.get<CampaignAdventure[]>('/api/adventures')
+  return response.data
+}
+
+/** Why the server refused to attach, detach or delete an adventure (a 409 with a `code`). */
+export type AdventureConflictCode = 'adventure-in-other-campaign' | 'game-system-mismatch' | 'adventure-run-in-progress'
+
+export interface AdventureConflict {
+  code: AdventureConflictCode
+  /** The server's sentence, naming the adventure and what is in the way. */
+  detail: string
+  currentCampaignId?: string
+  currentCampaignName?: string
+  adventureGameSystem?: string
+  campaignGameSystem?: string
+}
+
+/** The conflict a failed request carries, or null when it is anything else. */
+export function conflictOf(e: unknown): AdventureConflict | null {
+  const response = (e as { response?: { status?: number; data?: Record<string, unknown> } })?.response
+  const code = response?.data?.code
+  if (response?.status !== 409 || typeof code !== 'string') return null
+  if (code !== 'adventure-in-other-campaign' && code !== 'game-system-mismatch' && code !== 'adventure-run-in-progress') {
+    return null
+  }
+  const text = (key: string): string | undefined =>
+    typeof response.data?.[key] === 'string' ? (response.data[key] as string) : undefined
+  return {
+    code,
+    detail: text('detail') ?? 'The adventure cannot be changed right now.',
+    currentCampaignId: text('currentCampaignId'),
+    currentCampaignName: text('currentCampaignName'),
+    adventureGameSystem: text('adventureGameSystem'),
+    campaignGameSystem: text('campaignGameSystem'),
+  }
+}
+
+/** What the host has agreed to when attaching an adventure. */
+export interface AssignConfirmations {
+  /** Take the adventure out of the other campaign it is in. */
+  confirmMove?: boolean
+  /** Attach it although the campaign's game system differs. */
+  confirmMismatch?: boolean
+}
+
+/**
+ * Put an adventure in a campaign. A 409 with a conflict code means the host has to agree to something first
+ * (see {@link conflictOf}); send the request again with the matching confirmation.
+ */
+export async function assignAdventureToCampaign(
+  adventureId: string,
+  campaignId: string,
+  confirm: AssignConfirmations = {},
+): Promise<CampaignAdventure> {
+  const response = await apiClient.patch<CampaignAdventure>(`/api/adventures/${adventureId}/assign`, {
+    campaignId,
+    confirmMove: confirm.confirmMove ?? false,
+    confirmMismatch: confirm.confirmMismatch ?? false,
+  })
+  return response.data
+}
+
+/** Take an adventure out of its campaign. It stays in the Forge, with its runs and history. */
+export async function unassignAdventure(adventureId: string): Promise<CampaignAdventure> {
+  const response = await apiClient.patch<CampaignAdventure>(`/api/adventures/${adventureId}/unassign`)
+  return response.data
+}
+
+/** What deleting an adventure would remove. */
+export interface AdventureDeleteImpact {
+  id: string
+  title: string
+  totalRuns: number
+  notStartedRuns: number
+  inProgressRuns: number
+  completedRuns: number
+  abandonedRuns: number
+  transcriptEntries: number
+  indexedChunks: number
+}
+
+export async function getAdventureDeleteImpact(adventureId: string): Promise<AdventureDeleteImpact> {
+  const response = await apiClient.get<AdventureDeleteImpact>(`/api/adventures/${adventureId}/delete-impact`)
   return response.data
 }
 

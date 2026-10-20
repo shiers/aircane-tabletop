@@ -41,6 +41,9 @@ const statusClass = computed(
       }}</span>
     </div>
     <p class="mt-1 text-sm text-gray-400" data-testid="adventure-meta">{{ meta }}</p>
+    <p v-if="adventure.campaignName" class="mt-1 break-words text-sm text-aircane-300" data-testid="adventure-campaign">
+      In campaign: {{ adventure.campaignName }}
+    </p>
     <p v-if="adventure.activeSession" class="mt-1 text-sm text-aircane-300" data-testid="adventure-progress">
       Scene {{ adventure.activeSession.currentSceneNumber }} of {{ adventure.activeSession.totalScenes }} — In Progress
     </p>

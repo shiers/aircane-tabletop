@@ -132,6 +132,20 @@ export interface ParticipantDeniedEvent {
   displayName: string
 }
 
+/** Sent to the host and to the person removed, just before that person's connection is closed. */
+export interface ParticipantRemovedEvent {
+  sessionId: string
+  participantId: string
+  displayName: string
+}
+
+/** Host only: a participant's first connection opened, or their last one closed. */
+export interface ParticipantPresenceChangedEvent {
+  sessionId: string
+  participantId: string
+  isConnected: boolean
+}
+
 /** The signal sent when a turn, the scene or a player's action changed the adventure; carries no content. */
 export interface AdventureStateChangedEvent {
   /** The adventure run's id. */

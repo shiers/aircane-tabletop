@@ -6,6 +6,8 @@ import {
   joinSession,
   getParticipants,
   approveParticipant,
+  denyParticipant,
+  removeParticipant,
   assignCharacter,
   replaceParticipant,
   rejoinSession,
@@ -153,7 +155,8 @@ export const useSessionStore = defineStore('sessions', () => {
       const updated = await approveParticipant(sessionId, participantId)
       const idx = participants.value.findIndex((p) => p.id === participantId)
       if (idx !== -1) {
-        participants.value[idx] = updated
+        // The approval answer has no presence; keep what the roster knew.
+        participants.value[idx] = { ...updated, isConnected: participants.value[idx].isConnected }
       }
       return updated
     } catch (err) {
@@ -187,6 +190,43 @@ export const useSessionStore = defineStore('sessions', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  /** Decline a pending join request. The person leaves the roster. */
+  async function denyParticipantAction(sessionId: string, participantId: string): Promise<ParticipantDto> {
+    loading.value = true
+    error.value = null
+    try {
+      const denied = await denyParticipant(sessionId, participantId)
+      participants.value = participants.value.filter((p) => p.id !== participantId)
+      return denied
+    } catch (err) {
+      error.value = extractMessage(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** Take an approved participant out of the session. They leave the roster. */
+  async function removeParticipantAction(sessionId: string, participantId: string): Promise<void> {
+    loading.value = true
+    error.value = null
+    try {
+      await removeParticipant(sessionId, participantId)
+      participants.value = participants.value.filter((p) => p.id !== participantId)
+    } catch (err) {
+      error.value = extractMessage(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** Hub event: a participant's connection came up or went away (host only). */
+  function setPresence(participantId: string, isConnected: boolean): void {
+    const idx = participants.value.findIndex((p) => p.id === participantId)
+    if (idx !== -1) participants.value[idx] = { ...participants.value[idx], isConnected }
   }
 
   /** Assign a character to a participant. Updates the local participants list. */
@@ -231,6 +271,9 @@ export const useSessionStore = defineStore('sessions', () => {
     joinSession: joinSessionAction,
     fetchParticipants,
     approveParticipant: approveParticipantAction,
+    denyParticipant: denyParticipantAction,
+    removeParticipant: removeParticipantAction,
+    setPresence,
     replaceParticipant: replaceParticipantAction,
     assignCharacter: assignCharacterAction,
     clearSession,

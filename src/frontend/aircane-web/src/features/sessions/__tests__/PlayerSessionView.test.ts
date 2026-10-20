@@ -10,6 +10,7 @@ import * as charactersApi from '../../characters/api'
 import type { PlayerAdventureRun } from '../api'
 import { SessionAccessMode, SessionStatus, ParticipantRole } from '../api'
 import { saveParticipantSession, loadParticipantSession } from '../participantSession'
+import { getOrCreateRejoinSecret, getRejoinSecret } from '../rejoinSecrets'
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -304,6 +305,34 @@ describe('PlayerSessionView', () => {
 
       expect(replace).toHaveBeenCalledWith({ name: 'join-session', params: { sessionId: 'session-1' } })
       expect(loadParticipantSession()).not.toBeNull()
+    })
+
+    it('sends a removed participant to the join page saying so, forgetting the login and the rejoin secret', async () => {
+      getOrCreateRejoinSecret('session-1', 'Thorin')
+      mockedReconnect.mockRejectedValue(httpError(403, { code: 'participant-removed' }))
+
+      const { replace } = await mountView()
+
+      expect(replace).toHaveBeenCalledWith({ name: 'join-session', params: { sessionId: 'session-1' }, query: { removed: '1' } })
+      expect(loadParticipantSession()).toBeNull()
+      expect(getRejoinSecret('session-1')).toBeNull()
+      expect(hub.builds).toBe(0)
+    })
+
+    it('leaves the table when the hub says the host removed this player, and ignores the removal of anyone else', async () => {
+      getOrCreateRejoinSecret('session-1', 'Thorin')
+      const { replace } = await mountView()
+
+      hub.handlers.ParticipantRemoved({ sessionId: 'session-1', participantId: 'someone-else', displayName: 'Bob' })
+      await flushPromises()
+      expect(replace).not.toHaveBeenCalled()
+
+      hub.handlers.ParticipantRemoved({ sessionId: 'session-1', participantId: 'participant-1', displayName: 'Thorin' })
+      await flushPromises()
+
+      expect(replace).toHaveBeenCalledWith({ name: 'join-session', params: { sessionId: 'session-1' }, query: { removed: '1' } })
+      expect(loadParticipantSession()).toBeNull()
+      expect(getRejoinSecret('session-1')).toBeNull()
     })
 
     it('stays, and keeps trying, when the host cannot be reached', async () => {

@@ -44,4 +44,11 @@ public sealed class SessionHubConnections
 
     public IReadOnlyList<Entry> ForSession(Guid sessionId)
         => _entries.Values.Where(e => e.SessionId == sessionId).ToList();
+
+    /// <summary>
+    /// Presence: whether the participant has at least one hub connection to the session open right now. This is
+    /// the in-memory registry, so after a server restart everyone reads as away until their client reconnects.
+    /// </summary>
+    public bool IsConnected(Guid sessionId, Guid participantId)
+        => _entries.Values.Any(e => e.SessionId == sessionId && e.ParticipantId == participantId);
 }

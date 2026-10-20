@@ -110,6 +110,7 @@ public sealed class SessionHub : Hub
 
         await RemoveFromGroupsAsync(entry);
         _connections.Forget(Context.ConnectionId);
+        await AnnounceIfGoneAsync(entry);
 
         var caller = HubCaller.From(Context);
         _logger.LogInformation(
@@ -213,6 +214,10 @@ public sealed class SessionHub : Hub
             throw new HubException("You are not a participant of this session.");
         if (participant.IsDenied)
             throw new HubException("The host declined your request to join this session.");
+        if (participant.IsRemoved)
+            throw new HubException("The host removed you from this session.");
+
+        var wasConnected = _connections.IsConnected(sessionId, participantId);
 
         // Their own group, always: a waiting participant hears their own approval or denial there.
         await Groups.AddToGroupAsync(Context.ConnectionId, ParticipantGroupName(sessionId, participantId));
@@ -221,6 +226,27 @@ public sealed class SessionHub : Hub
 
         _connections.Track(new SessionHubConnections.Entry(
             Context.ConnectionId, Context, sessionId, participantId, IsHost: false, IsMember: participant.IsApproved));
+
+        if (!wasConnected)
+            await AnnouncePresenceAsync(sessionId, participantId, isConnected: true);
+    }
+
+    /// <summary>
+    /// Tells the host (only) that a participant's first connection opened or their last one closed. Presence is
+    /// the hub's in-memory connection registry: it is lost on a server restart (everyone reads as away until their
+    /// client reconnects), and it never changes the game by itself: an acting player who drops keeps the turn.
+    /// </summary>
+    private Task AnnouncePresenceAsync(Guid sessionId, Guid participantId, bool isConnected)
+        => Clients.Group(HostGroupName(sessionId)).SendAsync(
+            "ParticipantPresenceChanged", new ParticipantPresenceChangedNotification(sessionId, participantId, isConnected));
+
+    /// <summary>After a connection was forgotten: tell the host if that was the participant's last one.</summary>
+    private async Task AnnounceIfGoneAsync(SessionHubConnections.Entry entry)
+    {
+        if (entry.IsHost || entry.ParticipantId is not { } participantId)
+            return;
+        if (!_connections.IsConnected(entry.SessionId, participantId))
+            await AnnouncePresenceAsync(entry.SessionId, participantId, isConnected: false);
     }
 
     private async Task RemoveFromGroupsAsync(SessionHubConnections.Entry entry)
@@ -342,8 +368,14 @@ public sealed class SessionHub : Hub
             _logger.LogDebug("Client {ConnectionId} disconnected", Context.ConnectionId);
         }
 
-        // SignalR drops a closed connection from its groups itself; only the bookkeeping is left.
-        _connections.Forget(Context.ConnectionId);
+        // SignalR drops a closed connection from its groups itself; only the bookkeeping is left, and the host
+        // hears if that was the participant's last connection. (A connection the server closed itself, on a denial,
+        // a removal or the end of the session, was forgotten already: that person is off the roster anyway.)
+        if (_connections.Get(Context.ConnectionId) is { } entry)
+        {
+            _connections.Forget(Context.ConnectionId);
+            await AnnounceIfGoneAsync(entry);
+        }
         await base.OnDisconnectedAsync(exception);
     }
 

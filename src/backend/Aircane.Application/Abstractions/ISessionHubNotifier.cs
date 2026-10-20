@@ -87,6 +87,9 @@ public interface ISessionHubNotifier
     /// <summary>A join request was denied by the host.</summary>
     Task NotifyParticipantDeniedAsync(Guid sessionId, ParticipantDeniedNotification notification, CancellationToken ct = default);
 
+    /// <summary>The host removed a participant: told to the host and to the person removed.</summary>
+    Task NotifyParticipantRemovedAsync(Guid sessionId, ParticipantRemovedNotification notification, CancellationToken ct = default);
+
     /// <summary>An adventure run changed in a way players can see; a signal to re-read it, with no content.</summary>
     Task NotifyAdventureStateChangedAsync(Guid sessionId, AdventureStateChangedNotification notification, CancellationToken ct = default);
 }

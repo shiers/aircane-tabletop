@@ -47,6 +47,14 @@ public class SessionParticipant : EntityBase
     /// </summary>
     public Guid? ReplacedByParticipantId { get; set; }
 
+    /// <summary>
+    /// When the host took this participant out of the session, or null. A removed participant is treated like a
+    /// denied one: off the roster, no seat, its token revoked, its character and turn-order place given up. The
+    /// record is kept (with its rejoin secret) so the server can tell the browser it was removed, rather than
+    /// answer as if it had never joined; that secret never mints a token again.
+    /// </summary>
+    public DateTimeOffset? RemovedAt { get; set; }
+
     public SessionParticipant(
         Guid sessionId,
         string displayName,

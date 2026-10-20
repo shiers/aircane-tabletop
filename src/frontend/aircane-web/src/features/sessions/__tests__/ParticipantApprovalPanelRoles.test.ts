@@ -17,9 +17,9 @@ function person(id: string, overrides: Partial<ParticipantDto> = {}): Participan
   }
 }
 
-function mountPanel(participants: ParticipantDto[], dismissible?: boolean) {
+function mountPanel(participants: ParticipantDto[]) {
   return mount(ParticipantApprovalPanel, {
-    props: { sessionId: 'session-1', participants, availableCharacters: [], dismissible },
+    props: { sessionId: 'session-1', participants, availableCharacters: [] },
   })
 }
 
@@ -45,31 +45,45 @@ describe('ParticipantApprovalPanel: role labels', () => {
   })
 })
 
-describe('ParticipantApprovalPanel: dismiss', () => {
-  it('has no Dismiss button unless asked for', () => {
+describe('ParticipantApprovalPanel: deny, remove and presence', () => {
+  it('offers Deny on a pending request, which asks the parent (it never approves)', async () => {
     const wrapper = mountPanel([person('newcomer')])
 
-    expect(wrapper.find('[data-testid="dismiss-participant"]').exists()).toBe(false)
-  })
+    await wrapper.find('[data-testid="deny-participant"]').trigger('click')
 
-  it('emits dismiss for a pending request, without approving', async () => {
-    const wrapper = mountPanel([person('newcomer')], true)
-
-    await wrapper.find('[data-testid="dismiss-participant"]').trigger('click')
-
-    expect(wrapper.emitted('dismiss')).toEqual([['newcomer']])
+    expect(wrapper.emitted('deny')).toEqual([['newcomer']])
     expect(wrapper.emitted('approve')).toBeUndefined()
-  })
-
-  it('does not offer Dismiss for someone already approved', () => {
-    const wrapper = mountPanel([person('done', { isApproved: true })], true)
-
     expect(wrapper.find('[data-testid="dismiss-participant"]').exists()).toBe(false)
   })
 
-  it('says what dismissing does', () => {
-    const wrapper = mountPanel([person('newcomer')], true)
+  it('says what denying does', () => {
+    const wrapper = mountPanel([person('newcomer')])
 
-    expect(wrapper.find('[data-testid="dismiss-participant"]').attributes('title')).toMatch(/stay unapproved/i)
+    expect(wrapper.find('[data-testid="deny-participant"]').attributes('title')).toMatch(/declines the request/i)
+  })
+
+  it('offers Remove, not Deny, for an approved player', async () => {
+    const wrapper = mountPanel([person('done', { isApproved: true })])
+
+    expect(wrapper.find('[data-testid="deny-participant"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="remove-participant"]').trigger('click')
+    expect(wrapper.emitted('remove')).toEqual([['done']])
+  })
+
+  it('never offers to remove the host', () => {
+    const wrapper = mountPanel([person('host', { isApproved: true, role: ParticipantRole.Host })])
+
+    expect(wrapper.find('[data-testid="remove-participant"]').exists()).toBe(false)
+  })
+
+  it('shows connected or away when the roster says, and nothing when it does not', () => {
+    const wrapper = mountPanel([
+      person('here', { isApproved: true, isConnected: true }),
+      person('gone', { isApproved: true, isConnected: false }),
+      person('unknown', { isApproved: true }),
+    ])
+
+    const dots = wrapper.findAll('[data-testid="presence-dot"]').map((d) => d.attributes('aria-label'))
+    expect(dots).toEqual(['Connected', 'Away'])
   })
 })

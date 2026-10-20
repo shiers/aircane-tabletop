@@ -6,8 +6,12 @@
  * orders the turns, and starts the adventure. Everything the lobby decides is a pure function in
  * `../lobby` (who can take a turn, the order, when Start is enabled) so it can be tested alone.
  *
- * The server never tells the host that someone joined or was approved by REST, so the parent keeps
- * `participants` fresh by polling; this panel only reacts to the list it is given.
+ * The parent keeps `participants` fresh from the session hub (joins, approvals, denials, removals, presence), with
+ * a slow poll only while the hub connection is down; this panel only reacts to the list it is given. Denying a
+ * request and removing a player are real server actions, which the parent confirms and sends.
+ *
+ * Start sends this lobby's play session (`playSessionId`), so the run is always the one these players joined; if
+ * the campaign is already running this adventure in another play session the server refuses, and says so.
  */
 import { ref, computed, watch } from 'vue'
 import { SessionStatus, type ParticipantDto, type SessionDto } from '../api'
@@ -19,7 +23,11 @@ import {
   startDisabledReason,
   type JoinLink,
 } from '../lobby'
-import { startGroupAdventureSession, type AdventureSessionStateDto } from '@/features/adventures/api'
+import {
+  startGroupAdventureSession,
+  type AdventureSessionStateDto,
+  type TurnAdvanceChoice,
+} from '@/features/adventures/api'
 import { mapGroupError } from '@/features/adventures/groupErrors'
 import LanJoinScreen from '../LanJoinScreen.vue'
 import ParticipantApprovalPanel from '../ParticipantApprovalPanel.vue'
@@ -38,25 +46,22 @@ const props = defineProps<{
   loading?: boolean
   /** Set when the campaign already has a run in progress, which would make starting fail. */
   runBlockedReason?: string | null
+  /** How the turn moves on, chosen when the group session was set up. Default: only when ended. */
+  turnAdvance?: TurnAdvanceChoice
 }>()
 
 const emit = defineEmits<{
   (e: 'approve', participantId: string): void
   (e: 'replace', newParticipantId: string, oldParticipantId: string): void
+  (e: 'deny', participantId: string): void
+  (e: 'remove', participantId: string): void
   (e: 'assign-character', participantId: string, characterId: string): void
   /** Ask the parent to re-read the participants (the server said the selection is out of date). */
   (e: 'refresh'): void
   (e: 'started', state: AdventureSessionStateDto): void
 }>()
 
-// Requests the host dismissed. Local only: the server cannot refuse a join request.
-const dismissed = ref<Set<string>>(new Set())
-const visibleParticipants = computed(() => props.participants.filter((p) => !dismissed.value.has(p.id)))
-const pendingCount = computed(() => pendingParticipants(visibleParticipants.value).length)
-
-function dismiss(participantId: string): void {
-  dismissed.value = new Set(dismissed.value).add(participantId)
-}
+const pendingCount = computed(() => pendingParticipants(props.participants).length)
 
 // ── Turn order ───────────────────────────────────────────────────────────────
 
@@ -121,19 +126,15 @@ async function handleStart(): Promise<void> {
   starting.value = true
   error.value = null
   try {
+    // This lobby's play session goes with the request: the server refuses (409, with its reason) when the campaign
+    // is already running this adventure in another one, so the run is never one these players are not in.
     const state = await startGroupAdventureSession({
       generatedAdventureId: props.adventureId,
       campaignId: props.campaignId,
       participantIds: [...turnOrder.value],
+      playSessionId: props.sessionId,
+      turnAdvance: props.turnAdvance ?? 'ManualOnly',
     })
-    // start-group picks the campaign's latest open play session. If it handed back a run that
-    // belongs to a different play session, the players waiting in THIS lobby are not in it.
-    if (state.sessionId && state.sessionId !== props.sessionId) {
-      error.value =
-        'This campaign is already running this adventure in a different play session, so the players waiting here are not in it. ' +
-        'End or finish that session first.'
-      return
-    }
     emit('started', state)
   } catch (err) {
     const mapped = mapGroupError(err, 'start-group')
@@ -169,13 +170,13 @@ async function handleStart(): Promise<void> {
     <div class="rounded-xl border border-surface-700/50 bg-surface-850 p-4 sm:p-6">
       <ParticipantApprovalPanel
         :session-id="sessionId"
-        :participants="visibleParticipants"
+        :participants="participants"
         :available-characters="availableCharacters"
         :loading="loading"
-        dismissible
         @approve="emit('approve', $event)"
         @replace="replaceSeat"
-        @dismiss="dismiss"
+        @deny="emit('deny', $event)"
+        @remove="emit('remove', $event)"
         @assign-character="(pid: string, cid: string) => emit('assign-character', pid, cid)"
       />
       <p v-if="pendingCount === 0 && turnOrder.length === 0" class="mt-3 text-xs text-gray-500">

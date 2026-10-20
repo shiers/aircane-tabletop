@@ -233,16 +233,8 @@ public sealed class AdventureSessionService : IAdventureSessionService
 
         // The check ("is the turn still where the caller thinks?") and the move must not interleave with
         // another request's (see AdventureTurnLocks). A second request waits, then sees the new state.
-        var gate = AdventureTurnLocks.For(sessionId);
-        await gate.WaitAsync(ct);
-        try
-        {
+        using (await AdventureTurnLocks.AcquireAsync(sessionId, ct))
             return await PassTurnLockedAsync(sessionId, pass, ct);
-        }
-        finally
-        {
-            gate.Release();
-        }
     }
 
     private async Task<AdventureSession> PassTurnLockedAsync(Guid sessionId, TurnPass pass, CancellationToken ct)
@@ -252,6 +244,11 @@ public sealed class AdventureSessionService : IAdventureSessionService
         await _db.Entry(session).ReloadAsync(ct);
         RequireInProgress(session);
         RequireGroup(session);
+        await AdventureTurnLocks.CheckpointAsync("pass", sessionId);
+
+        // Everyone left: there is no one to pass the turn to until the host adds a player.
+        if (session.TurnOrder.Count == 0)
+            throw new InvalidOperationException(NoPlayersLeft);
 
         if (pass.ExpectedActiveParticipantId is { } expected && session.ActiveParticipantId != expected)
         {
@@ -265,8 +262,17 @@ public sealed class AdventureSessionService : IAdventureSessionService
         var previousIndex = previousId is { } p ? session.TurnOrder.IndexOf(p) : -1;
         var nextIndex = (previousIndex + 1) % session.TurnOrder.Count;
 
-        // Passing the turn from the last participant back to the first starts a new round. When no
-        // one holds the turn (previousIndex -1) the first participant simply picks it up.
+        // Passing the turn from the last participant back to the first starts a new round. When no one holds
+        // the turn (previousIndex -1), the first participant in the order picks it up and the round stays as it
+        // is. That includes a run whose acting participant is no longer in the order (a legacy run, from before
+        // removals passed the turn on): where they sat cannot be known, so the turn starts again at the top
+        // without counting a round.
+        if (previousId is { } dangling && previousIndex < 0)
+        {
+            _logger.LogWarning(
+                "Adventure session {AdventureSessionId} named {Participant} as acting, who is not in its turn order; the turn goes to the first participant",
+                sessionId, dangling);
+        }
         if (previousIndex >= 0 && nextIndex == 0)
             session.CurrentRound++;
 
@@ -340,9 +346,15 @@ public sealed class AdventureSessionService : IAdventureSessionService
     /// <inheritdoc />
     public async Task<AdventureSession> AddParticipantAsync(Guid sessionId, Guid participantId, CancellationToken ct = default)
     {
+        // The turn order is read, appended to and saved under the run's turn lock, so a participant added while
+        // another is being removed (or the turn passed) is neither lost nor resurrected.
+        using var held = await AdventureTurnLocks.AcquireAsync(sessionId, ct);
+
         var session = await LoadTrackedAsync(sessionId, ct);
+        await _db.Entry(session).ReloadAsync(ct);
         RequireInProgress(session);
         RequireGroup(session);
+        await AdventureTurnLocks.CheckpointAsync("add", sessionId);
 
         if (session.TurnOrder.Contains(participantId))
             throw new InvalidOperationException("That participant is already in this adventure run.");
@@ -354,14 +366,24 @@ public sealed class AdventureSessionService : IAdventureSessionService
         if (!eligible.TryGetValue(participantId, out var participantName))
             throw new InvalidOperationException($"Participant '{participantId}' is not an active participant of this run's play session.");
 
-        session.TurnOrder.Add(participantId);
+        // Nobody holds the turn (everyone had left): the newcomer picks it up, so play can go on.
+        var takesTheTurn = session.ActiveParticipantId is null || !session.TurnOrder.Contains(session.ActiveParticipantId.Value);
+        session.TurnOrder = [.. session.TurnOrder, participantId];
+        if (takesTheTurn)
+        {
+            session.ActiveParticipantId = participantId;
+            session.PendingRollLabel = null;
+            session.PendingRollDC = null;
+            if (session.CurrentRound < 1)
+                session.CurrentRound = 1;
+        }
         Touch(session);
         await _db.SaveChangesAsync(ct);
 
         var position = session.TurnOrder.Count - 1;
         _logger.LogInformation(
-            "Participant {ParticipantId} joined adventure session {AdventureSessionId} at turn position {Position}",
-            participantId, sessionId, position);
+            "Participant {ParticipantId} joined adventure session {AdventureSessionId} at turn position {Position} (takes the turn: {TakesTheTurn})",
+            participantId, sessionId, position, takesTheTurn);
 
         await AppendEventAsync(session, "Adventure:ParticipantJoined",
             new { adventureSessionId = sessionId, participantId, turnPosition = position /* zero-based */ }, ct);
@@ -370,6 +392,14 @@ public sealed class AdventureSessionService : IAdventureSessionService
             playSessionId,
             new ParticipantJoinedAdventureNotification(sessionId, participantId, participantName, position),
             ct));
+        if (takesTheTurn)
+        {
+            await NotifyAsync(session, hub => hub.NotifyTurnAdvancedAsync(
+                playSessionId,
+                new TurnAdvancedNotification(sessionId, null, participantId, participantName, session.CurrentRound, nameof(TurnPassedBy.Host)),
+                ct));
+            await NotifyStateChangedAsync(playSessionId, sessionId, "TurnAdvanced", ct);
+        }
 
         return session;
     }
@@ -943,7 +973,9 @@ public sealed class AdventureSessionService : IAdventureSessionService
             sb.AppendLine();
         }
 
-        if (session.IsGroup && turnOrder is { Count: > 0 })
+        // A group run always has its GROUP PLAY block once the players are known (the group instructions refer
+        // to it), even when everyone has left the turn order.
+        if (session.IsGroup && turnOrder is not null)
         {
             sb.AppendLine(BuildGroupContext(session, turnOrder, characterNames));
             sb.AppendLine();
@@ -1022,10 +1054,22 @@ public sealed class AdventureSessionService : IAdventureSessionService
     {
         string Label(ParticipantTurnDto t) => ParticipantLabel(t, characterNames);
 
+        var sb = new StringBuilder();
+        if (turnOrder.Count == 0)
+        {
+            // Everyone has left the turn order: say so, rather than leave the block out (the group instructions
+            // point at it). No one may act until the host adds a player.
+            sb.AppendLine("GROUP PLAY — no players are in the turn order right now, so no one is acting.");
+            sb.AppendLine("Do not act or decide for any character. Wait for the host to add a player.");
+            sb.Append($"Round: {session.CurrentRound}.");
+            return sb.ToString();
+        }
+
         var active = turnOrder.FirstOrDefault(t => t.IsActive) ?? turnOrder[0];
 
-        var sb = new StringBuilder();
-        sb.AppendLine($"GROUP PLAY — {turnOrder.Count} players are in this session.");
+        sb.AppendLine(turnOrder.Count == 1
+            ? "GROUP PLAY — 1 player is in this session."
+            : $"GROUP PLAY — {turnOrder.Count} players are in this session.");
         sb.AppendLine($"Turn order: {string.Join(", ", turnOrder.Select(Label))}.");
         sb.AppendLine($"Currently acting: {Label(active)}.");
         sb.Append($"Round: {session.CurrentRound}.");
@@ -1324,11 +1368,15 @@ public sealed class AdventureSessionService : IAdventureSessionService
         };
     }
 
+    /// <summary>A group run stays one when everyone has left its turn order; only a solo run is refused.</summary>
     private static void RequireGroup(AdventureSession session)
     {
-        if (!session.IsGroup || session.TurnOrder.Count == 0)
+        if (!session.IsGroup)
             throw new InvalidOperationException("This adventure run is not a group run.");
     }
+
+    /// <summary>What passing the turn says when everyone has left the turn order.</summary>
+    internal const string NoPlayersLeft = "No one is in this adventure's turn order. Approve and add a player to continue.";
 
     /// <summary>
     /// Display names of the run's participants, by ID. Empty for a solo run.

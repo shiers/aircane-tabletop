@@ -9,14 +9,23 @@
  *
  * The host takes no turn. Players act one at a time; the server does not pass the turn on its own,
  * so a player who has disconnected, or who is simply slow, keeps the turn until the host passes it.
- * That is why "Pass the turn" is the most prominent control on the screen.
+ * That is why "Pass the turn" is the most prominent control on the screen. When the parent knows who is
+ * connected (`presence`), a disconnected acting player is pointed out there, with a way to remove them.
+ * When everyone has left the turn order there is no acting player until the host adds one.
  */
 import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useGroupRunStore } from '../stores/groupRunStore'
 
+const props = defineProps<{
+  /** Participant id -> connected right now, from the host's roster. Missing ids are unknown. */
+  presence?: Record<string, boolean | null | undefined>
+}>()
+
 const emit = defineEmits<{
   (e: 'abandoned'): void
+  /** Take a participant out of the session (the parent confirms it). */
+  (e: 'remove', participantId: string): void
 }>()
 
 const store = useGroupRunStore()
@@ -50,6 +59,20 @@ watch(
   },
   { immediate: true },
 )
+
+/** Everyone has left the turn order: nobody can act until the host adds a player. */
+const noActingPlayer = computed(() => !!run.value && run.value.turnOrder.length === 0)
+
+/** The acting player, when the roster says they have no connection open. */
+const actingAway = computed(() => {
+  const acting = run.value?.turnOrder.find((t) => t.isActive)
+  return acting && props.presence?.[acting.participantId] === false ? acting : null
+})
+
+function presenceOf(participantId: string): 'Connected' | 'Away' | null {
+  const value = props.presence?.[participantId]
+  return value === true ? 'Connected' : value === false ? 'Away' : null
+}
 
 const passLabel = computed(() => {
   const next = nextParticipantName.value
@@ -93,7 +116,10 @@ async function handleAbandon(): Promise<void> {
       <!-- Whose turn it is, and the one control the host will use most -->
       <div class="rounded-xl border-2 border-aircane-600 bg-aircane-900/30 p-4 sm:p-5" data-testid="turn-card">
         <p class="text-xs uppercase tracking-wider text-aircane-300">Acting now</p>
-        <p class="mt-1 break-words text-2xl font-bold text-white" data-testid="active-player">
+        <p v-if="noActingPlayer" class="mt-1 break-words text-lg font-semibold text-amber-200" data-testid="no-acting-player">
+          No acting player. Approve and add a player to continue.
+        </p>
+        <p v-else class="mt-1 break-words text-2xl font-bold text-white" data-testid="active-player">
           {{ run.activeParticipantName ?? 'Nobody yet' }}
         </p>
 
@@ -106,6 +132,23 @@ async function handleAbandon(): Promise<void> {
         >
           {{ busy === 'turn' ? 'Passing the turn…' : `⏭ ${passLabel}` }}
         </button>
+        <div
+          v-if="actingAway"
+          class="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-700 bg-amber-950/40 px-3 py-2 text-sm text-amber-200"
+          role="status"
+          data-testid="acting-player-away"
+        >
+          <span class="min-w-0 break-words">{{ actingAway.participantName }} is disconnected. Pass the turn, or remove them.</span>
+          <button
+            type="button"
+            class="shrink-0 rounded-md border border-red-800 px-3 py-1 text-sm font-medium text-red-300 hover:bg-red-950 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+            :disabled="busy !== null"
+            data-testid="remove-acting-player"
+            @click="emit('remove', actingAway.participantId)"
+          >
+            Remove {{ actingAway.participantName }}
+          </button>
+        </div>
         <p v-if="nextStartsNewRound && run.turnOrder.length > 1" class="mt-2 text-xs text-aircane-200" data-testid="new-round-hint">
           That starts round {{ run.currentRound + 1 }}.
         </p>
@@ -129,10 +172,32 @@ async function handleAbandon(): Promise<void> {
             :aria-current="entry.isActive ? 'step' : undefined"
           >
             <span class="w-5 shrink-0 text-right text-gray-500">{{ index + 1 }}</span>
+            <span
+              v-if="presenceOf(entry.participantId)"
+              class="h-2.5 w-2.5 shrink-0 rounded-full"
+              :class="presenceOf(entry.participantId) === 'Connected' ? 'bg-green-400' : 'bg-gray-500'"
+              role="img"
+              :aria-label="presenceOf(entry.participantId)!"
+              :title="presenceOf(entry.participantId)!"
+              data-testid="turn-presence-dot"
+            />
             <span class="min-w-0 flex-1 truncate">{{ entry.participantName }}</span>
             <span v-if="entry.isActive" class="shrink-0 text-xs font-semibold text-aircane-300">acting</span>
+            <button
+              type="button"
+              class="shrink-0 rounded px-2 py-0.5 text-xs text-red-300 hover:bg-red-950 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+              :disabled="busy !== null"
+              :aria-label="`Remove ${entry.participantName} from the session`"
+              data-testid="remove-turn-player"
+              @click="emit('remove', entry.participantId)"
+            >
+              Remove
+            </button>
           </li>
         </ol>
+        <p v-if="noActingPlayer" class="text-sm text-gray-400" data-testid="turn-order-empty">
+          Nobody is in the turn order.
+        </p>
         <p class="mt-2 text-xs text-gray-500" data-testid="host-seat-hint">
           You run the game as the host and don't take a turn. Want a seat? Join as a player from another browser with the invite code.
         </p>

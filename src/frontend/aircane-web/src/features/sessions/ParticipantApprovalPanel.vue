@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * ParticipantApprovalPanel - shown to the host during a session.
- * Lists all participants, highlights pending approvals, and lets the host
- * approve players and assign characters.
+ * Lists all participants, highlights pending approvals, and lets the host approve or deny a request, remove an
+ * approved player, and assign characters. Each person shows whether they are connected right now (when the
+ * roster says; it is the host's read only). Denying and removing are asked to the parent, which confirms them.
  */
 import { computed } from 'vue'
 import { ParticipantRole, type ParticipantDto } from './api'
@@ -18,18 +19,16 @@ const props = defineProps<{
   /** Characters available in the campaign for assignment. */
   availableCharacters: { id: string; name: string }[]
   loading?: boolean
-  /**
-   * Offer a "Dismiss" button on pending requests. The server has no way to refuse a join request,
-   * so dismissing only hides the request on the host's screen; the person stays unapproved.
-   */
-  dismissible?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'approve', participantId: string): void
   /** Give an approved participant's seat to a waiting request with the same name. */
   (e: 'replace', newParticipantId: string, oldParticipantId: string): void
-  (e: 'dismiss', participantId: string): void
+  /** Decline a waiting request (the server tells the person and revokes their login). */
+  (e: 'deny', participantId: string): void
+  /** Take an approved participant out of the session. */
+  (e: 'remove', participantId: string): void
   (e: 'assign-character', participantId: string, characterId: string): void
 }>()
 
@@ -64,6 +63,13 @@ function characterName(characterId: string | null): string {
   return props.availableCharacters.find((c) => c.id === characterId)?.name ?? 'Unknown'
 }
 
+/** "Connected" / "Away", or null when the roster does not say (a player's read). */
+function presenceLabel(p: ParticipantDto): string | null {
+  if (p.isConnected === true) return 'Connected'
+  if (p.isConnected === false) return 'Away'
+  return null
+}
+
 function onApprove(participantId: string): void {
   emit('approve', participantId)
 }
@@ -94,7 +100,18 @@ function onAssignCharacter(participantId: string, event: Event): void {
           class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-yellow-800 bg-yellow-950/30 px-4 py-3"
         >
           <div class="min-w-0">
-            <p class="font-medium text-white">{{ participant.displayName }}</p>
+            <p class="flex min-w-0 items-center gap-2 font-medium text-white">
+              <span
+                v-if="presenceLabel(participant)"
+                class="h-2.5 w-2.5 shrink-0 rounded-full"
+                :class="participant.isConnected ? 'bg-green-400' : 'bg-gray-500'"
+                role="img"
+                :aria-label="presenceLabel(participant)!"
+                :title="presenceLabel(participant)!"
+                data-testid="presence-dot"
+              />
+              <span class="min-w-0 break-words">{{ participant.displayName }}</span>
+            </p>
             <p class="text-xs text-gray-400">{{ roleLabel(participant.role) }}</p>
             <ReplaceSeatControl
               :request="participant"
@@ -105,15 +122,15 @@ function onAssignCharacter(participantId: string, event: Event): void {
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <button
-              v-if="dismissible"
               type="button"
-              class="rounded-md border border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
-              :aria-label="`Dismiss ${participant.displayName}`"
-              title="Hides this request on your screen. They stay unapproved and cannot take part."
-              data-testid="dismiss-participant"
-              @click="emit('dismiss', participant.id)"
+              :disabled="loading"
+              class="rounded-md border border-red-800 px-3 py-1.5 text-sm font-medium text-red-300 hover:bg-red-950 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 transition-colors"
+              :aria-label="`Deny ${participant.displayName}`"
+              title="Declines the request. They are told, and cannot take part unless they ask again."
+              data-testid="deny-participant"
+              @click="emit('deny', participant.id)"
             >
-              Dismiss
+              Deny
             </button>
             <button
               type="button"
@@ -148,12 +165,25 @@ function onAssignCharacter(participantId: string, event: Event): void {
           class="flex flex-col gap-3 rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
         >
           <div class="min-w-0">
-            <p class="font-medium text-white">{{ participant.displayName }}</p>
-            <p class="text-xs text-gray-400">{{ roleLabel(participant.role) }}</p>
+            <p class="flex min-w-0 items-center gap-2 font-medium text-white">
+              <span
+                v-if="presenceLabel(participant)"
+                class="h-2.5 w-2.5 shrink-0 rounded-full"
+                :class="participant.isConnected ? 'bg-green-400' : 'bg-gray-500'"
+                role="img"
+                :aria-label="presenceLabel(participant)!"
+                :title="presenceLabel(participant)!"
+                data-testid="presence-dot"
+              />
+              <span class="min-w-0 break-words">{{ participant.displayName }}</span>
+            </p>
+            <p class="text-xs text-gray-400">
+              {{ roleLabel(participant.role) }}<template v-if="presenceLabel(participant)"> · {{ presenceLabel(participant) }}</template>
+            </p>
           </div>
 
-          <!-- Character assignment -->
-          <div class="flex items-center gap-2">
+          <!-- Character assignment, and removal -->
+          <div class="flex flex-wrap items-center gap-2">
             <span class="text-xs text-gray-500">Character:</span>
             <span
               v-if="availableCharacters.length === 0"
@@ -179,6 +209,17 @@ function onAssignCharacter(participantId: string, event: Event): void {
                 {{ character.name }}
               </option>
             </select>
+            <button
+              v-if="participant.role !== ParticipantRole.Host"
+              type="button"
+              :disabled="loading"
+              class="rounded-md border border-red-800 px-3 py-1 text-sm font-medium text-red-300 hover:bg-red-950 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+              :aria-label="`Remove ${participant.displayName} from the session`"
+              data-testid="remove-participant"
+              @click="emit('remove', participant.id)"
+            >
+              Remove
+            </button>
           </div>
         </li>
       </ul>

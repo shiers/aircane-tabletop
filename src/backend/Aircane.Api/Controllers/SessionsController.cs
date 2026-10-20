@@ -35,6 +35,7 @@ public sealed class SessionsController : ControllerBase
     private readonly IParticipantTokenService _tokenService;
     private readonly ITunnelStateService _tunnelState;
     private readonly IValidator<CreateSessionRequest> _createValidator;
+    private readonly ISessionHubMembership _hubMembership;
     private readonly ILogger<SessionsController> _logger;
 
     public SessionsController(
@@ -42,12 +43,14 @@ public sealed class SessionsController : ControllerBase
         IParticipantTokenService tokenService,
         ITunnelStateService tunnelState,
         IValidator<CreateSessionRequest> createValidator,
+        ISessionHubMembership hubMembership,
         ILogger<SessionsController> logger)
     {
         _sessions = sessions;
         _tokenService = tokenService;
         _tunnelState = tunnelState;
         _createValidator = createValidator;
+        _hubMembership = hubMembership;
         _logger = logger;
     }
 
@@ -208,6 +211,7 @@ public sealed class SessionsController : ControllerBase
         {
             RejoinOutcome.Found => Ok(attempt.Result),
             RejoinOutcome.Denied => PlayerSeat.Refusal(SeatStatus.Denied),
+            RejoinOutcome.Removed => PlayerSeat.Refusal(SeatStatus.Removed),
             _ => NoSeatToReturnTo(),
         };
     }
@@ -229,7 +233,13 @@ public sealed class SessionsController : ControllerBase
     {
         Response.Headers.CacheControl = "no-store";
         var attempt = await _sessions.GetRejoinStatusAsync(id, body?.Secret, cancellationToken);
-        return attempt.Outcome == RejoinOutcome.NotFound ? NoSeatToReturnTo() : Ok(attempt.Result);
+        return attempt.Outcome switch
+        {
+            RejoinOutcome.NotFound => NoSeatToReturnTo(),
+            // Nothing to return to, but said plainly, so the browser can tell the player and forget the session.
+            RejoinOutcome.Removed => PlayerSeat.Refusal(SeatStatus.Removed),
+            _ => Ok(attempt.Result),
+        };
     }
 
     /// <summary>The one answer for every rejoin that finds nothing, whatever the reason.</summary>
@@ -404,7 +414,11 @@ public sealed class SessionsController : ControllerBase
 
         var participants = await _sessions.GetParticipantsAsync(id, cancellationToken);
         if (this.IsHostOrDm())
-            return Ok(participants);
+        {
+            // Presence is for the host's screen only: connected or not, never a connection id.
+            var presence = _hubMembership.Presence(id, participants.Select(p => p.Id));
+            return Ok(participants.Select(p => p with { IsConnected = presence.GetValueOrDefault(p.Id) }).ToList());
+        }
 
         return Ok(participants
             .Select(p => p.IsApproved
@@ -501,6 +515,56 @@ public sealed class SessionsController : ControllerBase
             return Conflict(new ProblemDetails
             {
                 Title = "Cannot deny",
+                Detail = ex.Message,
+                Status = StatusCodes.Status409Conflict,
+            });
+        }
+    }
+
+    /// <summary>
+    /// Takes an approved participant out of the session (Host only). They leave the roster and every group
+    /// adventure run's turn order (the turn moves on if it was theirs; with nobody left, no one holds it), their
+    /// character is unassigned, their token is revoked (later requests are refused with
+    /// <c>code: "participant-removed"</c>) and their connections are closed after they are told
+    /// (<c>ParticipantRemoved</c>). The table hears <c>ParticipantLeft</c> and, per run, <c>AdventureStateChanged</c>.
+    /// Removing someone already removed changes nothing. 404 for an unknown participant; 409 for one still
+    /// waiting (deny the request instead), already denied or replaced, the host, or an ended session.
+    /// </summary>
+    [HttpPost("api/sessions/{id:guid}/remove-participant")]
+    [Authorize(Policy = AuthorizationPolicies.HostOnly)]
+    [EnableRateLimiting(RateLimitingSettings.JoinPolicy)]
+    [ProducesResponseType(typeof(RemoveParticipantResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RemoveParticipant(
+        Guid id,
+        [FromBody] RemoveParticipantBody body,
+        CancellationToken cancellationToken)
+    {
+        if (body is null || body.ParticipantId == Guid.Empty)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Validation failed",
+                Detail = "ParticipantId is required.",
+                Status = StatusCodes.Status400BadRequest,
+            });
+        }
+
+        try
+        {
+            return Ok(await _sessions.RemoveParticipantAsync(id, body.ParticipantId, cancellationToken));
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Cannot remove",
                 Detail = ex.Message,
                 Status = StatusCodes.Status409Conflict,
             });
@@ -751,6 +815,9 @@ public sealed record JoinSessionBody(
 /// <summary>Request body for the rejoin endpoints: the browser's rejoin secret.</summary>
 public sealed record RejoinBody(
     string? Secret);
+
+/// <summary>Request body for taking a participant out of the session.</summary>
+public sealed record RemoveParticipantBody(Guid ParticipantId);
 
 /// <summary>Request body for giving an approved participant's seat to a waiting join request.</summary>
 public sealed record ReplaceParticipantBody(

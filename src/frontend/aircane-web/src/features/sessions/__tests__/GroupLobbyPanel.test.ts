@@ -210,13 +210,22 @@ describe('GroupLobbyPanel', () => {
       expect(wrapper.emitted('approve')).toEqual([['newcomer']])
     })
 
-    it('dismisses a request on this screen only', async () => {
+    it('Deny asks the parent to decline the request on the server (no local-only dismiss)', async () => {
       const wrapper = mountLobby([person('newcomer', { isApproved: false })])
 
-      await wrapper.find('[data-testid="dismiss-participant"]').trigger('click')
+      await wrapper.find('[data-testid="deny-participant"]').trigger('click')
 
-      expect(wrapper.find('[aria-label="Approve newcomer"]').exists()).toBe(false)
+      expect(wrapper.emitted('deny')).toEqual([['newcomer']])
       expect(wrapper.emitted('approve')).toBeUndefined()
+      expect(wrapper.find('[data-testid="dismiss-participant"]').exists()).toBe(false)
+    })
+
+    it('Remove on an approved player asks the parent', async () => {
+      const wrapper = mountLobby([person('alice')])
+
+      await wrapper.find('[data-testid="remove-participant"]').trigger('click')
+
+      expect(wrapper.emitted('remove')).toEqual([['alice']])
     })
   })
 
@@ -234,8 +243,20 @@ describe('GroupLobbyPanel', () => {
         generatedAdventureId: 'adventure-1',
         campaignId: 'campaign-1',
         participantIds: ['bob', 'alice'],
+        playSessionId: 'play-1',
+        turnAdvance: 'ManualOnly',
       })
       expect(wrapper.emitted('started')).toEqual([[run]])
+    })
+
+    it('sends the turn-advance choice made when the session was set up', async () => {
+      startGroup.mockResolvedValue(groupRunState({ sessionId: 'play-1' }))
+      const wrapper = mountLobby([person('alice')], { turnAdvance: 'AfterEachAction' })
+
+      await wrapper.find('[data-testid="start-adventure-button"]').trigger('click')
+      await flushPromises()
+
+      expect(startGroup).toHaveBeenCalledWith(expect.objectContaining({ playSessionId: 'play-1', turnAdvance: 'AfterEachAction' }))
     })
 
     it('does nothing when started while disabled', async () => {
@@ -298,15 +319,17 @@ describe('GroupLobbyPanel', () => {
 
     // start-group takes no session id and may hand back an existing run of this adventure that
     // belongs to another play session; the players waiting in this lobby would not be in it.
-    it('does not open a run that belongs to a different play session', async () => {
-      startGroup.mockResolvedValue(groupRunState({ sessionId: 'some-other-session' }))
+    it("shows the server's refusal when the adventure is running in a different play session", async () => {
+      const detail =
+        'This campaign is already running this adventure in a different play session, so the players in the session you named are not in it. End or finish that run first.'
+      startGroup.mockRejectedValue(httpError(409, { title: 'Adventure already running in another session', detail }))
       const wrapper = mountLobby([person('alice')])
 
       await wrapper.find('[data-testid="start-adventure-button"]').trigger('click')
       await flushPromises()
 
       expect(wrapper.emitted('started')).toBeUndefined()
-      expect(wrapper.find('[data-testid="start-error"]').text()).toMatch(/different play session/i)
+      expect(wrapper.find('[data-testid="start-error"]').text()).toBe(detail)
     })
   })
 })

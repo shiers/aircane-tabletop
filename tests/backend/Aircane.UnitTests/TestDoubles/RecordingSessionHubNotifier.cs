@@ -78,6 +78,14 @@ internal sealed class RecordingSessionHubNotifier : ISessionHubNotifier
         return Task.CompletedTask;
     }
 
+    public List<(Guid SessionId, ParticipantRemovedNotification Notification)> ParticipantsRemoved { get; } = [];
+
+    public Task NotifyParticipantRemovedAsync(Guid sessionId, ParticipantRemovedNotification notification, CancellationToken ct = default)
+    {
+        ParticipantsRemoved.Add((sessionId, notification));
+        return Task.CompletedTask;
+    }
+
     public Task NotifyParticipantDeniedAsync(Guid sessionId, ParticipantDeniedNotification notification, CancellationToken ct = default)
     {
         ParticipantsDenied.Add((sessionId, notification));

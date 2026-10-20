@@ -7,7 +7,7 @@ import {
   type PlayerHub,
   type PlayerIdentity,
 } from './playerHub'
-import { isParticipantDenied, isTokenRejected, isUnreachable } from './playerErrors'
+import { isParticipantDenied, isParticipantRemoved, isTokenRejected, isUnreachable } from './playerErrors'
 
 /**
  * Where a participant stands with the host.
@@ -97,7 +97,8 @@ export function useApprovalWatch(options: ApprovalWatchOptions): ApprovalWatch {
     } catch (err) {
       if (stopped) return
       if (isParticipantDenied(err)) finish('denied')
-      else if (isTokenRejected(err)) finish('rejected')
+      // A removed participant's login is gone too: the page offers a fresh join.
+      else if (isTokenRejected(err) || isParticipantRemoved(err)) finish('rejected')
       else if (isUnreachable(err)) connectionProblem.value = true
       // Anything else (a 5xx, a 429) is treated as a missed poll: try again next time.
       if (state.value === 'checking' && !isTerminal() && !isUnreachable(err)) state.value = 'waiting'

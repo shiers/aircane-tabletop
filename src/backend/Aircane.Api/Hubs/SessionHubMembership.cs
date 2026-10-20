@@ -45,6 +45,10 @@ public sealed class SessionHubMembership : ISessionHubMembership
     }
 
     /// <inheritdoc />
+    public IReadOnlyDictionary<Guid, bool> Presence(Guid sessionId, IEnumerable<Guid> participantIds)
+        => participantIds.Distinct().ToDictionary(id => id, id => _connections.IsConnected(sessionId, id));
+
+    /// <inheritdoc />
     public async Task CloseSessionAsync(Guid sessionId, CancellationToken ct = default)
     {
         var entries = _connections.ForSession(sessionId);

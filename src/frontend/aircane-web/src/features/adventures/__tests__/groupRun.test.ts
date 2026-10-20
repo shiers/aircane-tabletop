@@ -137,7 +137,7 @@ describe('GroupRunHostPanel', () => {
       const { wrapper } = setup(groupRunState({ turnOrder: [], activeParticipantId: null, activeParticipantName: null }))
 
       expect(wrapper.find('[data-testid="advance-turn-button"]').attributes('disabled')).toBeDefined()
-      expect(wrapper.find('[data-testid="active-player"]').text()).toBe('Nobody yet')
+      expect(wrapper.find('[data-testid="no-acting-player"]').text()).toBe('No acting player. Approve and add a player to continue.')
     })
 
     it('with a single player, passing starts the next round', () => {

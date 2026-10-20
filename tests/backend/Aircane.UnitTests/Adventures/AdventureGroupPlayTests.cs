@@ -507,6 +507,39 @@ public sealed class AdventureGroupPlayTests : IDisposable
     }
 
     [Fact]
+    public async Task AdventureSession_GroupContext_WithOnePlayer_SaysOnePlayer()
+    {
+        await SeedAsync();
+        await _sut.StartGroupSessionAsync(_adventure.Id, _campaign.Id, [_alice.Id]);
+
+        var text = (await _sut.BuildActiveAdventureContextAsync(_campaign.Id))!.Text;
+
+        Assert.Contains("GROUP PLAY — 1 player is in this session.", text);
+        Assert.DoesNotContain("1 players", text);
+        Assert.Contains("Turn order: Alice.", text);
+        Assert.Contains("Currently acting: Alice.", text);
+    }
+
+    [Fact]
+    public async Task AdventureSession_GroupContext_WithNobodyLeft_KeepsTheBlock_AndSaysNoOneIsActing()
+    {
+        var run = await StartGroupAsync();
+        var tracked = await _db.AdventureSessions.SingleAsync(r => r.Id == run.Id);
+        tracked.TurnOrder = [];
+        tracked.ActiveParticipantId = null;
+        await _db.SaveChangesAsync();
+
+        var context = (await _sut.BuildActiveAdventureContextAsync(_campaign.Id))!;
+
+        // The group instructions refer to the GROUP PLAY block, so it is there even with no one in it.
+        Assert.True(context.IsGroup);
+        Assert.Contains("GROUP PLAY — no players are in the turn order right now, so no one is acting.", context.Text);
+        Assert.Contains("Wait for the host to add a player.", context.Text);
+        Assert.DoesNotContain("Currently acting:", context.Text);
+        Assert.DoesNotContain("Turn order:", context.Text);
+    }
+
+    [Fact]
     public async Task AdventureSession_GroupContext_FollowsThePendingRollBlock()
     {
         var run = await StartGroupAsync();

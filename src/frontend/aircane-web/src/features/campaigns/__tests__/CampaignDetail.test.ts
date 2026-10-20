@@ -266,8 +266,10 @@ describe('CampaignDetail', () => {
 
     await cards(wrapper)[0].find('[data-testid="start-group-button"]').trigger('click')
     await flushPromises()
+    expect(wrapper.find('[data-testid="campaign-select"]').exists()).toBe(false) // no campaign picker, only the options
+    await cards(wrapper)[0].find('[data-testid="start-button"]').trigger('click')
+    await flushPromises()
 
-    expect(wrapper.find('[data-testid="start-group-panel"]').exists()).toBe(false) // no campaign picker
     expect(sessionsApi.startSession).toHaveBeenCalledWith(CAMPAIGN_ID, expect.objectContaining({ accessMode: 1 }))
     expect(router.currentRoute.value.fullPath).toBe('/sessions/play-1/host?adventure=adv-1')
   })
@@ -371,6 +373,9 @@ describe('Review screen: play button by adventure mode', () => {
     await flushPromises()
 
     await wrapper.find('[data-testid="start-group-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="campaign-select"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="start-button"]').trigger('click')
     await flushPromises()
 
     expect(sessionsApi.startSession).toHaveBeenCalledWith(CAMPAIGN_ID, expect.anything())

@@ -34,10 +34,12 @@ import {
   connectPlayerHub,
   type AdventureStateChangedEvent,
   type ChatMessageEvent,
+  type ParticipantRemovedEvent,
   type PlayerHub,
   type RollRequestedEvent,
 } from './playerHub'
-import { isParticipantDenied, isTokenRejected } from './playerErrors'
+import { isParticipantDenied, isParticipantRemoved, isTokenRejected } from './playerErrors'
+import { forgetRejoinSecret } from './rejoinSecrets'
 import { onPageVisible } from './visibility'
 import { actionBoxState, endTurnState, isMyTurn, narrationLines, turnRows, usePlayerRun } from './playerRun'
 
@@ -63,6 +65,30 @@ const ready = ref(false)
 
 function goToJoinPage(): void {
   void router.replace({ name: 'join-session', params: { sessionId } })
+}
+
+/**
+ * The host removed this player. Their login and this browser's rejoin secret are of no more use (the server refuses
+ * both), so both are forgotten, and the join page says what happened, with the form to ask again.
+ */
+function leaveRemoved(): void {
+  if (leaving) return
+  leaving = true
+  clearParticipantSession()
+  forgetRejoinSecret(sessionId)
+  void router.replace({ name: 'join-session', params: { sessionId }, query: { removed: '1' } })
+}
+
+/**
+ * While the connection is down no ParticipantRemoved can arrive: ask the server whether this login still has a seat
+ * (a removed one is refused with its own code).
+ */
+async function checkSeat(): Promise<void> {
+  try {
+    await reconnectSession(sessionId)
+  } catch (err) {
+    if (isParticipantRemoved(err)) leaveRemoved()
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +281,11 @@ async function connectHub(): Promise<void> {
           await refreshEncounter()
         },
 
+        // The host removed this player: sent just before the server closes the connection.
+        ParticipantRemoved: (n: ParticipantRemovedEvent) => {
+          if (n?.participantId === participantId.value) leaveRemoved()
+        },
+
         // The party changed: someone joined, was let in, or left.
         ParticipantJoined: () => void refreshParticipants(),
         ParticipantApproved: () => void refreshParticipants(),
@@ -296,8 +327,12 @@ let leaving = false
 function scheduleNextPoll(): void {
   if (leaving) return
   pollTimer = setTimeout(async () => {
-    // A connection that is down also needs another try at coming up.
-    if (!hubUp.value) await connectHub()
+    // A connection that is down also needs another try at coming up, and the seat a look (no event can say it went).
+    if (!hubUp.value) {
+      await checkSeat()
+      if (leaving) return
+      await connectHub()
+    }
     await catchUp()
     scheduleNextPoll()
   }, hubUp.value ? POLL_HUB_UP_MS : POLL_HUB_DOWN_MS)
@@ -315,6 +350,8 @@ function scheduleNextPoll(): void {
 async function handlePageVisible(): Promise<void> {
   if (!me.value || leaving) return
   if (!hubUp.value) {
+    await checkSeat()
+    if (leaving) return
     const stale = hub.value
     hub.value = null
     if (stale) await stale.stop()
@@ -488,6 +525,10 @@ async function resume(): Promise<boolean> {
     }
     if (isParticipantDenied(err)) {
       goToJoinPage()
+      return false
+    }
+    if (isParticipantRemoved(err)) {
+      leaveRemoved()
       return false
     }
     // Unreachable or a server hiccup: carry on with what we have.

@@ -8,6 +8,7 @@ public static class RejoinStatus
     public const string Approved = "approved";
     public const string Pending = "pending";
     public const string Denied = "denied";
+    public const string Removed = "removed";
 }
 
 /// <summary>
@@ -42,6 +43,9 @@ public enum RejoinOutcome
     /// <summary>The secret matched a participant the host declined. No token is minted.</summary>
     Denied,
 
+    /// <summary>The secret matched a participant the host removed from the session. No token is minted.</summary>
+    Removed,
+
     /// <summary>
     /// Nothing to give back: an unknown or malformed secret, a session that has ended, or no such session.
     /// Deliberately one outcome, so the response does not say which.
@@ -54,6 +58,7 @@ public sealed record RejoinAttempt(RejoinOutcome Outcome, RejoinSessionResult? R
 {
     public static readonly RejoinAttempt NotFound = new(RejoinOutcome.NotFound);
     public static readonly RejoinAttempt Denied = new(RejoinOutcome.Denied);
+    public static readonly RejoinAttempt Removed = new(RejoinOutcome.Removed);
 }
 
 /// <summary>A status check: <see cref="Result"/> is set unless the outcome is <see cref="RejoinOutcome.NotFound"/>.</summary>
@@ -63,6 +68,16 @@ public sealed record RejoinStatusAttempt(RejoinOutcome Outcome, RejoinStatusResu
 }
 
 /// <summary>The outcome of giving an old participant's seat to a newer join request.</summary>
+/// <summary>
+/// The outcome of taking a participant out of a session: the participant as it is now, the adventure runs whose
+/// turn order changed, and the runs where the removed participant held the turn (it moved on, or, when nobody
+/// was left, no one holds it).
+/// </summary>
+public sealed record RemoveParticipantResult(
+    ParticipantDto Participant,
+    IReadOnlyList<Guid> AdventureRunIds,
+    IReadOnlyList<Guid> TurnPassedInRunIds);
+
 public sealed record ReplaceParticipantResult(
     ParticipantDto Participant,
     Guid ReplacedParticipantId,

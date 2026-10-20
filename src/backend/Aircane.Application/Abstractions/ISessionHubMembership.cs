@@ -13,10 +13,17 @@ public interface ISessionHubMembership
     Task AdmitParticipantAsync(Guid sessionId, Guid participantId, CancellationToken ct = default);
 
     /// <summary>
-    /// The host denied a participant: their open connections leave every group of the session and are closed.
+    /// The host denied or removed a participant: their open connections leave every group of the session and are
+    /// closed.
     /// </summary>
     Task RemoveParticipantAsync(Guid sessionId, Guid participantId, CancellationToken ct = default);
 
     /// <summary>The host ended the session: every connection to it is closed.</summary>
     Task CloseSessionAsync(Guid sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Whether each of these participants has a hub connection to the session open right now. Kept in memory by
+    /// the hub, so it starts empty (everyone away) after a server restart until clients reconnect.
+    /// </summary>
+    IReadOnlyDictionary<Guid, bool> Presence(Guid sessionId, IEnumerable<Guid> participantIds);
 }

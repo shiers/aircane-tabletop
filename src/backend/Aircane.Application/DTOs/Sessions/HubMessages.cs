@@ -310,6 +310,25 @@ public sealed record ParticipantDeniedNotification(
     string DisplayName);
 
 /// <summary>
+/// Sent to the host and to the person removed when the host takes an approved participant out of the session
+/// (SignalR event <c>ParticipantRemoved</c>), just before that person's connections are closed. The table hears
+/// <c>ParticipantLeft</c> instead.
+/// </summary>
+public sealed record ParticipantRemovedNotification(
+    Guid SessionId,
+    Guid ParticipantId,
+    string DisplayName);
+
+/// <summary>
+/// Sent to the host only when a participant's first hub connection opens or their last one closes (SignalR event
+/// <c>ParticipantPresenceChanged</c>). Ids and a flag only: never a connection id or a token.
+/// </summary>
+public sealed record ParticipantPresenceChangedNotification(
+    Guid SessionId,
+    Guid ParticipantId,
+    bool IsConnected);
+
+/// <summary>
 /// Broadcast when something about an adventure run that players can see has changed (SignalR event
 /// <c>AdventureStateChanged</c>): the turn passed, the scene changed, or a player action was answered.
 /// It is deliberately only a signal. It carries no scene, narration or notes, so it can never leak

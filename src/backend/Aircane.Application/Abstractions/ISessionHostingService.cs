@@ -54,7 +54,8 @@ public interface ISessionHostingService
     /// Takes a seat back with the rejoin secret the browser sent when it joined: the same participant, with its
     /// approval (or its place in the queue), character and turn position, and a fresh token. The previous token
     /// is revoked, so a seat has one live login. No new join request is made and nothing is announced.
-    /// <see cref="RejoinOutcome.Denied"/> for a request the host declined (no token);
+    /// <see cref="RejoinOutcome.Denied"/> for a request the host declined and <see cref="RejoinOutcome.Removed"/>
+    /// for a participant the host removed (no token in either case);
     /// <see cref="RejoinOutcome.NotFound"/> for anything else: an unknown or malformed secret, an ended session,
     /// or no such session.
     /// </summary>
@@ -89,6 +90,25 @@ public interface ISessionHostingService
         Guid sessionId,
         Guid oldParticipantId,
         Guid newParticipantId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Takes an approved participant out of the session (Host only). The record is kept and marked removed:
+    /// it leaves the roster, its token is revoked, its character is unassigned, and it leaves the turn order of
+    /// every group adventure run in progress in the session. Where it held the turn, the turn passes to the next
+    /// participant in the order (a new round when that wraps to the first) and a pending roll is cleared; with
+    /// nobody left the run stays a group run with an empty order and no acting player. Its rejoin secret is kept
+    /// only so the browser can be told it was removed: it never mints a token again. Removing someone already
+    /// removed returns them unchanged.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">The session, or the participant in it, does not exist.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The session has ended, or the participant has no seat to take: still waiting (deny the request instead),
+    /// already denied, already replaced, or the host.
+    /// </exception>
+    Task<RemoveParticipantResult> RemoveParticipantAsync(
+        Guid sessionId,
+        Guid participantId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

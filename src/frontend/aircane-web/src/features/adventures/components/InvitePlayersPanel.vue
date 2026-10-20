@@ -8,7 +8,7 @@
  * even while it is closed.
  *
  * It holds everything needed to get a late player into the run:
- *   join link, QR code and invite code  ->  the player joins  ->  Approve  ->  Add to the end.
+ *   join link, QR code and invite code  ->  the player joins  ->  Approve (or Deny)  ->  Add to the end.
  * (The server only lets an approved Player of the run's own play session be added.)
  */
 import { ref, computed } from 'vue'
@@ -34,6 +34,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'approve', participantId: string): void
+  (e: 'deny', participantId: string): void
   (e: 'replace', newParticipantId: string, oldParticipantId: string): void
   (e: 'add', participantId: string): void
 }>()
@@ -192,16 +193,28 @@ async function copy(text: string, which: 'url' | 'code'): Promise<void> {
                 @replace="(newId: string, oldId: string) => emit('replace', newId, oldId)"
               />
             </div>
-            <button
-              type="button"
-              class="shrink-0 rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
-              :disabled="busy"
-              :aria-label="`Approve ${person.displayName}`"
-              data-testid="invite-approve"
-              @click="emit('approve', person.id)"
-            >
-              Approve
-            </button>
+            <span class="flex shrink-0 gap-2">
+              <button
+                type="button"
+                class="rounded-md border border-red-800 px-3 py-1.5 text-sm font-medium text-red-300 hover:bg-red-950 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+                :disabled="busy"
+                :aria-label="`Deny ${person.displayName}`"
+                data-testid="invite-deny"
+                @click="emit('deny', person.id)"
+              >
+                Deny
+              </button>
+              <button
+                type="button"
+                class="rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+                :disabled="busy"
+                :aria-label="`Approve ${person.displayName}`"
+                data-testid="invite-approve"
+                @click="emit('approve', person.id)"
+              >
+                Approve
+              </button>
+            </span>
           </li>
         </ul>
       </div>

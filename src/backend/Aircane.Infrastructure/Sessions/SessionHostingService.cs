@@ -123,7 +123,7 @@ public sealed class SessionHostingService : ISessionHostingService
     {
         var participants = await _db.SessionParticipants
             .AsNoTracking()
-            .Where(p => p.SessionId == sessionId && !p.IsDenied && p.ReplacedByParticipantId == null)
+            .Where(p => p.SessionId == sessionId && !p.IsDenied && p.ReplacedByParticipantId == null && p.RemovedAt == null)
             .OrderBy(p => p.JoinedAt)
             .ToListAsync(cancellationToken);
 
@@ -161,17 +161,20 @@ public sealed class SessionHostingService : ISessionHostingService
             .Where(p => p.SessionId == request.SessionId && p.ReplacedByParticipantId == null)
             .ToListAsync(cancellationToken);
 
+        var cameBackAfterRemoval = false;
         if (secretHash is not null && MatchSecret(present, secretHash) is { } holder)
         {
-            // A seat this browser already has is taken back with rejoin, never by joining again. A declined
-            // request's secret is only kept to say so; it moves to this new request.
-            if (!holder.IsDenied)
+            // A seat this browser already has is taken back with rejoin, never by joining again. A declined or
+            // removed participant's secret is only kept to say so; it moves to this new request.
+            if (!holder.IsDenied && holder.RemovedAt is null)
                 throw new RejoinSecretInUseException();
+            cameBackAfterRemoval = holder.RemovedAt is not null;
             holder.RejoinSecretHash = null;
         }
 
-        // The host asked to approve each joiner (the default), or let anyone with the code straight in.
-        var autoApproved = !session.RequireHostApproval;
+        // The host asked to approve each joiner (the default), or let anyone with the code straight in. Someone
+        // the host removed, coming back from the same browser, waits for the host either way.
+        var autoApproved = !session.RequireHostApproval && !cameBackAfterRemoval;
         var participant = new SessionParticipant(
             sessionId: request.SessionId,
             displayName: request.DisplayName,
@@ -201,7 +204,7 @@ public sealed class SessionHostingService : ISessionHostingService
             request.SessionId, request.DisplayName, participant.Id, participant.IsApproved);
 
         // Tell the host (and the table) someone joined; the roster DTO carries no token, invite code or secret.
-        var others = present.Where(p => !p.IsDenied).Append(participant).ToList();
+        var others = present.Where(p => !p.IsDenied && p.RemovedAt == null).Append(participant).ToList();
         await NotifyAsync(hub => hub.NotifyParticipantJoinedAsync(
             request.SessionId, ToParticipantDto(participant, SameNameAs(participant, others)), cancellationToken));
         if (autoApproved)
@@ -238,6 +241,12 @@ public sealed class SessionHostingService : ISessionHostingService
                 "That join request was denied. The person has to join again with the invite code before they can be approved.");
         }
 
+        if (participant.RemovedAt is not null)
+        {
+            throw new InvalidOperationException(
+                "That person was removed from this session. They have to join again with the invite code before they can be approved.");
+        }
+
         var wasApproved = participant.IsApproved;
         participant.IsApproved = true;
         await _db.SaveChangesAsync(cancellationToken);
@@ -271,6 +280,9 @@ public sealed class SessionHostingService : ISessionHostingService
 
         if (participant.IsDenied)
             return ToParticipantDto(participant);
+
+        if (participant.RemovedAt is not null)
+            throw new InvalidOperationException("That person was already removed from this session.");
 
         if (participant.IsApproved)
         {
@@ -316,6 +328,8 @@ public sealed class SessionHostingService : ISessionHostingService
             return RejoinAttempt.NotFound;
         if (participant.IsDenied)
             return RejoinAttempt.Denied;
+        if (participant.RemovedAt is not null)
+            return RejoinAttempt.Removed;
 
         // A fresh token, and the one it replaces stops working: a seat has one live login.
         var previousTokenId = participant.TokenId;
@@ -364,11 +378,13 @@ public sealed class SessionHostingService : ISessionHostingService
             return RejoinStatusAttempt.NotFound;
 
         var status = participant.IsDenied ? RejoinStatus.Denied
+            : participant.RemovedAt is not null ? RejoinStatus.Removed
             : participant.IsApproved ? RejoinStatus.Approved
             : RejoinStatus.Pending;
-        return new RejoinStatusAttempt(
-            participant.IsDenied ? RejoinOutcome.Denied : RejoinOutcome.Found,
-            new RejoinStatusResult(session.Name, participant.DisplayName, status));
+        var outcome = participant.IsDenied ? RejoinOutcome.Denied
+            : participant.RemovedAt is not null ? RejoinOutcome.Removed
+            : RejoinOutcome.Found;
+        return new RejoinStatusAttempt(outcome, new RejoinStatusResult(session.Name, participant.DisplayName, status));
     }
 
     /// <inheritdoc />
@@ -395,20 +411,12 @@ public sealed class SessionHostingService : ISessionHostingService
             .ToListAsync(cancellationToken);
         runIds.Sort();
 
-        var held = new List<SemaphoreSlim>();
         SessionParticipant oldSeat;
         SessionParticipant newSeat;
         var changedRuns = new List<Guid>();
         var tookTheTurn = false;
-        try
+        using (await AdventureTurnLocks.AcquireAllAsync(runIds, cancellationToken))
         {
-            foreach (var runId in runIds)
-            {
-                var gate = AdventureTurnLocks.For(runId);
-                await gate.WaitAsync(cancellationToken);
-                held.Add(gate);
-            }
-
             var pair = await _db.SessionParticipants
                 .Where(p => p.SessionId == sessionId && (p.Id == oldParticipantId || p.Id == newParticipantId))
                 .ToListAsync(cancellationToken);
@@ -421,6 +429,8 @@ public sealed class SessionHostingService : ISessionHostingService
 
             if (newSeat.IsDenied)
                 throw new InvalidOperationException("That join request was denied, so it cannot take over a seat. The person has to join again.");
+            if (newSeat.RemovedAt is not null)
+                throw new InvalidOperationException("That person was removed from this session, so they cannot take over a seat. They have to join again.");
             if (newSeat.IsApproved)
                 throw new InvalidOperationException("That participant is already approved. Only a waiting join request can take over a seat.");
             if (newSeat.ReplacedByParticipantId is not null)
@@ -465,11 +475,6 @@ public sealed class SessionHostingService : ISessionHostingService
 
             await _db.SaveChangesAsync(cancellationToken);
         }
-        finally
-        {
-            foreach (var gate in held)
-                gate.Release();
-        }
 
         // The old participant's login stops working.
         if (!string.IsNullOrWhiteSpace(oldSeat.TokenId))
@@ -504,6 +509,138 @@ public sealed class SessionHostingService : ISessionHostingService
     }
 
     /// <inheritdoc />
+    public async Task<RemoveParticipantResult> RemoveParticipantAsync(
+        Guid sessionId,
+        Guid participantId,
+        CancellationToken cancellationToken = default)
+    {
+        var session = await _db.Sessions.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Session '{sessionId}' not found.");
+
+        var participant = await _db.SessionParticipants
+            .FirstOrDefaultAsync(p => p.SessionId == sessionId && p.Id == participantId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Participant '{participantId}' not found in session '{sessionId}'.");
+
+        // The runs whose turn order may name this participant. Their turn locks are held while the order is
+        // rewritten, so the turn cannot pass to (or from) them half way through, and a participant added at the
+        // same moment is not lost.
+        var runIds = await _db.AdventureSessions.AsNoTracking()
+            .Where(r => r.SessionId == sessionId && r.IsGroup && r.Status == AdventureSessionStatus.InProgress)
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        var changedRuns = new List<Guid>();
+        var passed = new List<(Guid RunId, Guid? Next, int Round)>();
+        using (await AdventureTurnLocks.AcquireAllAsync(runIds, cancellationToken))
+        {
+            await _db.Entry(participant).ReloadAsync(cancellationToken);
+
+            // Removing twice is harmless: the second time changes nothing and announces nothing.
+            if (participant.RemovedAt is not null)
+                return new RemoveParticipantResult(ToParticipantDto(participant), [], []);
+
+            if (session.Status == SessionStatus.Ended)
+                throw new InvalidOperationException("This session has ended.");
+            if (participant.Role == ParticipantRole.Host)
+                throw new InvalidOperationException("The host cannot be removed from their own session.");
+            if (participant.IsDenied)
+                throw new InvalidOperationException("That join request was already declined.");
+            if (participant.ReplacedByParticipantId is not null)
+                throw new InvalidOperationException("That participant's seat was already given to a newer join request.");
+            if (!participant.IsApproved)
+                throw new InvalidOperationException("That person is still waiting for approval. Deny the request instead.");
+
+            var runs = await _db.AdventureSessions.Where(r => runIds.Contains(r.Id)).ToListAsync(cancellationToken);
+            foreach (var run in runs)
+            {
+                await _db.Entry(run).ReloadAsync(cancellationToken);
+                await AdventureTurnLocks.CheckpointAsync("remove", run.Id);
+
+                var order = run.TurnOrder;
+                var index = order.IndexOf(participantId);
+                if (index < 0)
+                    continue;
+
+                if (run.ActiveParticipantId == participantId)
+                {
+                    // The turn moves on as a normal pass would: to the next participant in the order, and a new
+                    // round when that wraps past the end. With nobody left, no one holds it. A pending roll was
+                    // owed by the player who is leaving, so it goes (as when a turn passes).
+                    Guid? next = null;
+                    if (order.Count > 1)
+                    {
+                        var nextIndex = (index + 1) % order.Count;
+                        if (nextIndex == 0)
+                            run.CurrentRound++;
+                        next = order[nextIndex];
+                    }
+                    run.ActiveParticipantId = next;
+                    run.PendingRollLabel = null;
+                    run.PendingRollDC = null;
+                    passed.Add((run.Id, next, run.CurrentRound));
+                }
+
+                run.TurnOrder = order.Where(id => id != participantId).ToList();
+                run.LastActivityAt = DateTimeOffset.UtcNow;
+                changedRuns.Add(run.Id);
+            }
+
+            participant.RemovedAt = DateTimeOffset.UtcNow;
+            participant.IsApproved = false;
+            participant.CharacterId = null;   // the character is free for someone else
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        // Their login stops working: every later request with the token is refused as "removed".
+        if (!string.IsNullOrWhiteSpace(participant.TokenId))
+        {
+            await _tokenRevocation.RevokeTokensAsync(
+                [new RevokedTokenRecord(participant.TokenId, sessionId, participant.TokenExpiresAt ?? DateTimeOffset.UtcNow.AddDays(7))],
+                cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "Participant {ParticipantId} removed from session {SessionId} (runs: {RunCount}, turn passed in: {PassedCount})",
+            participantId, sessionId, changedRuns.Count, passed.Count);
+
+        // The host and the person removed are told; then their connections close (told first, so their page can
+        // say why it stopped, as with a denial). The table hears that they left, and each run changed.
+        await NotifyAsync(hub => hub.NotifyParticipantRemovedAsync(
+            sessionId,
+            new ParticipantRemovedNotification(sessionId, participant.Id, participant.DisplayName),
+            cancellationToken));
+        await ChangeMembershipAsync(m => m.RemoveParticipantAsync(sessionId, participant.Id, cancellationToken));
+        await NotifyAsync(hub => hub.NotifyParticipantLeftAsync(sessionId, participant.Id, participant.DisplayName, cancellationToken));
+
+        if (passed.Count > 0)
+        {
+            var nextIds = passed.Where(p => p.Next is not null).Select(p => p.Next!.Value).ToList();
+            var names = await _db.SessionParticipants.AsNoTracking()
+                .Where(p => nextIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, p => p.DisplayName, cancellationToken);
+            foreach (var (runId, next, round) in passed)
+            {
+                if (next is not { } nextId)
+                    continue;
+                await NotifyAsync(hub => hub.NotifyTurnAdvancedAsync(
+                    sessionId,
+                    new TurnAdvancedNotification(runId, participant.Id, nextId, names.GetValueOrDefault(nextId) ?? "Player", round, "Host"),
+                    cancellationToken));
+            }
+        }
+        foreach (var runId in changedRuns)
+        {
+            await NotifyAsync(hub => hub.NotifyAdventureStateChangedAsync(
+                sessionId,
+                new AdventureStateChangedNotification(runId, "ParticipantRemoved", DateTimeOffset.UtcNow),
+                cancellationToken));
+        }
+
+        return new RemoveParticipantResult(ToParticipantDto(participant), changedRuns, passed.Select(p => p.RunId).ToList());
+    }
+
+    /// <inheritdoc />
     public async Task<ParticipantDto> AssignCharacterAsync(
         Guid sessionId,
         Guid participantId,
@@ -513,6 +650,9 @@ public sealed class SessionHostingService : ISessionHostingService
         var participant = await _db.SessionParticipants
             .FirstOrDefaultAsync(p => p.SessionId == sessionId && p.Id == participantId, cancellationToken)
             ?? throw new KeyNotFoundException($"Participant '{participantId}' not found in session '{sessionId}'.");
+
+        if (participant.RemovedAt is not null)
+            throw new InvalidOperationException("That person was removed from this session.");
 
         participant.CharacterId = characterId;
         await _db.SaveChangesAsync(cancellationToken);
@@ -558,6 +698,7 @@ public sealed class SessionHostingService : ISessionHostingService
             .AsNoTracking()
             .Where(p => p.SessionId == sessionId
                 && !p.IsDenied   // already revoked when they were denied
+                && p.RemovedAt == null   // or removed
                 && p.TokenId != null
                 && p.TokenExpiresAt != null
                 && p.TokenExpiresAt > DateTimeOffset.UtcNow)
@@ -668,12 +809,12 @@ public sealed class SessionHostingService : ISessionHostingService
     /// </summary>
     private static Guid? SameNameAs(SessionParticipant participant, IReadOnlyList<SessionParticipant> present)
     {
-        if (participant.IsApproved || participant.IsDenied)
+        if (participant.IsApproved || participant.IsDenied || participant.RemovedAt is not null)
             return null;
 
         var name = participant.DisplayName.Trim();
         return present
-            .Where(p => p.Id != participant.Id && !p.IsDenied && p.ReplacedByParticipantId == null
+            .Where(p => p.Id != participant.Id && !p.IsDenied && p.ReplacedByParticipantId == null && p.RemovedAt == null
                         && string.Equals(p.DisplayName.Trim(), name, StringComparison.OrdinalIgnoreCase)
                         && (p.IsApproved || p.JoinedAt < participant.JoinedAt))
             .OrderByDescending(p => p.IsApproved)
@@ -744,7 +885,8 @@ public sealed class SessionHostingService : ISessionHostingService
         LastSeenAt: p.LastSeenAt,
         IsDenied: p.IsDenied,
         SameNameAsParticipantId: sameNameAs,
-        IsReplaced: p.ReplacedByParticipantId is not null);
+        IsReplaced: p.ReplacedByParticipantId is not null,
+        IsRemoved: p.RemovedAt is not null);
 
     /// <summary>Applies a host decision to open hub connections. Best effort, like <see cref="NotifyAsync"/>.</summary>
     private async Task ChangeMembershipAsync(Func<ISessionHubMembership, Task> change)

@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AircaneImg from './AircaneImg.vue'
 import NavIcon from './NavIcon.vue'
+import { clearParticipantSession, loadLiveParticipantSession } from '@/features/sessions/participantSession'
 
 defineProps<{
   collapsed: boolean
@@ -12,6 +14,7 @@ defineEmits<{
 }>()
 
 const route = useRoute()
+const router = useRouter()
 
 // `iconName` is the PNG basename under /assets/ui for the 8 mapped nav items
 // (rendered via <NavIcon> with an emoji fallback). Dashboard has no PNG asset,
@@ -27,6 +30,36 @@ const navItems: { label: string; to: string; icon: string; iconName?: string }[]
   { label: 'AI DM', to: '/settings/ai', icon: 'ai', iconName: 'icon-ai' },
   { label: 'About & Credits', to: '/about', icon: 'about', iconName: 'icon-about' },
 ]
+
+// A browser that has joined a table as a player is a player's: the host's navigation (campaigns, library, AI
+// settings...) is not theirs, and "Join Session" would only show a blank join form. They get one link back to
+// their table. It is read on every navigation, since the remembered login changes as they join, leave or are
+// refused.
+const tableOfThisBrowser = ref(loadLiveParticipantSession())
+watch(
+  () => route.fullPath,
+  () => {
+    tableOfThisBrowser.value = loadLiveParticipantSession()
+  },
+)
+
+const visibleNavItems = computed(() =>
+  tableOfThisBrowser.value
+    ? [{
+        label: 'Your session',
+        to: `/sessions/${tableOfThisBrowser.value.sessionId}/play`,
+        icon: 'dice',
+        iconName: 'icon-dice',
+      }]
+    : navItems,
+)
+
+/** Forgets the table (the one way out of the player navigation, for a login that has outlived its table). */
+function leaveTable(): void {
+  clearParticipantSession()
+  tableOfThisBrowser.value = null
+  void router.push('/')
+}
 
 function isActive(to: string): boolean {
   if (to === '/') return route.path === '/'
@@ -66,7 +99,7 @@ function isActive(to: string): boolean {
     <!-- Navigation -->
     <nav class="flex-1 space-y-1 overflow-y-auto px-2 py-4" aria-label="Main navigation">
       <RouterLink
-        v-for="item in navItems"
+        v-for="item in visibleNavItems"
         :key="item.to"
         :to="item.to"
         class="nav-item group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150"
@@ -97,6 +130,15 @@ function isActive(to: string): boolean {
 
     <!-- Bottom section - collapse toggle -->
     <div class="shrink-0 border-t border-surface-800/60 p-2">
+      <button
+        v-if="tableOfThisBrowser && !collapsed"
+        type="button"
+        class="mb-1 flex min-h-[44px] w-full items-center justify-center rounded-lg px-3 py-2 text-xs text-gray-500 transition-colors hover:bg-surface-800 hover:text-gray-300"
+        data-testid="leave-table"
+        @click="leaveTable"
+      >
+        Leave this table
+      </button>
       <button
         class="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-500 transition-colors hover:bg-surface-800 hover:text-gray-300"
         :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"

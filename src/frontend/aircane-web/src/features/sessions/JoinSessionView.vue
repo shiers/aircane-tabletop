@@ -14,8 +14,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from './store'
 import PlayerJoinForm from './PlayerJoinForm.vue'
 import WaitingForApproval from './components/WaitingForApproval.vue'
-import { getJoinInfo, type JoinSessionResult } from './api'
-import { clearParticipantSession, loadParticipantSessionFor } from './participantSession'
+import { getJoinInfo, reconnectSession, type JoinSessionResult } from './api'
+import {
+  clearParticipantSession,
+  loadLiveParticipantSession,
+  loadParticipantSessionFor,
+  type ParticipantSession,
+} from './participantSession'
+import { isParticipantDenied, isTokenRejected } from './playerErrors'
 
 // ---------------------------------------------------------------------------
 // Route params
@@ -49,10 +55,44 @@ const sessionName = ref<string | null>(null)
 // Load session info
 // ---------------------------------------------------------------------------
 
+/** The table this browser is already at, when the page was opened with no session of its own (/sessions). */
+const returningTo = ref<ParticipantSession | null>(null)
+
+/**
+ * "Join Session" in the sidebar opens /sessions, which has no table in it. For a player who is already at one,
+ * a blank join form looks like having been thrown out. So: find out where they stand, and take them back
+ * (approved: the session; waiting or declined: the join page for it, which shows that), or, if the server no
+ * longer accepts the login, forget it and show the page as for anyone new. While that is being found out, or if the
+ * host cannot be reached, a "Return to your session" card is shown instead of nothing.
+ */
+async function returnToStoredSession(): Promise<void> {
+  const saved = loadLiveParticipantSession()
+  if (!saved) return
+  returningTo.value = saved
+  try {
+    const status = await reconnectSession(saved.sessionId)
+    await router?.replace(status.isApproved
+      ? { name: 'play-session', params: { sessionId: saved.sessionId } }
+      : { name: 'join-session', params: { sessionId: saved.sessionId } })
+  } catch (err) {
+    if (isParticipantDenied(err)) {
+      await router?.replace({ name: 'join-session', params: { sessionId: saved.sessionId } })
+    } else if (isTokenRejected(err)) {
+      // Expired, revoked, or the table has ended: it must never get in the way of joining another.
+      clearParticipantSession()
+      returningTo.value = null
+    }
+    // Anything else (the host is out of reach): the card stays, with its link.
+  }
+}
+
 onMounted(async () => {
-  // No pre-populated session ID (e.g. the /sessions index): skip the lookup so
-  // the join form always renders instead of hanging on an invalid request.
-  if (!sessionId) return
+  // No pre-populated session ID (the /sessions index): there is nothing to look up, so the join form always
+  // renders instead of hanging on an invalid request. A player who is already at a table is taken back to it.
+  if (!sessionId) {
+    await returnToStoredSession()
+    return
+  }
 
   // Already joined from this tab (a reload, a phone that woke up): pick up where they were. The
   // waiting screen asks the server whether the host has approved them and moves on if so. A token
@@ -136,6 +176,24 @@ async function startOver(): Promise<void> {
         aria-busy="true"
       >
         <span class="text-gray-400">Loading session…</span>
+      </div>
+
+      <!-- Already at a table: a way back, not a blank form -->
+      <div
+        v-else-if="returningTo"
+        class="rounded-xl border border-aircane-500 bg-aircane-900/30 p-5 text-center"
+        data-testid="return-to-session"
+      >
+        <h2 class="text-lg font-semibold text-white">Return to your session</h2>
+        <p class="mt-1 text-sm text-gray-300">
+          You are at a table as {{ returningTo.displayName }}.
+        </p>
+        <RouterLink
+          :to="{ name: 'play-session', params: { sessionId: returningTo.sessionId } }"
+          class="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-aircane-600 px-5 py-2 text-sm font-semibold text-white hover:bg-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-400"
+        >
+          Back to the table
+        </RouterLink>
       </div>
 
       <!-- Joined - waiting for the host to approve; moves on by itself -->

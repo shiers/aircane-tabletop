@@ -270,6 +270,55 @@ export interface PlayerAdventureRun {
   /** Only ever set for the participant who owes the roll. */
   pendingRoll: PlayerPendingRoll | null
   recentNarration: PlayerNarrationEntry[]
+  /**
+   * How the turn moves on: "ManualOnly" (the acting player or the host ends it) or "AfterEachAction" (it
+   * moves to the next player by itself once the AI has answered). Missing on an older server: manual.
+   */
+  turnAdvance?: TurnAdvanceMode
+}
+
+export type TurnAdvanceMode = 'ManualOnly' | 'AfterEachAction'
+
+/**
+ * Ends the calling player's own turn (POST /api/adventure-sessions/{runId}/advance-turn) and returns the
+ * table view of the run. The server refuses (403) anyone who does not hold the turn, which includes a
+ * request that arrives after the turn already moved on.
+ */
+export async function endMyTurn(runId: string): Promise<PlayerAdventureRun | null> {
+  const response = await apiClient.post<PlayerAdventureRun>(`/api/adventure-sessions/${runId}/advance-turn`)
+  // 204: the turn moved but there was no table view to return; the caller reads the run again.
+  return response.status === 204 || !response.data || typeof response.data !== 'object' ? null : response.data
+}
+
+/** One stored chat message (GET /api/sessions/{id}/chat). */
+export interface ChatHistoryMessage {
+  id: string
+  sessionId: string
+  senderId: string
+  senderName: string
+  senderRole: ParticipantRole
+  text: string
+  sentAt: string
+}
+
+/** A page of chat history, oldest first. `hasMore`: older messages exist (ask again with `before`). */
+export interface ChatHistoryPage {
+  messages: ChatHistoryMessage[]
+  hasMore: boolean
+}
+
+/**
+ * The stored chat of a session: the newest `limit` messages (default 100, the server allows 200), or those
+ * older than the message `before`. Host and approved participants only.
+ */
+export async function getChatHistory(
+  sessionId: string,
+  options: { limit?: number; before?: string } = {},
+): Promise<ChatHistoryPage> {
+  const response = await apiClient.get<ChatHistoryPage>(`/api/sessions/${sessionId}/chat`, {
+    params: { limit: options.limit, before: options.before },
+  })
+  return response.data
 }
 
 /**

@@ -1,12 +1,13 @@
 import { computed, ref, type Ref } from 'vue'
 import {
+  endMyTurn,
   getAdventureRun,
   submitPlayerAction,
   type PlayerAdventureRun,
   type PlayerNarrationEntry,
   type PlayerTurn,
 } from './api'
-import { mapActionError, mapRunLoadError } from './playerErrors'
+import { mapActionError, mapEndTurnError, mapRunLoadError } from './playerErrors'
 
 /**
  * The player's side of a group adventure: the pure rules for what they may do, and the state that
@@ -54,6 +55,40 @@ export function actionBoxState(
   return { enabled: true, reason: null }
 }
 
+export interface EndTurnState {
+  /**
+   * What the "End my turn" control shows:
+   *  - `hidden`: no group adventure is running, so there is nothing to end;
+   *  - `automatic`: the run moves the turn on by itself, so there is no button;
+   *  - `button`: a button, enabled when `enabled`, otherwise with `reason` ("Waiting for <name>").
+   */
+  kind: 'hidden' | 'automatic' | 'button'
+  enabled: boolean
+  reason: string | null
+}
+
+/**
+ * The state of the "End my turn" control. It is enabled only for the acting player, and not while the AI is
+ * answering their action or their request to end the turn is in flight. The server enforces the same rule.
+ */
+export function endTurnState(
+  run: PlayerAdventureRun | null,
+  participantId: string | null,
+  busy: { submitting: boolean; ending: boolean },
+): EndTurnState {
+  if (!run || !run.isGroup || run.status !== 'InProgress') return { kind: 'hidden', enabled: false, reason: null }
+  if (run.turnAdvance === 'AfterEachAction') {
+    return { kind: 'automatic', enabled: false, reason: 'The turn passes to the next player by itself after each action.' }
+  }
+  if (!isMyTurn(run, participantId)) {
+    const name = run.activeParticipantName?.trim()
+    return { kind: 'button', enabled: false, reason: `Waiting for ${name || 'the next player'}` }
+  }
+  if (busy.submitting) return { kind: 'button', enabled: false, reason: 'The AI DM is answering…' }
+  if (busy.ending) return { kind: 'button', enabled: false, reason: 'Ending your turn…' }
+  return { kind: 'button', enabled: true, reason: null }
+}
+
 /** One row of the turn order as shown: positions are shown from 1, the server counts from 0. */
 export interface TurnRow extends PlayerTurn {
   /** One-based position to display. */
@@ -86,8 +121,12 @@ export interface PlayerRunState {
   actionError: Ref<string | null>
   /** True once the server said this participant may not read the run at all. */
   refused: Ref<boolean>
+  endingTurn: Ref<boolean>
+  endTurnError: Ref<string | null>
   refresh: () => Promise<void>
   submit: (text: string) => Promise<boolean>
+  /** Ends the caller's own turn. Returns true when the turn moved on. */
+  endTurn: () => Promise<boolean>
 }
 
 /**
@@ -104,6 +143,8 @@ export function usePlayerRun(sessionId: string): PlayerRunState {
   const submitting = ref(false)
   const actionError = ref<string | null>(null)
   const refused = ref(false)
+  const endingTurn = ref(false)
+  const endTurnError = ref<string | null>(null)
 
   // Overlapping reads would let an older answer replace a newer one: keep only the latest.
   let readCounter = 0
@@ -146,7 +187,32 @@ export function usePlayerRun(sessionId: string): PlayerRunState {
     }
   }
 
-  return { run, loaded, loadError, submitting, actionError, refused, refresh, submit }
+  /**
+   * Ends the caller's own turn. The server answers with the table view, which is taken as the new run state
+   * (the turn has moved on). On a refusal, including "the turn already moved on", the message says why and the
+   * run is read again so the screen shows who has the turn now.
+   */
+  async function endTurn(): Promise<boolean> {
+    const current = run.value
+    if (!current || endingTurn.value) return false
+
+    endingTurn.value = true
+    endTurnError.value = null
+    try {
+      const next = await endMyTurn(current.runId)
+      if (next) run.value = next
+      else await refresh()
+      return true
+    } catch (err) {
+      endTurnError.value = mapEndTurnError(err)
+      await refresh()
+      return false
+    } finally {
+      endingTurn.value = false
+    }
+  }
+
+  return { run, loaded, loadError, submitting, actionError, refused, endingTurn, endTurnError, refresh, submit, endTurn }
 }
 
 /** Convenience for components: the action box state as a computed. */

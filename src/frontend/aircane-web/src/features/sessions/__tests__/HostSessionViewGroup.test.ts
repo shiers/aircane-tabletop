@@ -13,6 +13,7 @@ import {
 } from '../api'
 import { saveInviteCode, loadInviteCode } from '../inviteCodeStorage'
 import * as sessionsApi from '../api'
+import * as diceApi from '../../dice/api'
 import * as adventuresApi from '@/features/adventures/api'
 import { groupRunState, makeState } from '@/features/adventures/__tests__/fixtures'
 
@@ -49,6 +50,7 @@ vi.mock('../api', async (importOriginal) => ({
   approveParticipant: vi.fn(),
   assignCharacter: vi.fn(),
   endSession: vi.fn(),
+  getChatHistory: vi.fn(),
 }))
 
 vi.mock('@/features/adventures/api', async (importOriginal) => ({
@@ -154,6 +156,7 @@ beforeEach(() => {
   hub.connection.stop.mockResolvedValue(undefined)
   vi.mocked(adventuresApi.getActiveAdventureSession).mockResolvedValue(null)
   vi.mocked(charactersApi.listCharacters).mockResolvedValue([])
+  vi.mocked(sessionsApi.getChatHistory).mockResolvedValue({ messages: [], hasMore: false })
   vi.mocked(generationApi.getAdventureDraft).mockResolvedValue({
     id: 'adventure-1', title: 'The Sunken Archive', status: 'Approved', createdAt: '', updatedAt: '',
   })
@@ -579,5 +582,145 @@ describe('HostSessionView: ending the session', () => {
 
     expect(sessionsApi.endSession).not.toHaveBeenCalled()
     expect(loadInviteCode('play-1')).toBe('ABCD1234')
+  })
+})
+
+describe('HostSessionView: chat history, roll log and character assignment', () => {
+  const said = (id: string, minute: number, overrides: Record<string, unknown> = {}) => ({
+    id,
+    sessionId: 'play-1',
+    senderId: 'player-1',
+    senderName: 'Alice',
+    senderRole: 2,
+    text: `line ${id}`,
+    sentAt: `2026-10-20T10:${String(minute).padStart(2, '0')}:00Z`,
+    ...overrides,
+  })
+
+  const rollBy = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id,
+    sessionId: 'play-1',
+    characterId: null,
+    rollerParticipantId: 'player-1',
+    rollerName: 'Alice',
+    formula: '1d20+2',
+    dieResults: [15],
+    modifier: 2,
+    total: 17,
+    isManual: false,
+    visibility: 0,
+    context: 'Perception',
+    createdAt: '2026-10-20T10:08:00Z',
+    ...overrides,
+  })
+
+  beforeEach(() => {
+    vi.mocked(diceApi.getRollLog).mockResolvedValue([])
+  })
+
+  it('loads the stored chat when the host screen opens', async () => {
+    vi.mocked(sessionsApi.getChatHistory).mockResolvedValue({ messages: [said('a', 1), said('b', 2)], hasMore: false })
+
+    const { wrapper } = await mountHost()
+
+    expect(sessionsApi.getChatHistory).toHaveBeenCalledWith('play-1')
+    expect(text(wrapper)).toContain('line a')
+    expect(text(wrapper)).toContain('line b')
+  })
+
+  it('shows a message once when it is in the history and arrives live too', async () => {
+    vi.mocked(sessionsApi.getChatHistory).mockResolvedValue({ messages: [said('a', 1)], hasMore: false })
+    const { wrapper } = await mountHost()
+
+    hub.handlers.get('ChatMessageReceived')!({
+      sessionId: 'play-1', participantId: 'player-1', displayName: 'Alice', text: 'line a',
+      sentAt: '2026-10-20T10:01:00Z', messageId: 'a', role: 'Player',
+    })
+    await flushPromises()
+
+    expect(text(wrapper).match(/line a/g)).toHaveLength(1)
+  })
+
+  it('pages up through the chat history', async () => {
+    vi.mocked(sessionsApi.getChatHistory)
+      .mockResolvedValueOnce({ messages: [said('c', 3)], hasMore: true })
+      .mockResolvedValueOnce({ messages: [said('b', 2)], hasMore: false })
+    const { wrapper } = await mountHost()
+
+    await wrapper.find('[data-testid="load-older"]').trigger('click')
+    await flushPromises()
+
+    expect(sessionsApi.getChatHistory).toHaveBeenLastCalledWith('play-1', { before: 'c' })
+    expect(text(wrapper)).toContain('line b')
+    expect(wrapper.find('[data-testid="load-older"]').exists()).toBe(false)
+  })
+
+  it('reads the chat and the roll log again after a reconnect, which may have missed both', async () => {
+    await mountHost()
+    vi.mocked(sessionsApi.getChatHistory).mockClear()
+    vi.mocked(diceApi.getRollLog).mockClear()
+    const onReconnected = hub.connection.onreconnected.mock.calls[0][0] as () => Promise<void>
+
+    await onReconnected()
+    await flushPromises()
+
+    expect(sessionsApi.getChatHistory).toHaveBeenCalledTimes(1)
+    expect(diceApi.getRollLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the stored roll log, with who rolled, the formula, the dice and the total', async () => {
+    vi.mocked(diceApi.getRollLog).mockResolvedValue([rollBy('r1')] as never)
+
+    const { wrapper } = await mountHost()
+
+    expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Alice: 1d20+2 [15] +2 = 17 (Perception)')
+  })
+
+  it('shows a public roll made on another device (a player\'s phone), live', async () => {
+    const { wrapper } = await mountHost()
+
+    hub.handlers.get('RollRecorded')!({ sessionId: 'play-1', roll: rollBy('live-1', { context: 'Athletics' }) })
+    await flushPromises()
+
+    expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Alice: 1d20+2 [15] +2 = 17 (Athletics)')
+  })
+
+  it('shows a player\'s private roll to the host, marked private', async () => {
+    const { wrapper } = await mountHost()
+
+    hub.handlers.get('RollRecorded')!({ sessionId: 'play-1', roll: rollBy('secret', { visibility: 1, context: 'secret insight' }) })
+    await flushPromises()
+
+    const entry = wrapper.find('[data-testid="roll-entry"]')
+    expect(entry.attributes('data-visibility')).toBe('private')
+    expect(entry.text()).toContain('secret insight')
+  })
+
+  it('shows a roll once when it is in the history and arrives live', async () => {
+    vi.mocked(diceApi.getRollLog).mockResolvedValue([rollBy('r1')] as never)
+    const { wrapper } = await mountHost()
+
+    hub.handlers.get('RollRecorded')!({ sessionId: 'play-1', roll: rollBy('r1') })
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid="roll-entry"]')).toHaveLength(1)
+  })
+
+  it('offers the campaign\'s characters for assignment in an ordinary session too, not only while setting up an adventure', async () => {
+    vi.mocked(charactersApi.listCharacters).mockResolvedValue([
+      { id: 'c1', name: 'Mira', role: charactersApi.CharacterRole.Player },
+    ] as never)
+
+    const { wrapper } = await mountHost({ adventure: false, participants: [person('alice')] })
+
+    const select = wrapper.find('select[aria-label="Assign character to alice"]')
+    expect(select.exists()).toBe(true)
+    expect(select.findAll('option').map((o) => o.text())).toEqual(['Select character…', 'Mira'])
+  })
+
+  it('says "AI GM runtime" in the proposals placeholder', async () => {
+    const { wrapper } = await mountHost({ adventure: false })
+
+    expect(text(wrapper)).toContain('AI proposals will appear here when the AI GM runtime is active.')
   })
 })

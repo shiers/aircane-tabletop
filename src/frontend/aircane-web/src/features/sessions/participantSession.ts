@@ -73,6 +73,21 @@ export function loadParticipantSession(): ParticipantSession | null {
 }
 
 /**
+ * The remembered participant, whichever session it is for, unless its token has expired (then it is removed).
+ * For screens that are not about one session, such as the sidebar and the join index: "is this browser a player
+ * at some table?". Whether the server still accepts the token is for the screen that goes there to find out.
+ */
+export function loadLiveParticipantSession(now: number = Date.now()): ParticipantSession | null {
+  const saved = loadParticipantSession()
+  if (!saved) return null
+  if (isTokenExpired(saved.token, now)) {
+    clearParticipantSession()
+    return null
+  }
+  return saved
+}
+
+/**
  * The remembered participant, only if it belongs to this play session and its token has not expired.
  * Anything else is stale: it is removed, so it can never be sent with a later request.
  */

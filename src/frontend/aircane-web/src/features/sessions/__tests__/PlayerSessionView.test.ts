@@ -5,6 +5,8 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { AxiosError, type AxiosResponse } from 'axios'
 import PlayerSessionView from '../PlayerSessionView.vue'
 import * as sessionsApi from '../api'
+import * as diceApi from '../../dice/api'
+import * as charactersApi from '../../characters/api'
 import type { PlayerAdventureRun } from '../api'
 import { SessionAccessMode, SessionStatus, ParticipantRole } from '../api'
 import { saveParticipantSession, loadParticipantSession } from '../participantSession'
@@ -64,7 +66,13 @@ vi.mock('../../dice/api', async (importOriginal) => {
       createdAt: '2024-01-01T10:00:00Z',
     }),
     recordManualRoll: vi.fn(),
+    getRollLog: vi.fn().mockResolvedValue([]),
   }
+})
+
+vi.mock('../../characters/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../characters/api')>()
+  return { ...actual, listCharacters: vi.fn().mockResolvedValue([]), listAllCharacters: vi.fn().mockResolvedValue([]) }
 })
 
 vi.mock('../combat', async (importOriginal) => {
@@ -79,12 +87,18 @@ vi.mock('../api', async (importOriginal) => {
     reconnectSession: vi.fn(),
     getAdventureRun: vi.fn(),
     submitPlayerAction: vi.fn(),
+    endMyTurn: vi.fn(),
+    getChatHistory: vi.fn(),
   }
 })
 
 const mockedReconnect = vi.mocked(sessionsApi.reconnectSession)
 const mockedGetRun = vi.mocked(sessionsApi.getAdventureRun)
 const mockedSubmit = vi.mocked(sessionsApi.submitPlayerAction)
+const mockedEndTurn = vi.mocked(sessionsApi.endMyTurn)
+const mockedGetChat = vi.mocked(sessionsApi.getChatHistory)
+const mockedGetRollLog = vi.mocked(diceApi.getRollLog)
+const mockedListCharacters = vi.mocked(charactersApi.listCharacters)
 
 // The session store: the player (Thorin, no character) and one other approved player.
 const mockStore = {
@@ -238,6 +252,9 @@ describe('PlayerSessionView', () => {
     rememberThorin()
     mockedReconnect.mockResolvedValue(approved())
     mockedGetRun.mockResolvedValue(makeRun())
+    mockedGetChat.mockResolvedValue({ messages: [], hasMore: false })
+    mockedGetRollLog.mockResolvedValue([])
+    mockedListCharacters.mockResolvedValue([])
     mockStore.fetchSession = vi.fn().mockResolvedValue(undefined)
     mockStore.fetchParticipants = vi.fn().mockResolvedValue(undefined)
   })
@@ -443,7 +460,7 @@ describe('PlayerSessionView', () => {
       })
       await flushPromises()
 
-      expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Bifur: 1d20+2 = 17 (Perception)')
+      expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Bifur: 1d20+2 [15] +2 = 17 (Perception)')
     })
 
     it('reads the run again when the hub says the adventure changed, and shows the new turn', async () => {
@@ -806,6 +823,330 @@ describe('PlayerSessionView', () => {
 
       expect((wrapper.find('#player-action').element as HTMLTextAreaElement).value).toBe('I rolled 15 for Dexterity (Stealth) check.')
       expect(mockedSubmit).not.toHaveBeenCalled()   // nothing is reported to the run until the player sends it
+    })
+  })
+  // ── Ending your own turn ─────────────────────────────────────────────────
+
+  describe('"End my turn"', () => {
+    it('is an enabled button on the player\'s turn, and ends the turn when pressed', async () => {
+      mockedGetRun.mockResolvedValue(myTurnRun())
+      mockedEndTurn.mockResolvedValue(makeRun())   // the table view after the turn moved on
+      const { wrapper } = await mountView()
+      const button = wrapper.find('[data-testid="end-turn-button"]')
+      expect(button.text()).toBe('End my turn')
+      expect(button.attributes('disabled')).toBeUndefined()
+
+      await button.trigger('click')
+      await flushPromises()
+
+      expect(mockedEndTurn).toHaveBeenCalledWith('run-1')
+      // The turn is Bifur's now: the button waits for him.
+      expect(wrapper.find('[data-testid="end-turn-button"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.find('[data-testid="end-turn-button"]').text()).toBe('Waiting for Bifur')
+    })
+
+    it('is disabled and says "Waiting for <name>" for everyone else', async () => {
+      const { wrapper } = await mountView()
+
+      const button = wrapper.find('[data-testid="end-turn-button"]')
+
+      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.text()).toBe('Waiting for Bifur')
+      await button.trigger('click')
+      expect(mockedEndTurn).not.toHaveBeenCalled()
+    })
+
+    it('is replaced by a note when the run moves the turn on by itself', async () => {
+      mockedGetRun.mockResolvedValue(myTurnRun({ turnAdvance: 'AfterEachAction' }))
+
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('[data-testid="end-turn-button"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="auto-advance-note"]').text()).toContain('by itself')
+    })
+
+    it('is not shown when there is no group adventure', async () => {
+      mockedGetRun.mockResolvedValue(null)
+
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('[data-testid="end-turn"]').exists()).toBe(false)
+    })
+
+    it('shows the server\'s message, and who has the turn now, when the turn had already moved on (403)', async () => {
+      mockedGetRun.mockResolvedValue(myTurnRun())
+      mockedEndTurn.mockRejectedValue(httpError(403, { title: 'Not your turn', detail: 'It is not your turn. Waiting for Bifur.' }))
+      const { wrapper } = await mountView()
+      mockedGetRun.mockResolvedValue(makeRun())   // the host passed it a moment ago
+
+      await wrapper.find('[data-testid="end-turn-button"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="end-turn-error"]').text()).toBe('It is not your turn. Waiting for Bifur.')
+      expect(wrapper.text()).not.toContain('status code')
+      expect(wrapper.find('[data-testid="end-turn-button"]').text()).toBe('Waiting for Bifur')
+    })
+
+    it('is disabled while the AI is answering the player\'s action', async () => {
+      mockedGetRun.mockResolvedValue(myTurnRun())
+      mockedSubmit.mockReturnValue(new Promise(() => undefined))
+      const { wrapper } = await mountView()
+      await wrapper.find('#player-action').setValue('I search.')
+      await wrapper.find('[data-testid="action-form"]').trigger('submit')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="end-turn-button"]').attributes('disabled')).toBeDefined()
+    })
+  })
+
+  // ── Roll log ─────────────────────────────────────────────────────────────
+
+  describe('the roll log', () => {
+    const rollBy = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      sessionId: 'session-1',
+      characterId: null,
+      rollerParticipantId: 'participant-2',
+      rollerName: 'Bifur',
+      formula: '1d20+2',
+      dieResults: [15],
+      modifier: 2,
+      total: 17,
+      isManual: false,
+      visibility: 0,
+      context: 'Perception',
+      createdAt: '2024-01-01T10:08:00Z',
+      ...overrides,
+    })
+
+    it('loads the stored log when the page opens, with the roller\'s name, formula, dice and total', async () => {
+      mockedGetRollLog.mockResolvedValue([rollBy('r1')])
+
+      const { wrapper } = await mountView()
+
+      expect(mockedGetRollLog).toHaveBeenCalledWith('session-1')
+      expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Bifur: 1d20+2 [15] +2 = 17 (Perception)')
+    })
+
+    it('shows a public roll made on another device, live', async () => {
+      const { wrapper } = await mountView()
+
+      hub.handlers.RollRecorded({ sessionId: 'session-1', roll: rollBy('live-1', { context: 'Athletics' }) })
+      await flushPromises()
+
+      expect(wrapper.find('[aria-label="Roll log"]').text()).toContain('Bifur: 1d20+2 [15] +2 = 17 (Athletics)')
+    })
+
+    it('shows a roll once when it is in the history and arrives live too', async () => {
+      mockedGetRollLog.mockResolvedValue([rollBy('r1')])
+      const { wrapper } = await mountView()
+
+      hub.handlers.RollRecorded({ sessionId: 'session-1', roll: rollBy('r1') })
+      await flushPromises()
+
+      expect(wrapper.findAll('[data-testid="roll-entry"]')).toHaveLength(1)
+    })
+
+    it('never shows someone else\'s private roll, from history or live (the server filters; so does the screen)', async () => {
+      mockedGetRollLog.mockResolvedValue([rollBy('secret-1', { visibility: 1, context: 'secret insight' })])
+      const { wrapper } = await mountView()
+
+      hub.handlers.RollRecorded({ sessionId: 'session-1', roll: rollBy('secret-2', { visibility: 1, context: 'secret stealth' }) })
+      await flushPromises()
+
+      expect(wrapper.find('[aria-label="Roll log"]').text()).not.toContain('secret')
+      expect(wrapper.findAll('[data-testid="roll-entry"]')).toHaveLength(0)
+    })
+
+    it('shows the player\'s own private roll, marked private, as "You"', async () => {
+      const { wrapper } = await mountView()
+
+      hub.handlers.RollRecorded({
+        sessionId: 'session-1',
+        roll: rollBy('mine', { visibility: 1, rollerParticipantId: 'participant-1', rollerName: 'Thorin', context: 'my secret' }),
+      })
+      await flushPromises()
+
+      const entry = wrapper.find('[data-testid="roll-entry"]')
+      expect(entry.attributes('data-visibility')).toBe('private')
+      expect(entry.text()).toContain('You: 1d20+2')
+      expect(entry.text()).toContain('private')
+    })
+
+    it('loads the history again when the dice tab is opened, and after a reconnect', async () => {
+      const { wrapper } = await mountView()
+      mockedGetRollLog.mockClear()
+      mockedGetRollLog.mockResolvedValue([rollBy('missed')])
+
+      await wrapper.find('nav[aria-label="Session sections"]').findAll('button').find((b) => b.text() === 'dice')!.trigger('click')
+      await flushPromises()
+      expect(mockedGetRollLog).toHaveBeenCalledTimes(1)
+      expect(wrapper.findAll('[data-testid="roll-entry"]')).toHaveLength(1)
+
+      mockedGetRollLog.mockClear()
+      hub.lifecycle.reconnected!()
+      await flushPromises()
+      expect(mockedGetRollLog).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // ── Chat history ─────────────────────────────────────────────────────────
+
+  describe('chat history', () => {
+    const said = (id: string, minute: number, overrides: Record<string, unknown> = {}) => ({
+      id,
+      sessionId: 'session-1',
+      senderId: 'participant-2',
+      senderName: 'Bifur',
+      senderRole: 2,
+      text: `line ${id}`,
+      sentAt: `2024-01-01T10:${String(minute).padStart(2, '0')}:00Z`,
+      ...overrides,
+    })
+
+    it('loads the stored chat when the page opens', async () => {
+      mockedGetChat.mockResolvedValue({ messages: [said('a', 1), said('b', 2)], hasMore: false })
+
+      const { wrapper } = await mountView()
+
+      expect(mockedGetChat).toHaveBeenCalledWith('session-1')
+      expect(wrapper.text()).toContain('line a')
+      expect(wrapper.text()).toContain('line b')
+    })
+
+    it('shows a message once when it is in the history and arrives live too (same id)', async () => {
+      mockedGetChat.mockResolvedValue({ messages: [said('a', 1)], hasMore: false })
+      const { wrapper } = await mountView()
+
+      hub.handlers.ChatMessageReceived({
+        sessionId: 'session-1', participantId: 'participant-2', displayName: 'Bifur', text: 'line a',
+        sentAt: '2024-01-01T10:01:00Z', messageId: 'a', role: 'Player',
+      })
+      await flushPromises()
+
+      expect(wrapper.text().match(/line a/g)).toHaveLength(1)
+    })
+
+    it('loads the history again when the chat tab is opened, and after a reconnect', async () => {
+      const { wrapper } = await mountView()
+      mockedGetChat.mockClear()
+      mockedGetChat.mockResolvedValue({ messages: [said('missed', 3)], hasMore: false })
+
+      await wrapper.find('nav[aria-label="Session sections"]').findAll('button').find((b) => b.text() === 'chat')!.trigger('click')
+      await flushPromises()
+      expect(mockedGetChat).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).toContain('line missed')
+
+      mockedGetChat.mockClear()
+      hub.lifecycle.reconnected!()
+      await flushPromises()
+      expect(mockedGetChat).toHaveBeenCalledTimes(1)
+    })
+
+    it('pages up: "Load earlier messages" asks for the page before the oldest, and puts it on top', async () => {
+      mockedGetChat
+        .mockResolvedValueOnce({ messages: [said('c', 3), said('d', 4)], hasMore: true })
+        .mockResolvedValueOnce({ messages: [said('a', 1), said('b', 2)], hasMore: false })
+      const { wrapper } = await mountView()
+
+      await wrapper.find('[data-testid="load-older"]').trigger('click')
+      await flushPromises()
+
+      expect(mockedGetChat).toHaveBeenLastCalledWith('session-1', { before: 'c' })
+      const order = wrapper.findAll('[aria-label="Chat messages"] > div').map((d) => d.text())
+      expect(order.map((t) => /line (\w)/.exec(t)?.[1])).toEqual(['a', 'b', 'c', 'd'])
+      expect(wrapper.find('[data-testid="load-older"]').exists()).toBe(false)   // nothing older left
+    })
+
+    it('puts the player\'s own stored messages on their side', async () => {
+      mockedGetChat.mockResolvedValue({ messages: [said('mine', 1, { senderId: 'participant-1', senderName: 'Thorin' })], hasMore: false })
+
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('[aria-label="Chat messages"] > div').classes()).toContain('items-end')
+    })
+
+    it('says so, and keeps the live chat working, when the history cannot be loaded', async () => {
+      mockedGetChat.mockRejectedValue(httpError(500))
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('[data-testid="chat-history-error"]').text()).toContain('chat history')
+    })
+  })
+
+  // ── Wording, character, layout ───────────────────────────────────────────
+
+  describe('wording and layout', () => {
+    it('says "Tell the GM what you do" on the player\'s turn', async () => {
+      mockedGetRun.mockResolvedValue(myTurnRun())
+
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('[data-testid="your-turn-banner"]').text()).toContain('Tell the GM what you do.')
+    })
+
+    it('shows the player\'s character by name, not by id', async () => {
+      mockStore.participants[0] = { ...mockStore.participants[0], characterId: 'char-1' }
+      mockedListCharacters.mockResolvedValue([{ id: 'char-1', name: 'Thorin Stonehelm' }])
+      try {
+        const { wrapper } = await mountView()
+
+        expect(wrapper.find('[data-testid="my-character"]').text()).toContain('Thorin Stonehelm')
+        expect(wrapper.text()).not.toContain('char-1')
+      } finally {
+        mockStore.participants[0] = { ...mockStore.participants[0], characterId: null }
+      }
+    })
+
+    it('keeps the tab bar flush with the top of the page (its own class, not overlapping the content)', async () => {
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('nav[aria-label="Session sections"]').classes()).toContain('session-tabs')
+    })
+
+    it('lets the story grow with the page instead of scrolling in a box of its own', async () => {
+      const { wrapper } = await mountView()
+
+      const story = wrapper.find('[data-testid="story"]')
+      expect(story.classes().join(' ')).not.toMatch(/max-h|overflow-y/)
+    })
+
+    it('gives the story entries room above them, so the newest one scrolls clear of the tab bar', async () => {
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('[data-testid="story"] [data-kind]').classes()).toContain('scroll-mt-24')
+    })
+
+    it('brings a new story entry into view when one arrives, but not on the first load', async () => {
+      const scrollIntoView = vi.fn()
+      Element.prototype.scrollIntoView = scrollIntoView
+      const { wrapper } = await mountView()
+      expect(scrollIntoView).not.toHaveBeenCalled()
+      mockedGetRun.mockResolvedValue(makeRun({
+        recentNarration: [...makeRun().recentNarration, { kind: 'AiNarration', text: 'A new sound.', createdAt: '2024-01-01T10:20:00Z' }],
+      }))
+
+      hub.handlers.AdventureStateChanged({ sessionId: 'run-1', reason: 'PlayerAction', changedAt: '2024-01-01T10:20:00Z' })
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('A new sound.')
+      expect(scrollIntoView).toHaveBeenCalled()
+    })
+
+    it('starts a tab at its top, so it never opens with its first lines behind the tab bar', async () => {
+      const scrollTo = vi.fn()
+      const { wrapper } = await mountView()
+      const main = document.createElement('main')
+      main.style.overflowY = 'auto'
+      main.scrollTo = scrollTo as unknown as typeof main.scrollTo
+      document.body.appendChild(main)
+      main.appendChild(wrapper.element)
+
+      await wrapper.find('nav[aria-label="Session sections"]').findAll('button').find((b) => b.text() === 'party')!.trigger('click')
+      await flushPromises()
+
+      expect(scrollTo).toHaveBeenCalledWith({ top: 0 })
+      main.remove()
     })
   })
 })

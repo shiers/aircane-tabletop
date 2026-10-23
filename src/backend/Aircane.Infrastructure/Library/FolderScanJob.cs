@@ -325,7 +325,8 @@ public sealed class FolderScanJob : IFolderScanJob
                 Title: item.Title,
                 SourceType: item.SourceType,
                 GameSystem: item.GameSystem,
-                Ruleset: item.Ruleset);
+                Ruleset: item.Ruleset,
+                ThumbnailKey: string.IsNullOrWhiteSpace(item.ThumbnailKey) ? request.DefaultThumbnailKey : item.ThumbnailKey);
 
             var newDoc = await _libraryService.CreateDocumentFromFolderAsync(
                 request.FolderId, file.SourcePath, file.FileName, overrides, ct);

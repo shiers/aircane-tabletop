@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { SourceType } from '../../api'
 import {
   FALLBACK_THUMBNAIL_KEY,
+  THUMBNAIL_FILTERS,
   THUMBNAIL_MANIFEST,
+  isKnownThumbnailKey,
   resolveThumbnailKey,
+  thumbnailEntry,
+  thumbnailLabel,
   thumbnailUrl,
 } from '..'
 
@@ -123,5 +127,53 @@ describe('thumbnailUrl', () => {
   it('falls back to the generic thumbnail for a key that is not in the manifest', () => {
     expect(thumbnailUrl('does-not-exist')).toBe(thumbnailUrl(FALLBACK_THUMBNAIL_KEY))
     expect(thumbnailUrl('')).toBe('/assets/document-thumbnails/generic.webp')
+  })
+})
+
+describe('stored thumbnail key', () => {
+  const pathfinderRules = doc(SourceType.Rules, 'Pathfinder')
+
+  it('wins over the automatic choice when its image exists', () => {
+    expect(resolveThumbnailKey(pathfinderRules, 'space-opera-sw')).toBe('space-opera-sw')
+    expect(resolveThumbnailKey(doc(SourceType.Homebrew), 'cosmic-horror-cc')).toBe('cosmic-horror-cc')
+  })
+
+  it('works for every key in the manifest', () => {
+    for (const { key } of THUMBNAIL_MANIFEST) {
+      expect(resolveThumbnailKey(doc(SourceType.Unknown), key)).toBe(key)
+    }
+  })
+
+  it('is ignored, not turned into generic, when the key is missing from the manifest', () => {
+    expect(resolveThumbnailKey(pathfinderRules, 'removed-asset')).toBe('fantasy-knight-pf')
+    expect(resolveThumbnailKey(doc(SourceType.Adventure), 'removed-asset')).toBe('cavern-adventure-lm')
+    expect(resolveThumbnailKey(doc(SourceType.Homebrew), 'removed-asset')).toBe('homebrew')
+    expect(resolveThumbnailKey(doc(SourceType.Unknown), 'removed-asset')).toBe('generic')
+  })
+
+  it.each([null, undefined, ''])('falls back to the automatic choice for %p', (stored) => {
+    expect(resolveThumbnailKey(pathfinderRules, stored)).toBe('fantasy-knight-pf')
+  })
+
+  it('knows which keys have an image', () => {
+    expect(isKnownThumbnailKey('generic')).toBe(true)
+    expect(isKnownThumbnailKey('removed-asset')).toBe(false)
+    expect(isKnownThumbnailKey(null)).toBe(false)
+    expect(isKnownThumbnailKey(undefined)).toBe(false)
+    expect(isKnownThumbnailKey('')).toBe(false)
+  })
+
+  it('looks up the manifest entry and label for a key', () => {
+    expect(thumbnailEntry('fantasy-knight-pf')?.label).toBe('Fantasy knight')
+    expect(thumbnailEntry('removed-asset')).toBeUndefined()
+    expect(thumbnailLabel('fantasy-knight-pf')).toBe('Fantasy knight')
+    expect(thumbnailLabel('removed-asset')).toBe('removed-asset')
+  })
+
+  it('has a filter chip for every tag in the manifest except "uncategorized"', () => {
+    const tags = new Set(THUMBNAIL_MANIFEST.flatMap((e) => e.tags))
+    const chips = new Set(THUMBNAIL_FILTERS.map((f) => f.id))
+    for (const tag of tags) expect(chips.has(tag)).toBe(true)
+    expect(THUMBNAIL_FILTERS.map((f) => f.label)).toEqual(['All', 'Fantasy', 'Sci-fi', 'Horror', 'Grimdark', 'Generic', 'Homebrew'])
   })
 })

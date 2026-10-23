@@ -91,6 +91,13 @@ public class SourceDocument : EntityBase
     /// </summary>
     public string? ContentHash { get; set; }
 
+    /// <summary>
+    /// Key of the thumbnail the host chose for this document (a file stem such as "fantasy-knight-pf";
+    /// the artwork manifest lives in the frontend). Null means "automatic": the UI derives one from the
+    /// source type, game system and ruleset. Cosmetic only; never reset by scans, re-imports or seeding.
+    /// </summary>
+    public string? ThumbnailKey { get; set; }
+
     public SourceDocument(
         string title,
         string originalFileName,

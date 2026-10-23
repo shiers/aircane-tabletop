@@ -38,11 +38,44 @@ Alternative: track the originals with [Git LFS](https://git-lfs.com) (`git lfs t
 
 ## How a thumbnail is chosen
 
-`resolveThumbnailKey(doc, storedKey?)` returns a key; `thumbnailUrl(key)` turns it into a URL. A stored key (not wired up yet) always wins. Otherwise, in order, matching whole words, case-insensitively, on `gameSystem` and `ruleset` only (never the title):
+`resolveThumbnailKey(doc, storedKey?)` returns a key; `thumbnailUrl(key)` turns it into a URL. A stored key (see below) wins when its image is still in the manifest. Otherwise, in order, matching whole words, case-insensitively, on `gameSystem` and `ruleset` only (never the title):
 
 1. Source type Homebrew: `homebrew`.
 2. A named system: Pathfinder / pf2e, Call of Cthulhu / Cthulhu / CoC, Alien, Daggerheart, GURPS, Shadowrun, Vampire / Masquerade / VtM, Star Wars, Star Trek, Black Crusade, Rogue Trader, Dark Heresy, Deathwatch / Warhammer / 40k (see `SYSTEM_RULES` for the keys).
 3. D&D, dnd, Dungeons, 5e, SRD: `cavern-adventure-lm` for Adventure and Solo, otherwise `fantasy-rulebook-dd`.
 4. No match: Adventure and Solo use `cavern-adventure-lm`, Rules uses `fantasy-rulebook-dd`, everything else uses `generic`.
 
-A key that is not in the manifest resolves to `generic`. A file that fails to load shows the existing `AircaneImg` fallback (`ThumbnailPlaceholder`).
+`thumbnailUrl(key)` maps a key that is not in the manifest to `generic`. A file that fails to load shows the existing `AircaneImg` fallback (`ThumbnailPlaceholder`).
+
+## Choosing a thumbnail per document (API)
+
+`SourceDocument.ThumbnailKey` (nullable, max 64 characters, column `SourceDocuments.ThumbnailKey`) holds the host's choice. **Null means automatic**: the UI derives a thumbnail from the document's classification, as described above. Existing rows stay null. It is returned as `thumbnailKey` on every document DTO.
+
+A key must match `^[a-z0-9]+(-[a-z0-9]+)*$` (at most 64 characters). An empty or whitespace-only value becomes null. Anything else is a 400 whose detail says "Thumbnail key must be 1-64 characters...". The backend cannot see the frontend manifest, so it checks the shape only, never that an image exists.
+
+| Endpoint | Behaviour |
+| --- | --- |
+| `POST /api/library/documents` (multipart) | Optional form field `thumbnailKey`. One file per request, so the key goes with each file. |
+| `PATCH /api/library/documents/{id}/thumbnail` | Body `{ "thumbnailKey": "fantasy-knight-pf" }`; `null` or `""` goes back to automatic. Host only (same `HostOnly` policy as the rest of the library). 404 for an unknown id, 400 for an invalid key, 200 with the updated document. Works on built-in documents (it is cosmetic). |
+| `POST /api/library/folders/{id}/scan/import` | Optional `defaultThumbnailKey` (batch default) plus an optional `thumbnailKey` per item. A per-item key wins; an item without one gets the batch default; neither means automatic. |
+
+The key is never reset by a folder scan, a re-scan that re-imports a changed file, a re-index, or built-in content seeding (the seeder skips documents it already created). A watched-folder default thumbnail (`DefaultThumbnailKey` on `WatchedFolder`) is not implemented.
+
+## Where the stored key lives, and what null means
+
+The host's choice is stored on the document as `thumbnailKey` (backend column `SourceDocuments.ThumbnailKey`, nullable, max 64). **`null` means automatic**: the rules above pick the thumbnail every time the list renders, so editing a document's system or ruleset changes its thumbnail too. A stored key pins it.
+
+`resolveThumbnailKey(doc, doc.thumbnailKey)` is the single place that combines the two.
+
+**When an asset is removed.** If a stored key no longer has an image in the manifest (for example you deleted a WebP), the key is ignored and the automatic choice is shown, not `generic`. The document keeps the stale key until someone changes it. The detail panel says "This thumbnail is no longer available", and the picker opens with that notice and Automatic selected. Choosing anything (or "Reset to automatic") replaces the stale key.
+
+## Choosing a thumbnail in the UI
+
+- **Library table:** click a row's thumbnail (it is a 44 px wide button) to open the picker for that document.
+- **Detail panel:** select a row, then use "Change thumbnail" (a larger preview sits beside it) or "Reset to automatic" (only shown when a thumbnail was chosen).
+- **Upload form:** once a file is chosen, the "Thumbnail" section shows the thumbnail the file will get. Its Automatic tile follows the source type, game system and ruleset typed so far.
+- **Watched-folder review:** "Apply to all files in this import" sets a batch default; the thumbnail button on each selected file overrides it for that file.
+
+The picker is a dialog with filter chips (All, Fantasy, Sci-fi, Horror, Grimdark, Generic, Homebrew, taken from the tags in `thumbnails.meta.json`), an "Automatic" tile that shows what would be picked right now, and the thumbnails. Arrow keys, Home and End move the selection, Escape closes, and focus stays inside the dialog. Changes in the library save with `PATCH`, update the row immediately, and roll back with the server's message if the request fails.
+
+New components: `DocumentThumbnail` (draws a key inside a fixed-size wrapper; always give it a fixed size or `aspect-[3/4]`), `ThumbnailPicker`, `ThumbnailPickerDialog`, `ThumbnailField`.

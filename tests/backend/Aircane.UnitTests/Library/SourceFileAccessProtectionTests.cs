@@ -62,6 +62,7 @@ public class SourceFileAccessProtectionTests
             "IsDisabled",
             "LicenseKey",
             "LicenseDisplayName",
+            "ThumbnailKey",
         };
 
         Assert.Equal(expectedFields, propertyNames);

@@ -135,6 +135,17 @@ public interface ILibraryService
         UpdateClassificationRequest request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets or clears the thumbnail the host chose for a document. A null or empty key means automatic.
+    /// Cosmetic, so it also applies to built-in documents.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No document has this id.</exception>
+    /// <exception cref="ArgumentException">The key is not a well-formed thumbnail key.</exception>
+    Task<SourceDocumentDto> SetThumbnailAsync(
+        Guid documentId,
+        string? thumbnailKey,
+        CancellationToken cancellationToken = default);
+
     // ── Folder-scan document creation ─────────────────────────────────────────
 
     /// <summary>
@@ -170,8 +181,10 @@ public interface ILibraryService
 /// <param name="SourceType">Overrides the folder's default source type.</param>
 /// <param name="GameSystem">Overrides the folder's default game system.</param>
 /// <param name="Ruleset">Overrides the folder's default ruleset.</param>
+/// <param name="ThumbnailKey">Thumbnail key for the new document. Null means automatic.</param>
 public sealed record FolderDocumentOverrides(
     string? Title = null,
     Aircane.Domain.Enums.SourceType? SourceType = null,
     string? GameSystem = null,
-    string? Ruleset = null);
+    string? Ruleset = null,
+    string? ThumbnailKey = null);

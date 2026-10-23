@@ -21,6 +21,7 @@ public sealed class MigrationChainTests : IAsyncLifetime
     private const string TurnAdvanceAndChatMigration = "AddTurnAdvanceModeAndChatMessages";
     private const string RejoinMigration = "AddParticipantRejoinAndReplace";
     private const string RemovedAtMigration = "AddParticipantRemovedAt";
+    private const string ThumbnailKeyMigration = "AddSourceDocumentThumbnailKey";
 
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
         .WithImage("pgvector/pgvector:pg16")
@@ -245,6 +246,42 @@ public sealed class MigrationChainTests : IAsyncLifetime
             .SingleAsync();
         Assert.True(row.IsApproved);
         Assert.Null(row.RemovedAt);
+
+        await migrator.MigrateAsync(all[index - 1]);   // runs Down()
+        await migrator.MigrateAsync(all[index]);       // and applies cleanly again
+    }
+
+    [Fact]
+    public async Task ThumbnailKeyMigration_LeavesExistingDocumentsNull_AndCanBeRolledBack()
+    {
+        await using var db = PostgresFixture.CreateContext(await CreateEmptyDatabaseAsync());
+        var migrator = db.GetService<IMigrator>();
+        var all = db.Database.GetMigrations().ToList();
+        var index = all.FindIndex(m => m.EndsWith(ThumbnailKeyMigration, StringComparison.Ordinal));
+        Assert.True(index > 0, $"Migration {ThumbnailKeyMigration} was not found in the chain.");
+
+        await migrator.MigrateAsync(all[index - 1]);
+
+        // A document that exists before the column does.
+        var documentId = Guid.NewGuid();
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "SourceDocuments"
+                ("Id", "Title", "OriginalFileName", "SourceType", "SourceMode", "GameSystem", "Ruleset", "SourcePath",
+                 "IsSourceAvailable", "Visibility", "ImportStatus", "CreatedAt", "UpdatedAt", "Tags")
+            VALUES
+                ({documentId}, 'Old Book', 'old.pdf', 0, 1, 'D&D 5e', '2014', 'storage/old',
+                 true, 0, 2, now(), now(), '[]'::jsonb)
+            """);
+
+        await migrator.MigrateAsync(all[index]);
+
+        // Only the new column is read: it is the one this migration added.
+        var row = await db.SourceDocuments.AsNoTracking()
+            .Where(d => d.Id == documentId)
+            .Select(d => new { d.Title, d.ThumbnailKey })
+            .SingleAsync();
+        Assert.Equal("Old Book", row.Title);
+        Assert.Null(row.ThumbnailKey);
 
         await migrator.MigrateAsync(all[index - 1]);   // runs Down()
         await migrator.MigrateAsync(all[index]);       // and applies cleanly again

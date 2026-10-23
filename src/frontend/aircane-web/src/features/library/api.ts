@@ -114,6 +114,8 @@ export interface FolderImportSelectionItem {
   sourceType?: SourceType
   gameSystem?: string
   ruleset?: string
+  /** Thumbnail key for this file. Omitted means the batch default, then automatic. */
+  thumbnailKey?: string
 }
 
 /** Backend result summary for a folder scan / selection import. */
@@ -149,6 +151,8 @@ export interface SourceDocumentDto {
   licenseKey: string | null
   /** Human-readable license name. Null for user documents. */
   licenseDisplayName: string | null
+  /** Host-chosen thumbnail key. Null or absent means automatic. */
+  thumbnailKey?: string | null
 }
 
 export interface ImportStatusDto {
@@ -175,6 +179,8 @@ export interface UploadDocumentRequest {
   gameSystem?: string
   ruleset?: string
   visibility?: ContentVisibility
+  /** Thumbnail key. Omitted means automatic. */
+  thumbnailKey?: string
 }
 
 export interface UpdateClassificationRequest {
@@ -203,6 +209,7 @@ export async function uploadDocument(
   if (request.gameSystem) form.append('gameSystem', request.gameSystem)
   if (request.ruleset) form.append('ruleset', request.ruleset)
   if (request.visibility !== undefined) form.append('visibility', String(request.visibility))
+  if (request.thumbnailKey) form.append('thumbnailKey', request.thumbnailKey)
 
   const response = await apiClient.post<SourceDocumentDto>('/api/library/documents', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -242,6 +249,34 @@ export async function setDocumentDisabled(
     { disabled },
   )
   return response.data
+}
+
+/** Set (or, with null, clear) the document's thumbnail key. Null means automatic. */
+export async function setDocumentThumbnail(
+  id: string,
+  thumbnailKey: string | null,
+): Promise<SourceDocumentDto> {
+  const response = await apiClient.patch<SourceDocumentDto>(
+    `/api/library/documents/${id}/thumbnail`,
+    { thumbnailKey },
+  )
+  return response.data
+}
+
+/**
+ * The server's explanation for a failed request (ProblemDetails detail/title or `{ error }`), falling
+ * back to the error's own message.
+ */
+export function serverMessage(err: unknown): string {
+  const data = (err as { response?: { data?: unknown } } | null)?.response?.data
+  if (data && typeof data === 'object') {
+    const d = data as { detail?: unknown; title?: unknown; error?: unknown }
+    for (const v of [d.detail, d.error, d.title]) {
+      if (typeof v === 'string' && v) return v
+    }
+  }
+  if (err instanceof Error) return err.message
+  return 'An unexpected error occurred.'
 }
 
 export interface RestoreDefaultsResult {
@@ -353,10 +388,11 @@ export async function previewFolderScan(id: string): Promise<FolderScanPreviewDt
 export async function importFolderSelection(
   id: string,
   items: FolderImportSelectionItem[],
+  defaultThumbnailKey?: string,
 ): Promise<FolderScanResultSummaryDto> {
   const response = await apiClient.post<FolderScanResultSummaryDto>(
     `/api/library/folders/${id}/scan/import`,
-    { items },
+    defaultThumbnailKey ? { items, defaultThumbnailKey } : { items },
     { timeout: 0 }, // Imports can take minutes for large selections
   )
   return response.data

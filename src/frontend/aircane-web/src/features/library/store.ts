@@ -9,6 +9,8 @@ import {
   reOcrDocument,
   reOcrAll,
   setDocumentDisabled,
+  setDocumentThumbnail,
+  serverMessage,
   restoreBuiltInDefaults,
   getImportStatus,
   getFolders,
@@ -284,6 +286,25 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
+  /**
+   * Set (or, with null, clear) a document's thumbnail. The row updates immediately; if the server
+   * refuses, the previous value is restored and the server's message is thrown so the caller can show it.
+   */
+  async function setDocumentThumbnailAction(id: string, thumbnailKey: string | null): Promise<void> {
+    const doc = documents.value.find((d) => d.id === id)
+    if (!doc) return
+    const previous = doc.thumbnailKey ?? null
+    doc.thumbnailKey = thumbnailKey
+    try {
+      const updated = await setDocumentThumbnail(id, thumbnailKey)
+      doc.thumbnailKey = updated.thumbnailKey ?? null
+    } catch (err) {
+      // Roll back, unless something else changed the value while the request was in flight.
+      if ((doc.thumbnailKey ?? null) === thumbnailKey) doc.thumbnailKey = previous
+      throw new Error(serverMessage(err))
+    }
+  }
+
   /** Re-enable all disabled built-in documents, then refresh the list. */
   async function restoreBuiltInDefaultsAction(): Promise<number> {
     error.value = null
@@ -494,10 +515,11 @@ export const useLibraryStore = defineStore('library', () => {
   async function importFolderSelectionAction(
     id: string,
     items: FolderImportSelectionItem[],
+    defaultThumbnailKey?: string,
   ): Promise<FolderScanResultSummaryDto> {
     foldersError.value = null
     try {
-      const result = await importFolderSelection(id, items)
+      const result = await importFolderSelection(id, items, defaultThumbnailKey)
 
       const folder = folders.value.find((f) => f.id === id)
       if (folder) {
@@ -533,6 +555,7 @@ export const useLibraryStore = defineStore('library', () => {
     reOcrDocument: reOcrDocumentAction,
     reOcrAll: reOcrAllAction,
     setDocumentDisabled: setDocumentDisabledAction,
+    setDocumentThumbnail: setDocumentThumbnailAction,
     restoreBuiltInDefaults: restoreBuiltInDefaultsAction,
     pollImportStatus,
     stopAllPolling,

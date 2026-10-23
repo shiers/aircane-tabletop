@@ -8,6 +8,8 @@ import {
   type ScanCandidateDto,
   type FolderImportSelectionItem,
 } from '../api'
+import { resolveThumbnailKey } from '../thumbnails'
+import ThumbnailField from './ThumbnailField.vue'
 
 const props = defineProps<{
   /** Controls modal visibility. */
@@ -30,9 +32,13 @@ interface RowState {
   title: string
   sourceType: SourceType
   ruleset: string
+  /** Per-file thumbnail override; null falls back to the batch choice, then Automatic. */
+  thumbnailKey: string | null
 }
 
 const rows = ref<Record<string, RowState>>({})
+/** Thumbnail applied to every file without its own; null means Automatic (derived per file). */
+const batchThumbnailKey = ref<string | null>(null)
 const importing = ref(false)
 const localError = ref<string | null>(null)
 
@@ -70,10 +76,12 @@ watch(
           title: c.suggestedTitle,
           sourceType: SourceType.Rules,
           ruleset: c.suggestedRuleset ?? '',
+          thumbnailKey: null,
         }
       }
     }
     rows.value = next
+    batchThumbnailKey.value = null
     localError.value = null
   },
   { immediate: true },
@@ -95,6 +103,25 @@ const groups = computed<{ key: string; candidates: ScanCandidateDto[] }[]>(() =>
   }
   return order.map((key) => ({ key, candidates: byKey.get(key)! }))
 })
+
+/** The folder's default game system, which every imported file inherits. */
+const folderGameSystem = computed(
+  () => store.folders.find((f) => f.id === props.folderId)?.defaultGameSystem ?? null,
+)
+
+/** What Automatic would pick for a file with its current type and ruleset. */
+function autoKeyFor(row: RowState): string {
+  return resolveThumbnailKey({
+    sourceType: row.sourceType,
+    gameSystem: folderGameSystem.value,
+    ruleset: row.ruleset.trim() || null,
+  })
+}
+
+/** What Automatic means for a row's own picker: the batch choice when there is one, else the derived thumbnail. */
+function rowAutoKey(row: RowState): string {
+  return batchThumbnailKey.value ?? autoKeyFor(row)
+}
 
 const selectedCount = computed(() => Object.values(rows.value).filter((r) => r.import).length)
 const totalCount = computed(() => props.preview?.candidates.length ?? 0)
@@ -149,11 +176,16 @@ async function confirmImport(): Promise<void> {
     title: r.title.trim() || undefined,
     sourceType: r.sourceType,
     ruleset: r.ruleset.trim() || undefined,
+    ...(r.thumbnailKey ? { thumbnailKey: r.thumbnailKey } : {}),
   }))
 
   importing.value = true
   try {
-    await store.importFolderSelection(props.folderId, items)
+    if (batchThumbnailKey.value) {
+      await store.importFolderSelection(props.folderId, items, batchThumbnailKey.value)
+    } else {
+      await store.importFolderSelection(props.folderId, items)
+    }
     emit('imported')
     emit('close')
   } catch {
@@ -220,6 +252,22 @@ async function confirmImport(): Promise<void> {
           </div>
         </div>
 
+        <!-- Batch thumbnail -->
+        <div
+          v-if="preview && preview.candidates.length > 0"
+          class="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-gray-800 px-5 py-2.5"
+          data-test="batch-thumbnail"
+        >
+          <p class="text-sm font-medium text-gray-300">Thumbnail</p>
+          <ThumbnailField
+            v-model="batchThumbnailKey"
+            :auto-key="null"
+            subject="all files in this import"
+            dialog-title="Thumbnail for all files"
+          />
+          <p class="text-xs text-gray-500">Applies to all files in this import. Change one file below to override it.</p>
+        </div>
+
         <!-- Body -->
         <div class="flex-1 overflow-y-auto px-5 py-4">
           <!-- Loading -->
@@ -267,6 +315,16 @@ async function confirmImport(): Promise<void> {
                       v-model="rows[candidate.sourcePath].import"
                       type="checkbox"
                       class="mt-1 h-4 w-4 shrink-0 rounded border-gray-600 bg-gray-800 text-aircane-500 focus:ring-2 focus:ring-aircane-500"
+                    />
+
+                    <!-- The thumbnail this file will get; click to override it -->
+                    <ThumbnailField
+                      v-if="rows[candidate.sourcePath].import"
+                      v-model="rows[candidate.sourcePath].thumbnailKey"
+                      :auto-key="rowAutoKey(rows[candidate.sourcePath])"
+                      :auto-caption="batchThumbnailKey ? 'Same as the batch' : undefined"
+                      :subject="rows[candidate.sourcePath].title || candidate.fileName"
+                      compact
                     />
 
                     <div class="min-w-0 flex-1">

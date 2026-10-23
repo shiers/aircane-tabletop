@@ -4,6 +4,8 @@ import { useLibraryStore } from '../store'
 import { SourceType, ContentVisibility } from '../api'
 import { useGameSystemStore } from '@/features/game-systems/stores/useGameSystemStore'
 import { suggestTitleFromFilename, detectRulesetYear } from '../filenameSuggestions'
+import { resolveThumbnailKey } from '../thumbnails'
+import ThumbnailField from './ThumbnailField.vue'
 
 const store = useLibraryStore()
 const gameSystemStore = useGameSystemStore()
@@ -47,7 +49,18 @@ const form = reactive({
   gameSystem: '',
   ruleset: '',
   visibility: ContentVisibility.DMOnly,
+  /** Chosen thumbnail key; null means automatic. */
+  thumbnailKey: null as string | null,
 })
+
+/** What Automatic would pick for the details entered so far. */
+const autoThumbnailKey = computed(() =>
+  resolveThumbnailKey({
+    sourceType: form.sourceType,
+    gameSystem: form.gameSystem.trim() || null,
+    ruleset: form.ruleset.trim() || null,
+  }),
+)
 
 const localError = ref<string | null>(null)
 const submitted = ref(false)
@@ -109,6 +122,7 @@ async function handleSubmit(): Promise<void> {
       gameSystem: form.gameSystem.trim() || undefined,
       ruleset: form.ruleset.trim() || undefined,
       visibility: form.visibility,
+      thumbnailKey: form.thumbnailKey ?? undefined,
     })
     // Reset form on success
     form.file = null
@@ -117,6 +131,7 @@ async function handleSubmit(): Promise<void> {
     form.gameSystem = ''
     form.ruleset = ''
     form.visibility = ContentVisibility.DMOnly
+    form.thumbnailKey = null
     if (fileInput.value) fileInput.value.value = ''
   } catch {
     localError.value = store.error ?? 'Upload failed.'
@@ -254,6 +269,16 @@ async function handleSubmit(): Promise<void> {
             The edition/version (e.g. 2014). Pick an existing value to keep rules lookups consistent.
           </p>
         </div>
+      </div>
+
+      <!-- Thumbnail (once a file is chosen) -->
+      <div v-if="form.file" data-test="upload-thumbnail-section">
+        <p class="mb-1 block text-sm font-medium text-gray-300">Thumbnail</p>
+        <ThumbnailField
+          v-model="form.thumbnailKey"
+          :auto-key="autoThumbnailKey"
+          :subject="form.title.trim() || form.file.name"
+        />
       </div>
 
       <!-- Error message -->

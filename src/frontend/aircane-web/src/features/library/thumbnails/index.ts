@@ -48,12 +48,26 @@ function isAdventureLike(sourceType: SourceType): boolean {
   return sourceType === SourceType.Adventure || sourceType === SourceType.Solo
 }
 
+const FILE_BY_KEY: ReadonlyMap<string, string> = new Map(THUMBNAIL_MANIFEST.map((e) => [e.key, e.file]))
+const ENTRY_BY_KEY: ReadonlyMap<string, ThumbnailEntry> = new Map(THUMBNAIL_MANIFEST.map((e) => [e.key, e]))
+
+/** True when a key has an image in the manifest. */
+export function isKnownThumbnailKey(key: string | null | undefined): key is string {
+  return !!key && FILE_BY_KEY.has(key)
+}
+
+/** The manifest entry for a key, or undefined when there is none. */
+export function thumbnailEntry(key: string | null | undefined): ThumbnailEntry | undefined {
+  return key ? ENTRY_BY_KEY.get(key) : undefined
+}
+
 /**
- * Pick the thumbnail key for a document. A stored (user-chosen) key always wins; none exists yet,
- * so callers currently pass nothing. Automatic choice only looks at gameSystem and ruleset, never the title.
+ * Pick the thumbnail key for a document. A stored (host-chosen) key wins when its image is still in the
+ * manifest; a stored key whose asset was removed is ignored and the automatic choice is used. Automatic
+ * choice only looks at gameSystem and ruleset, never the title.
  */
 export function resolveThumbnailKey(doc: ThumbnailDoc, storedKey?: string | null): string {
-  if (storedKey) return storedKey
+  if (isKnownThumbnailKey(storedKey)) return storedKey
   if (doc.sourceType === SourceType.Homebrew) return 'homebrew'
 
   const haystack = `${doc.gameSystem ?? ''} ${doc.ruleset ?? ''}`
@@ -67,10 +81,30 @@ export function resolveThumbnailKey(doc: ThumbnailDoc, storedKey?: string | null
   return FALLBACK_THUMBNAIL_KEY
 }
 
-const FILE_BY_KEY: ReadonlyMap<string, string> = new Map(THUMBNAIL_MANIFEST.map((e) => [e.key, e.file]))
-
 /** URL for a key. A key that is not in the manifest resolves to the generic thumbnail. */
 export function thumbnailUrl(key: string): string {
   const file = FILE_BY_KEY.get(key) ?? FILE_BY_KEY.get(FALLBACK_THUMBNAIL_KEY) ?? `${FALLBACK_THUMBNAIL_KEY}.webp`
   return `${THUMBNAIL_BASE_PATH}/${file}`
+}
+
+export interface ThumbnailFilter {
+  /** Tag in the manifest, or "all". */
+  id: string
+  label: string
+}
+
+/** Filter chips for the picker, in display order. Tags come from thumbnails.meta.json. */
+export const THUMBNAIL_FILTERS: readonly ThumbnailFilter[] = [
+  { id: 'all', label: 'All' },
+  { id: 'fantasy', label: 'Fantasy' },
+  { id: 'scifi', label: 'Sci-fi' },
+  { id: 'horror', label: 'Horror' },
+  { id: 'grimdark', label: 'Grimdark' },
+  { id: 'generic', label: 'Generic' },
+  { id: 'homebrew', label: 'Homebrew' },
+]
+
+/** Human label for a key (the manifest label, or the key itself when it is unknown). */
+export function thumbnailLabel(key: string): string {
+  return ENTRY_BY_KEY.get(key)?.label ?? key
 }

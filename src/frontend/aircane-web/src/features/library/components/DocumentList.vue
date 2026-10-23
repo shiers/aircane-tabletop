@@ -3,9 +3,9 @@ import { computed, ref } from 'vue'
 import { useLibraryStore } from '../store'
 import { ImportStatus, SourceType, type SourceDocumentDto } from '../api'
 import DocumentStatusBadge from './DocumentStatusBadge.vue'
-import AircaneImg from '@/shared/components/AircaneImg.vue'
-import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
-import { resolveThumbnailKey, thumbnailUrl } from '../thumbnails'
+import DocumentThumbnail from './DocumentThumbnail.vue'
+import ThumbnailPickerDialog from './ThumbnailPickerDialog.vue'
+import { isKnownThumbnailKey, resolveThumbnailKey } from '../thumbnails'
 
 const store = useLibraryStore()
 
@@ -23,6 +23,37 @@ const selectedDoc = computed<SourceDocumentDto | null>(
 
 function selectDocument(doc: SourceDocumentDto): void {
   selectedId.value = selectedId.value === doc.id ? null : doc.id
+}
+
+/** The thumbnail shown for a document: its stored key when the image exists, otherwise the automatic choice. */
+function thumbKeyFor(doc: SourceDocumentDto): string {
+  return resolveThumbnailKey(doc, doc.thumbnailKey)
+}
+
+/** Document whose thumbnail picker is open (looked up live so the dialog follows store updates). */
+const pickerDocId = ref<string | null>(null)
+const pickerDoc = computed<SourceDocumentDto | null>(
+  () => store.documents.find((d) => d.id === pickerDocId.value) ?? null,
+)
+const thumbnailError = ref<string | null>(null)
+
+function openThumbnailPicker(doc: SourceDocumentDto): void {
+  thumbnailError.value = null
+  pickerDocId.value = doc.id
+}
+
+/** Save a thumbnail choice (null = automatic). The row updates at once; a refusal rolls it back and is shown. */
+async function saveThumbnail(doc: SourceDocumentDto, key: string | null): Promise<void> {
+  thumbnailError.value = null
+  try {
+    await store.setDocumentThumbnail(doc.id, key)
+  } catch (err) {
+    thumbnailError.value = err instanceof Error ? err.message : 'Could not change the thumbnail.'
+  }
+}
+
+function onThumbnailPicked(key: string | null): void {
+  if (pickerDoc.value) void saveThumbnail(pickerDoc.value, key)
 }
 
 /** Map the backend ImportStatus enum onto DocumentStatusBadge's string states. */
@@ -134,6 +165,14 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
       Document Library
     </h2>
 
+    <p
+      v-if="thumbnailError"
+      role="alert"
+      class="mb-3 rounded-lg border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-300"
+    >
+      {{ thumbnailError }}
+    </p>
+
     <!-- Loading skeleton -->
     <div v-if="store.loading && store.documents.length === 0" class="space-y-2" aria-busy="true" aria-label="Loading documents">
       <div v-for="n in 3" :key="n" class="h-12 animate-pulse rounded-lg bg-gray-800" />
@@ -183,20 +222,23 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
             >
               <!-- Source-type thumbnail -->
               <td class="px-4 py-3">
-                <!-- 3:4 box so the baked-in gold frame is not cropped away. AircaneImg's own
-                     scoped `height: 100%` beats a sizing class on the img, so size this wrapper instead. -->
-                <div class="h-[53px] w-10 overflow-hidden rounded [&>.aircane-img]:h-full">
-                  <AircaneImg
-                    :src="thumbnailUrl(resolveThumbnailKey(doc))"
-                    alt=""
-                    type="thumbnail"
-                    aria-hidden="true"
-                  >
-                    <template #fallback>
-                      <ThumbnailPlaceholder :label="doc.title" />
-                    </template>
-                  </AircaneImg>
-                </div>
+                <!-- 3:4 box (40 x 53) so the baked-in gold frame is not cropped away. The button gives it a
+                     44 px wide tap target; clicking it opens the thumbnail picker for this document. -->
+                <button
+                  type="button"
+                  data-action="row-change-thumbnail"
+                  class="flex h-[53px] w-11 items-center justify-center rounded focus:outline-none focus:ring-2 focus:ring-aircane-500"
+                  :aria-label="`Change thumbnail for ${doc.title}`"
+                  title="Change thumbnail"
+                  @click.stop="openThumbnailPicker(doc)"
+                >
+                  <DocumentThumbnail
+                    :thumb-key="thumbKeyFor(doc)"
+                    :label="doc.title"
+                    data-test="row-thumbnail"
+                    class="h-[53px] w-10"
+                  />
+                </button>
               </td>
 
               <!-- Title + filename + source-unavailable badge -->
@@ -391,6 +433,41 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
             {{ selectedDoc.originalFileName }}
           </p>
 
+          <div class="mt-3 flex items-start gap-3">
+            <DocumentThumbnail
+              :thumb-key="thumbKeyFor(selectedDoc)"
+              :label="selectedDoc.title"
+              data-test="detail-thumbnail"
+              class="h-[128px] w-24 shrink-0"
+            />
+            <div class="flex min-w-0 flex-col items-start gap-1.5">
+              <button
+                type="button"
+                data-action="change-thumbnail"
+                class="min-h-[44px] rounded-lg border border-gray-600 bg-gray-800 px-3 text-xs font-medium text-gray-100 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+                @click="openThumbnailPicker(selectedDoc)"
+              >
+                Change thumbnail
+              </button>
+              <button
+                v-if="selectedDoc.thumbnailKey"
+                type="button"
+                data-action="reset-thumbnail"
+                class="min-h-[44px] rounded-lg px-3 text-xs font-medium text-aircane-300 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+                @click="saveThumbnail(selectedDoc, null)"
+              >
+                Reset to automatic
+              </button>
+              <p
+                v-if="selectedDoc.thumbnailKey && !isKnownThumbnailKey(selectedDoc.thumbnailKey)"
+                class="text-xs text-amber-300"
+              >
+                This thumbnail is no longer available.
+              </p>
+              <p v-else-if="!selectedDoc.thumbnailKey" class="text-xs text-gray-500">Automatic</p>
+            </div>
+          </div>
+
           <dl class="mt-3 space-y-1.5 text-xs">
             <div class="flex justify-between gap-3">
               <dt class="text-gray-500">Type</dt>
@@ -414,6 +491,16 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
         </div>
       </aside>
     </div>
+
+    <ThumbnailPickerDialog
+      :open="pickerDoc !== null"
+      title="Change thumbnail"
+      :subtitle="pickerDoc?.title"
+      :current-key="pickerDoc?.thumbnailKey ?? null"
+      :auto-key="pickerDoc ? resolveThumbnailKey(pickerDoc, null) : null"
+      @close="pickerDocId = null"
+      @select="onThumbnailPicked"
+    />
   </section>
 </template>
 

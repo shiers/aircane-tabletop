@@ -1,0 +1,19 @@
+{
+  "scifi-horror-al": { "label": "Sci-fi horror", "tags": ["scifi", "horror"] },
+  "cosmic-horror-cc": { "label": "Cosmic horror", "tags": ["horror"] },
+  "crystal-fantasy-dg": { "label": "Crystal fantasy", "tags": ["fantasy"] },
+  "multigenre-gp": { "label": "Multi-genre", "tags": ["generic"] },
+  "cavern-adventure-lm": { "label": "Cavern adventure", "tags": ["fantasy"] },
+  "fantasy-knight-pf": { "label": "Fantasy knight", "tags": ["fantasy"] },
+  "cyberpunk-fantasy-sr": { "label": "Cyberpunk fantasy", "tags": ["scifi"] },
+  "gothic-vampire-vm": { "label": "Gothic vampire", "tags": ["horror"] },
+  "space-opera-sw": { "label": "Space opera", "tags": ["scifi"] },
+  "exploration-scifi-st": { "label": "Exploration sci-fi", "tags": ["scifi"] },
+  "fantasy-rulebook-dd": { "label": "Fantasy rulebook", "tags": ["fantasy"] },
+  "grimdark-soldier-dw": { "label": "Grimdark hunter", "tags": ["grimdark", "scifi"] },
+  "grimdark-soldier-bc": { "label": "Grimdark warlord", "tags": ["grimdark", "scifi"] },
+  "grimdark-captain-rt": { "label": "Grimdark captain", "tags": ["grimdark", "scifi"] },
+  "grimdark-inquisitor-dh": { "label": "Grimdark inquisitor", "tags": ["grimdark", "scifi"] },
+  "generic": { "label": "Generic", "tags": ["generic"] },
+  "homebrew": { "label": "Homebrew", "tags": ["homebrew"] }
+}

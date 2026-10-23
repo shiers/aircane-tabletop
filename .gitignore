@@ -146,3 +146,6 @@ src/frontend/aircane-web/dist/desktop/qrcode.min.js
 sshiers_6285266.pdf
 # Local real-PDF OCR tuning findings (DPI/PSM only, no personal values) stay local.
 verification-ocr.md
+
+# Document thumbnail originals (about 3 MB each; see docs/document-thumbnails.md)
+art-source/document-thumbnails/*.png

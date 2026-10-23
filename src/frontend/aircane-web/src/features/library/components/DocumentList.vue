@@ -5,6 +5,7 @@ import { ImportStatus, SourceType, type SourceDocumentDto } from '../api'
 import DocumentStatusBadge from './DocumentStatusBadge.vue'
 import AircaneImg from '@/shared/components/AircaneImg.vue'
 import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
+import { resolveThumbnailKey, thumbnailUrl } from '../thumbnails'
 
 const store = useLibraryStore()
 
@@ -38,32 +39,6 @@ function badgeStatus(
     // Pending and Processing both read as in-flight "processing".
     default:
       return 'processing'
-  }
-}
-
-/**
- * Pick a row thumbnail by detected source type:
- * - Rules → SRD by default, PF2e when the system/ruleset reads as Pathfinder 2e
- * - Adventure → Lost Mine
- * - Homebrew → Homebrew Monsters
- * Other types fall back to the SRD thumbnail.
- */
-function thumbnailFor(doc: SourceDocumentDto): string {
-  const base = '/assets/library'
-  const haystack = `${doc.gameSystem ?? ''} ${doc.ruleset ?? ''}`.toLowerCase()
-  const isPf2e = haystack.includes('pathfinder') || haystack.includes('pf2e')
-  switch (doc.sourceType) {
-    case SourceType.Rules:
-      return isPf2e
-        ? `${base}/document-thumbnail-pf2e.png`
-        : `${base}/document-thumbnail-srd.png`
-    case SourceType.Adventure:
-    case SourceType.Solo:
-      return `${base}/document-thumbnail-lost-mine.png`
-    case SourceType.Homebrew:
-      return `${base}/document-thumbnail-homebrew.png`
-    default:
-      return `${base}/document-thumbnail-srd.png`
   }
 }
 
@@ -208,17 +183,20 @@ async function handleToggleDisabled(doc: SourceDocumentDto): Promise<void> {
             >
               <!-- Source-type thumbnail -->
               <td class="px-4 py-3">
-                <AircaneImg
-                  :src="thumbnailFor(doc)"
-                  alt=""
-                  type="thumbnail"
-                  aria-hidden="true"
-                  class="h-10 w-10 rounded"
-                >
-                  <template #fallback>
-                    <ThumbnailPlaceholder :label="doc.title" />
-                  </template>
-                </AircaneImg>
+                <!-- 3:4 box so the baked-in gold frame is not cropped away. AircaneImg's own
+                     scoped `height: 100%` beats a sizing class on the img, so size this wrapper instead. -->
+                <div class="h-[53px] w-10 overflow-hidden rounded [&>.aircane-img]:h-full">
+                  <AircaneImg
+                    :src="thumbnailUrl(resolveThumbnailKey(doc))"
+                    alt=""
+                    type="thumbnail"
+                    aria-hidden="true"
+                  >
+                    <template #fallback>
+                      <ThumbnailPlaceholder :label="doc.title" />
+                    </template>
+                  </AircaneImg>
+                </div>
               </td>
 
               <!-- Title + filename + source-unavailable badge -->

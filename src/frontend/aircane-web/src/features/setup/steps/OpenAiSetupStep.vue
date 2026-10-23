@@ -12,6 +12,7 @@ import {
   type TestConnectionResult,
 } from '@/features/ai/api'
 import { isDesktop, openExternal } from '@/shared/tauri/bridge'
+import { apiErrorMessage } from '@/shared/api/errors'
 
 const emit = defineEmits<{
   (e: 'back'): void
@@ -51,10 +52,10 @@ async function testConnection() {
       activeProvider: AiProviderType.OpenAi,
       openAi: { apiKey: apiKey.value, model: DEFAULT_MODEL },
     })
-  } catch (e: any) {
+  } catch (e) {
     testResult.value = {
       success: false,
-      message: e?.response?.data?.message ?? e?.message ?? 'Connection test failed',
+      message: apiErrorMessage(e, 'message', 'Connection test failed'),
     }
   } finally {
     testing.value = false
@@ -70,8 +71,8 @@ async function saveAndContinue() {
       openAi: { apiKey: apiKey.value, model: DEFAULT_MODEL },
     })
     emit('saved')
-  } catch (e: any) {
-    saveError.value = e?.response?.data?.error ?? e?.message ?? 'Failed to save settings'
+  } catch (e) {
+    saveError.value = apiErrorMessage(e, 'error', 'Failed to save settings')
   } finally {
     saving.value = false
   }

@@ -18,6 +18,7 @@ import {
 import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
 import ModelSelect from '@/shared/components/ModelSelect.vue'
 import ApiKeyField from '@/shared/components/ApiKeyField.vue'
+import { apiErrorMessage } from '@/shared/api/errors'
 import { isDesktop, invoke, openExternal } from '@/shared/tauri/bridge'
 
 // Provider quick-select cards. Clicking a card sets activeProvider; the dropdown
@@ -209,8 +210,8 @@ async function loadConfig() {
       rerankCohereApiKey.value = config.reranking.cohere?.apiKey ?? ''
       rerankCohereModel.value = config.reranking.cohere?.model ?? 'rerank-english-v3.0'
     }
-  } catch (e: any) {
-    error.value = e?.response?.data?.error ?? e?.message ?? 'Failed to load AI settings'
+  } catch (e) {
+    error.value = apiErrorMessage(e, 'error', 'Failed to load AI settings')
   } finally {
     loading.value = false
   }
@@ -286,8 +287,8 @@ async function saveConfig() {
     successMessage.value = `AI provider updated to ${providerLabel.value}.`
     await loadConfig()
     await fetchModels()
-  } catch (e: any) {
-    error.value = e?.response?.data?.error ?? e?.message ?? 'Failed to save AI settings'
+  } catch (e) {
+    error.value = apiErrorMessage(e, 'error', 'Failed to save AI settings')
   } finally {
     saving.value = false
   }
@@ -302,10 +303,10 @@ async function testConnection() {
   try {
     const request = buildRequest()
     testResult.value = await testAiConnection(request)
-  } catch (e: any) {
+  } catch (e) {
     testResult.value = {
       success: false,
-      message: e?.response?.data?.message ?? e?.message ?? 'Connection test failed',
+      message: apiErrorMessage(e, 'message', 'Connection test failed'),
     }
   } finally {
     testing.value = false
@@ -317,10 +318,10 @@ async function testReranking() {
   rerankTestResult.value = null
   try {
     rerankTestResult.value = await testRerankingConnection(buildRerankingSettings())
-  } catch (e: any) {
+  } catch (e) {
     rerankTestResult.value = {
       available: false,
-      message: e?.response?.data?.error ?? e?.message ?? 'Connection test failed',
+      message: apiErrorMessage(e, 'error', 'Connection test failed'),
     }
   } finally {
     rerankTesting.value = false

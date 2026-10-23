@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAdventureGenerationStore } from './store'
 import { useCampaignStore } from '@/features/campaigns/store'
+import { apiErrorMessage, apiValidationMessage } from '@/shared/api/errors'
 import {
   type GenerateAdventureRequest,
   type AdventureMode,
@@ -90,14 +91,8 @@ async function submitForm() {
 
   try {
     await store.start(request, campaignId.value)
-  } catch (e: any) {
-    const data = e?.response?.data
-    if (data?.errors) {
-      const messages = Object.values(data.errors).flat()
-      error.value = (messages as string[]).join(' ')
-    } else {
-      error.value = data?.detail ?? e?.message ?? 'Failed to start adventure generation.'
-    }
+  } catch (e) {
+    error.value = apiValidationMessage(e) ?? apiErrorMessage(e, 'detail', 'Failed to start adventure generation.')
   } finally {
     submitting.value = false
   }

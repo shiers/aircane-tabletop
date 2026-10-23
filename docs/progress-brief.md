@@ -236,11 +236,13 @@ completed items were **removed from the active list in `docs/backlog.md`** and r
 
 3. **Pathfinder 2e Adapter — generation logic.** `Pf2eEncounterValidator` (creature-level XP
    budget: −4→+4 = 10/15/20/30/40/60/80/120/160; Trivial/Low/Moderate/Severe/Extreme tiers scaled
-   by party size) selected per campaign by a new `IEncounterValidatorSelector`. PF2e-aware
+   by party size) behind a new `IEncounterValidatorSelector`. PF2e-aware
    adventure-generation prompts (three-action economy, four degrees of success, PF2e tiers/
-   conditions, treasure-by-level) branch in `AdventureGenerationService`. `EliteWeakAdjuster`
+   conditions, treasure-by-level) branch in `AdventureGenerationService` (on the request's game system/ruleset text,
+   `IsPathfinder2e`, not by campaign). `EliteWeakAdjuster`
    (`Aircane.Domain/Combat/`) + `ApplyEliteTemplate`/`ApplyWeakTemplate` commands. (Mechanics
    definition shipped earlier; ORC **rules text** stays maintainer-gated.)
+   **Correction:** this used to say the validator is "selected per campaign". It is not. `IEncounterBudgetEngine`, `ValidateEncounter` and `IEncounterValidatorSelector.ForGameSystem` have no production caller: they are registered in dependency injection and exercised by unit tests, and nothing else injects or calls them, so no encounter is validated for any game system, D&D included. Tasks 7.6 and 13.6 (`.kiro/specs/*/tasks.md`) are marked done, but nothing runs.
 
 4. **Embedding portability — dimensions + cloud providers.** `IEmbeddingCompatibility`/
    `EmbeddingCompatibility` compares the active provider's dimension to `Embeddings:ColumnDimension`
@@ -365,7 +367,7 @@ Backlog Completion" session at the top of this file.
    New `GameSystemDefinitionSeeder` (wired in `Program.cs`) **persists all built-in definitions**
    (D&D 5e, Freeform, PF2e Remaster) on startup — this fixed a gap where built-in defs were
    referenced by the migration service but never actually inserted. All three verified in the DB.
-   *Deferred:* PF2e-specific encounter validator + generation (still uses `Dnd5eEncounterValidator`);
+   *Deferred:* PF2e-specific encounter validator + generation (`Dnd5eEncounterValidator` was the only one; as the correction under the Pathfinder 2e adapter item says, nothing calls any encounter validator);
    an elite/weak mechanical applicator; and the ORC **rules text** (separate, user-blocked).
 
 5. **OCR Pipeline** (`e7b720c`). New `IOcrEngine` abstraction; `TesseractOcrEngine` (TesseractOCR
@@ -608,8 +610,10 @@ User-facing guidance is in `docs/setup/ai-configuration.md` and `docs/known-limi
   Switching to a different-dimension provider requires a manual column migration + re-embed
   (documented); on a mismatch, vector search auto-disables and keyword search continues.
 - **Default provider is Fake** — deterministic placeholder; no real AI without config.
-- **PF2e generation is system-aware** — `Pf2eEncounterValidator` (creature-level budget) is selected
-  per campaign and adventure generation uses PF2e terminology. D&D 5e remains the default validator.
+- **PF2e generation is system-aware in its prompts only** — adventure generation uses PF2e terminology when the
+  request's game system or ruleset text names Pathfinder 2e (`IsPathfinder2e`). `Pf2eEncounterValidator` (creature-level
+  budget) exists but is not selected per campaign and is not called by anything: no encounter validator runs for any
+  game system (see the correction under the Pathfinder 2e adapter item).
 - **PF2e Remaster rules text is a 2-chunk stub** — the mechanics definition + PF2e-aware generation
   ship, but real ORC-licensed rules *text* is still needed (see decision table in `docs/backlog.md`).
 - **Character import — source adapters delivered** — D&D Beyond (URL via unofficial API + saved file),
@@ -631,7 +635,7 @@ User-facing guidance is in `docs/setup/ai-configuration.md` and `docs/known-limi
 are removed from the active backlog and recorded under "Completed P1 Work"):
 - ✅ Background Job Infrastructure — in-process channel queue + hosted worker + `GET /api/jobs/{id}`
 - ✅ Advanced combat automation — engine + combat REST + host/player tracker UI + AI-prompt combat state
-- ✅ Pathfinder 2e adapter — definition + `Pf2eEncounterValidator` + PF2e-aware generation + elite/weak
+- ✅ Pathfinder 2e adapter — definition + PF2e-aware generation prompts + elite/weak (`Pf2eEncounterValidator` exists, but nothing calls it)
 - ✅ Embedding portability — provenance + configurable dimension + OpenAI/Azure OpenAI providers
 - ✅ Library import UX — review/quick import, canonicalization, content-hash dedup, aliases, exclude patterns
 - ✅ OCR pipeline — Tesseract + full-page rasterization + tessdata auto-download + re-OCR endpoints/UI

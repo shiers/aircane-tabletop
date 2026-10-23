@@ -21,6 +21,12 @@ public sealed record AdventureListItemDto
     /// <summary>Game system (e.g., "D&D 5e 2014").</summary>
     public required string GameSystem { get; init; }
 
+    /// <summary>
+    /// The game system definition the adventure was generated for; null when it was generated for a system with no
+    /// definition, before definitions were recorded, or if the stored generation request could not be read.
+    /// </summary>
+    public Guid? GameSystemDefinitionId { get; init; }
+
     /// <summary>When the adventure was created.</summary>
     public required DateTime CreatedAt { get; init; }
 

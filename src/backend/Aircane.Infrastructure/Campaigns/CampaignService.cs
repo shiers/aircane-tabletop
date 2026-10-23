@@ -124,5 +124,6 @@ public sealed class CampaignService : ICampaignService
         AiAuthority: c.AiAuthority,
         ActiveAdventureId: c.ActiveAdventureId,
         CreatedAt: c.CreatedAt,
-        UpdatedAt: c.UpdatedAt);
+        UpdatedAt: c.UpdatedAt,
+        GameSystemDefinitionId: c.GameSystemDefinitionId);
 }

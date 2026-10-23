@@ -21,6 +21,15 @@ public sealed record GenerateAdventureRequest
     public required string GameSystem { get; init; }
 
     /// <summary>
+    /// The game system definition this adventure is for, when it is one Aircane has a definition for. Optional:
+    /// most systems a user types match no definition, and then only <see cref="Ruleset"/> and
+    /// <see cref="GameSystem"/> describe it. When set, the definition must exist and be active, and a blank
+    /// <see cref="Ruleset"/> or <see cref="GameSystem"/> is filled from it (version and name, as campaign
+    /// creation does). It travels in the stored request, so an older adventure simply has none.
+    /// </summary>
+    public Guid? GameSystemDefinitionId { get; init; }
+
+    /// <summary>
     /// Number of players in the party (primarily for Group mode).
     /// </summary>
     public int PartySize { get; init; } = 1;

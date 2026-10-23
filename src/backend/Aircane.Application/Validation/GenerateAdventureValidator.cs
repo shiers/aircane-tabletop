@@ -28,6 +28,10 @@ public sealed class GenerateAdventureValidator : AbstractValidator<GenerateAdven
             .NotEmpty().WithMessage("Game system is required.")
             .MaximumLength(200).WithMessage("Game system must not exceed 200 characters.");
 
+        RuleFor(x => x.GameSystemDefinitionId)
+            .NotEqual(Guid.Empty).WithMessage("Game system definition id must not be empty.")
+            .When(x => x.GameSystemDefinitionId.HasValue);
+
         RuleFor(x => x.PartySize)
             .GreaterThanOrEqualTo(1).WithMessage("Party size must be at least 1.")
             .LessThanOrEqualTo(10).WithMessage("Party size must not exceed 10.");

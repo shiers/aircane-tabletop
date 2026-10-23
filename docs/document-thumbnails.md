@@ -46,3 +46,17 @@ Alternative: track the originals with [Git LFS](https://git-lfs.com) (`git lfs t
 4. No match: Adventure and Solo use `cavern-adventure-lm`, Rules uses `fantasy-rulebook-dd`, everything else uses `generic`.
 
 A key that is not in the manifest resolves to `generic`. A file that fails to load shows the existing `AircaneImg` fallback (`ThumbnailPlaceholder`).
+
+## Choosing a thumbnail per document (API)
+
+`SourceDocument.ThumbnailKey` (nullable, max 64 characters, column `SourceDocuments.ThumbnailKey`) holds the host's choice. **Null means automatic**: the UI derives a thumbnail from the document's classification, as described above. Existing rows stay null. It is returned as `thumbnailKey` on every document DTO.
+
+A key must match `^[a-z0-9]+(-[a-z0-9]+)*$` (at most 64 characters). An empty or whitespace-only value becomes null. Anything else is a 400 whose detail says "Thumbnail key must be 1-64 characters...". The backend cannot see the frontend manifest, so it checks the shape only, never that an image exists.
+
+| Endpoint | Behaviour |
+| --- | --- |
+| `POST /api/library/documents` (multipart) | Optional form field `thumbnailKey`. One file per request, so the key goes with each file. |
+| `PATCH /api/library/documents/{id}/thumbnail` | Body `{ "thumbnailKey": "fantasy-knight-pf" }`; `null` or `""` goes back to automatic. Host only (same `HostOnly` policy as the rest of the library). 404 for an unknown id, 400 for an invalid key, 200 with the updated document. Works on built-in documents (it is cosmetic). |
+| `POST /api/library/folders/{id}/scan/import` | Optional `defaultThumbnailKey` (batch default) plus an optional `thumbnailKey` per item. A per-item key wins; an item without one gets the batch default; neither means automatic. |
+
+The key is never reset by a folder scan, a re-scan that re-imports a changed file, a re-index, or built-in content seeding (the seeder skips documents it already created). A watched-folder default thumbnail (`DefaultThumbnailKey` on `WatchedFolder`) is not implemented.

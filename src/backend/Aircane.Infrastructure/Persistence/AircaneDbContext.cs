@@ -217,6 +217,9 @@ public class AircaneDbContext : DbContext
             entity.Property(e => e.ContentHash).HasMaxLength(64).IsRequired(false);
             entity.HasIndex(e => e.ContentHash).HasDatabaseName("IX_SourceDocuments_ContentHash");
 
+            // Host-chosen thumbnail key (null = automatic). Validated by ThumbnailKeyValidator.
+            entity.Property(e => e.ThumbnailKey).HasMaxLength(64).IsRequired(false);
+
             // Supports idempotency checks in the built-in content seeder.
             entity.HasIndex(e => new { e.IsBuiltIn, e.GameSystem })
                 .HasDatabaseName("IX_SourceDocuments_IsBuiltIn_GameSystem");

@@ -999,6 +999,10 @@ namespace Aircane.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<string>("ThumbnailKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(500)

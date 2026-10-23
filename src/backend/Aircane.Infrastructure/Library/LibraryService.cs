@@ -1,6 +1,7 @@
 using Aircane.Application.Abstractions;
 using Aircane.Application.Abstractions;
 using Aircane.Application.DTOs.Library;
+using Aircane.Application.Validation;
 using Aircane.Domain.Entities;
 using Aircane.Domain.Enums;
 using Aircane.Infrastructure.Persistence;
@@ -166,6 +167,10 @@ public sealed class LibraryService : ILibraryService
         UploadDocumentRequest request,
         CancellationToken cancellationToken = default)
     {
+        // ── 0. Validate the optional thumbnail key ────────────────────────────
+        if (!ThumbnailKeyValidator.TryNormalize(request.ThumbnailKey, out var thumbnailKey, out var thumbnailError))
+            throw new InvalidOperationException(thumbnailError);
+
         // ── 1. Validate file extension ────────────────────────────────────────
         if (!FileValidationHelper.IsExtensionAllowed(request.OriginalFileName))
         {
@@ -225,7 +230,10 @@ public sealed class LibraryService : ILibraryService
             sourcePath: storagePath,
             watchedFolderId: null,
             visibility: request.Visibility,
-            importStatus: ImportStatus.Pending);
+            importStatus: ImportStatus.Pending)
+        {
+            ThumbnailKey = thumbnailKey,
+        };
 
         _db.SourceDocuments.Add(document);
 
@@ -520,6 +528,29 @@ public sealed class LibraryService : ILibraryService
         return MapToDto(document);
     }
 
+    /// <inheritdoc />
+    public async Task<SourceDocumentDto> SetThumbnailAsync(
+        Guid documentId,
+        string? thumbnailKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ThumbnailKeyValidator.TryNormalize(thumbnailKey, out var key, out var error))
+            throw new ArgumentException(error, nameof(thumbnailKey));
+
+        var document = await _db.SourceDocuments
+            .FirstOrDefaultAsync(d => d.Id == documentId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Document {documentId} not found.");
+
+        document.ThumbnailKey = key;
+        document.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Document {DocumentId} thumbnail set to {ThumbnailKey}.", documentId, key ?? "(automatic)");
+
+        return MapToDto(document);
+    }
+
     // ── Folder-scan document creation ─────────────────────────────────────────
 
     /// <inheritdoc />
@@ -552,6 +583,9 @@ public sealed class LibraryService : ILibraryService
         var canonicalGameSystem = await _gameSystemCanonicalizer.CanonicalizeAsync(
             gameSystemInput, cancellationToken);
 
+        if (!ThumbnailKeyValidator.TryNormalize(overrides?.ThumbnailKey, out var thumbnailKey, out var thumbnailError))
+            throw new ArgumentException(thumbnailError, nameof(overrides));
+
         var document = new SourceDocument(
             title: title,
             originalFileName: sanitizedFileName,
@@ -562,7 +596,10 @@ public sealed class LibraryService : ILibraryService
             sourcePath: sourcePath,
             watchedFolderId: folderId,
             visibility: ContentVisibility.DMOnly,
-            importStatus: ImportStatus.Pending);
+            importStatus: ImportStatus.Pending)
+        {
+            ThumbnailKey = thumbnailKey,
+        };
 
         _db.SourceDocuments.Add(document);
         await _db.SaveChangesAsync(cancellationToken);
@@ -609,5 +646,6 @@ public sealed class LibraryService : ILibraryService
             IsBuiltIn: doc.IsBuiltIn,
             IsDisabled: doc.IsDisabled,
             LicenseKey: doc.LicenseKey,
-            LicenseDisplayName: doc.LicenseDisplayName);
+            LicenseDisplayName: doc.LicenseDisplayName,
+            ThumbnailKey: doc.ThumbnailKey);
 }

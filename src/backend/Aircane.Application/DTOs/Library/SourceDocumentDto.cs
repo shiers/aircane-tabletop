@@ -24,4 +24,5 @@ public sealed record SourceDocumentDto(
     bool IsBuiltIn,
     bool IsDisabled,
     string? LicenseKey,
-    string? LicenseDisplayName);
+    string? LicenseDisplayName,
+    string? ThumbnailKey = null);

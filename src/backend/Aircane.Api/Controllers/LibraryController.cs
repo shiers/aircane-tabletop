@@ -113,6 +113,15 @@ public sealed class LibraryController : ControllerBase
                 Status = StatusCodes.Status400BadRequest,
             });
 
+        // Validate the optional thumbnail key (null/empty means automatic).
+        if (!ThumbnailKeyValidator.TryNormalize(form.ThumbnailKey, out var thumbnailKey, out var thumbnailError))
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid thumbnail key",
+                Detail = thumbnailError,
+                Status = StatusCodes.Status400BadRequest,
+            });
+
         // Sanitize the filename.
         var sanitizedFileName = FileUploadValidator.SanitizeFileName(form.File.FileName);
 
@@ -124,7 +133,8 @@ public sealed class LibraryController : ControllerBase
             Ruleset: form.Ruleset,
             Visibility: form.Visibility,
             FileContent: form.File.OpenReadStream(),
-            ContentType: form.File.ContentType);
+            ContentType: form.File.ContentType,
+            ThumbnailKey: thumbnailKey);
 
         try
         {
@@ -249,6 +259,39 @@ public sealed class LibraryController : ControllerBase
         try
         {
             var dto = await _libraryService.SetDocumentDisabledAsync(id, body.Disabled, cancellationToken);
+            return Ok(dto);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
+    /// <summary>
+    /// Sets or clears the thumbnail chosen for a document. A null or empty key means automatic (the
+    /// UI derives a thumbnail from the document's classification). Cosmetic, so it also works on
+    /// built-in documents.
+    /// </summary>
+    [HttpPatch("{id:guid}/thumbnail")]
+    [ProducesResponseType(typeof(SourceDocumentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetThumbnail(
+        Guid id,
+        [FromBody] SetThumbnailBody body,
+        CancellationToken cancellationToken)
+    {
+        if (!ThumbnailKeyValidator.TryNormalize(body.ThumbnailKey, out var thumbnailKey, out var error))
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid thumbnail key",
+                Detail = error,
+                Status = StatusCodes.Status400BadRequest,
+            });
+
+        try
+        {
+            var dto = await _libraryService.SetThumbnailAsync(id, thumbnailKey, cancellationToken);
             return Ok(dto);
         }
         catch (KeyNotFoundException)
@@ -404,6 +447,10 @@ public sealed class UploadDocumentFormModel
     /// <summary>Visibility of the document to session participants.</summary>
     [FromForm(Name = "visibility")]
     public ContentVisibility Visibility { get; set; } = ContentVisibility.DMOnly;
+
+    /// <summary>Optional thumbnail key (for example "fantasy-knight-pf"). Empty or omitted means automatic.</summary>
+    [FromForm(Name = "thumbnailKey")]
+    public string? ThumbnailKey { get; set; }
 }
 
 /// <summary>
@@ -426,6 +473,13 @@ public sealed class UpdateClassificationBody
 
     /// <summary>Ruleset tags (e.g. ["D&amp;D 5e 2014", "Pathfinder 2e"]).</summary>
     public IReadOnlyList<string>? Tags { get; set; }
+}
+
+/// <summary>Request body for the PATCH thumbnail endpoint.</summary>
+public sealed class SetThumbnailBody
+{
+    /// <summary>The thumbnail key, or null/empty to go back to automatic.</summary>
+    public string? ThumbnailKey { get; set; }
 }
 
 /// <summary>Request body for the PATCH disabled endpoint.</summary>

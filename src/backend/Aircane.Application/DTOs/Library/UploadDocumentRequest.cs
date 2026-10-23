@@ -14,4 +14,5 @@ public sealed record UploadDocumentRequest(
     string Ruleset,
     ContentVisibility Visibility,
     Stream FileContent,
-    string? ContentType = null);
+    string? ContentType = null,
+    string? ThumbnailKey = null);

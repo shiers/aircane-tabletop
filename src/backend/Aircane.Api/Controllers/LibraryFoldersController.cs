@@ -227,7 +227,9 @@ public sealed class LibraryFoldersController : ControllerBase
                 Title: i.Title,
                 SourceType: i.SourceType,
                 GameSystem: i.GameSystem,
-                Ruleset: i.Ruleset)).ToList());
+                Ruleset: i.Ruleset,
+                ThumbnailKey: i.ThumbnailKey)).ToList(),
+            DefaultThumbnailKey: body.DefaultThumbnailKey);
 
         var validation = await _importSelectionValidator.ValidateAsync(request, cancellationToken);
         if (!validation.IsValid)
@@ -408,6 +410,12 @@ public sealed class FolderImportSelectionRequestBody
 {
     /// <summary>Per-file import decisions and optional classification overrides.</summary>
     public List<FolderImportSelectionItemBody> Items { get; set; } = [];
+
+    /// <summary>
+    /// Optional thumbnail key applied to every imported file that has no key of its own.
+    /// Null or empty means automatic.
+    /// </summary>
+    public string? DefaultThumbnailKey { get; set; }
 }
 
 /// <summary>A single file's import decision with optional overrides.</summary>
@@ -430,4 +438,7 @@ public sealed class FolderImportSelectionItemBody
 
     /// <summary>Optional ruleset override. Null falls back to the folder default.</summary>
     public string? Ruleset { get; set; }
+
+    /// <summary>Optional thumbnail key for this file. Null falls back to the batch default, then automatic.</summary>
+    public string? ThumbnailKey { get; set; }
 }

@@ -18,6 +18,10 @@ public sealed class FolderImportSelectionValidator : AbstractValidator<FolderImp
         RuleFor(x => x.Items)
             .NotNull().WithMessage("Items are required.");
 
+        RuleFor(x => x.DefaultThumbnailKey)
+            .Must(ThumbnailKeyValidator.IsValid).WithMessage(ThumbnailKeyValidator.InvalidMessage)
+            .When(x => x.DefaultThumbnailKey is not null);
+
         RuleForEach(x => x.Items).ChildRules(item =>
         {
             item.RuleFor(i => i.SourcePath)
@@ -34,6 +38,10 @@ public sealed class FolderImportSelectionValidator : AbstractValidator<FolderImp
             item.RuleFor(i => i.Ruleset)
                 .MaximumLength(100).WithMessage("Ruleset must not exceed 100 characters.")
                 .When(i => i.Ruleset is not null);
+
+            item.RuleFor(i => i.ThumbnailKey)
+                .Must(ThumbnailKeyValidator.IsValid).WithMessage(ThumbnailKeyValidator.InvalidMessage)
+                .When(i => i.ThumbnailKey is not null);
         });
     }
 }

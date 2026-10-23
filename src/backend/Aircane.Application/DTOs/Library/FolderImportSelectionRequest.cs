@@ -9,9 +9,14 @@ namespace Aircane.Application.DTOs.Library;
 /// </summary>
 /// <param name="FolderId">The watched folder the selection applies to.</param>
 /// <param name="Items">Per-file import decisions.</param>
+/// <param name="DefaultThumbnailKey">
+/// Optional batch default thumbnail key applied to every imported file that has no key of its own.
+/// Null means automatic.
+/// </param>
 public sealed record FolderImportSelectionRequest(
     Guid FolderId,
-    IReadOnlyList<FolderImportSelectionItem> Items);
+    IReadOnlyList<FolderImportSelectionItem> Items,
+    string? DefaultThumbnailKey = null);
 
 /// <summary>
 /// A single file's import decision plus optional metadata overrides. When an override is null the
@@ -23,10 +28,12 @@ public sealed record FolderImportSelectionRequest(
 /// <param name="SourceType">Override source type. Null falls back to the folder default.</param>
 /// <param name="GameSystem">Override game system. Null falls back to the folder default.</param>
 /// <param name="Ruleset">Override ruleset. Null falls back to the folder default.</param>
+/// <param name="ThumbnailKey">Override thumbnail key. Null falls back to the request's batch default (or automatic).</param>
 public sealed record FolderImportSelectionItem(
     string SourcePath,
     bool Import,
     string? Title = null,
     SourceType? SourceType = null,
     string? GameSystem = null,
-    string? Ruleset = null);
+    string? Ruleset = null,
+    string? ThumbnailKey = null);

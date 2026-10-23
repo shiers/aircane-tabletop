@@ -17,6 +17,7 @@ import { useSessionStore } from './store'
 import { SessionStatus, reconnectSession } from './api'
 import { rollDice, RollVisibility, type RollDto, type RollRecordedEvent } from '../dice/api'
 import { listCharacters, listAllCharacters } from '../characters/api'
+import { features } from '@/shared/features'
 import ManualRollForm from '../dice/ManualRollForm.vue'
 import ChatPanel from './ChatPanel.vue'
 import RollLog from './components/RollLog.vue'
@@ -160,6 +161,10 @@ const party = computed(() =>
 )
 
 const rows = computed(() => turnRows(run.value, participantId.value))
+/** Whose turn it is in a running group adventure; null when no turn is in play. The Party list marks them. */
+const actingParticipantId = computed(() =>
+  run.value?.isGroup && run.value.status === 'InProgress' ? run.value.activeParticipantId : null,
+)
 const endTurn = computed(() =>
   endTurnState(run.value, participantId.value, {
     submitting: adventure.submitting.value,
@@ -175,7 +180,8 @@ const myCharacterName = ref<string | null>(null)
 
 async function loadMyCharacterName(): Promise<void> {
   const characterId = myParticipant.value?.characterId
-  if (!characterId) {
+  // With the Characters feature off nothing shows the name, so the characters are not read.
+  if (!features.characters || !characterId) {
     myCharacterName.value = null
     return
   }
@@ -866,7 +872,7 @@ onUnmounted(async () => {
           </template>
         </div>
 
-        <!-- Party + character panel -->
+        <!-- Party (and the player's character, while the Characters feature is on) -->
         <div
           :class="{ 'hidden lg:block': activeTab !== 'party' }"
           class="min-w-0 rounded-xl border border-surface-700/50 bg-surface-850 p-4 sm:p-6"
@@ -875,7 +881,7 @@ onUnmounted(async () => {
           <h2 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
             Party
           </h2>
-          <ul class="mb-6 space-y-1" data-testid="party-list">
+          <ul class="space-y-1" :class="{ 'mb-6': features.characters }" data-testid="party-list">
             <li v-if="party.length === 0" class="text-xs text-gray-600">No one else is here yet.</li>
             <li
               v-for="member in party"
@@ -885,37 +891,46 @@ onUnmounted(async () => {
               <span class="min-w-0 truncate">
                 {{ member.displayName }}<span v-if="member.isMe" class="text-gray-400"> (you)</span>
               </span>
-              <span class="shrink-0 text-xs text-gray-500">{{ member.characterId ? 'Character ready' : 'No character yet' }}</span>
+              <span v-if="features.characters" class="shrink-0 text-xs text-gray-500">{{ member.characterId ? 'Character ready' : 'No character yet' }}</span>
+              <span
+                v-else-if="member.id === actingParticipantId"
+                class="shrink-0 text-xs font-semibold text-aircane-300"
+                data-testid="party-turn"
+              >
+                {{ member.isMe ? 'Your turn' : 'Acting' }}
+              </span>
             </li>
           </ul>
 
-          <h2 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
-            Character
-          </h2>
+          <template v-if="features.characters">
+            <h2 class="mb-3 text-sm font-medium uppercase tracking-wider text-gray-400">
+              Character
+            </h2>
 
-          <!-- Waiting state - no character assigned -->
-          <div
-            v-if="!hasCharacter"
-            class="flex flex-col items-center gap-3 py-6 text-center"
-            aria-live="polite"
-          >
-            <div class="text-4xl" aria-hidden="true">⏳</div>
-            <p class="text-sm font-medium text-gray-300">Waiting for character assignment</p>
-            <p class="text-xs text-gray-500">
-              The host will assign a character to you shortly.
-            </p>
-          </div>
+            <!-- Waiting state - no character assigned -->
+            <div
+              v-if="!hasCharacter"
+              class="flex flex-col items-center gap-3 py-6 text-center"
+              aria-live="polite"
+            >
+              <div class="text-4xl" aria-hidden="true">⏳</div>
+              <p class="text-sm font-medium text-gray-300">Waiting for character assignment</p>
+              <p class="text-xs text-gray-500">
+                The host will assign a character to you shortly.
+              </p>
+            </div>
 
-          <!-- Character assigned -->
-          <div v-else>
-            <p class="text-sm text-gray-300" data-testid="my-character">
-              Your character:
-              <strong class="text-white break-words">{{ myCharacterName ?? 'Assigned by the host' }}</strong>
-            </p>
-            <p class="mt-2 text-xs text-gray-500">
-              Full character sheet view will be available in a future update.
-            </p>
-          </div>
+            <!-- Character assigned -->
+            <div v-else>
+              <p class="text-sm text-gray-300" data-testid="my-character">
+                Your character:
+                <strong class="text-white break-words">{{ myCharacterName ?? 'Assigned by the host' }}</strong>
+              </p>
+              <p class="mt-2 text-xs text-gray-500">
+                Full character sheet view will be available in a future update.
+              </p>
+            </div>
+          </template>
         </div>
 
         <!-- Dice tray -->

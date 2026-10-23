@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AircaneImg from './AircaneImg.vue'
 import NavIcon from './NavIcon.vue'
 import { clearParticipantSession, loadLiveParticipantSession } from '@/features/sessions/participantSession'
+import { features, type FeatureName } from '@/shared/features'
 
 defineProps<{
   collapsed: boolean
@@ -18,14 +19,15 @@ const router = useRouter()
 
 // `iconName` is the PNG basename under /assets/ui for the 8 mapped nav items
 // (rendered via <NavIcon> with an emoji fallback). Dashboard has no PNG asset,
-// so it keeps the inline SVG (iconName undefined).
-const navItems: { label: string; to: string; icon: string; iconName?: string }[] = [
+// so it keeps the inline SVG (iconName undefined). An item with a `feature` is listed only while that feature
+// flag is on (src/shared/features.ts).
+const navItems: { label: string; to: string; icon: string; iconName?: string; feature?: FeatureName }[] = [
   { label: 'Dashboard', to: '/', icon: 'dashboard' },
   { label: 'Campaigns', to: '/campaigns', icon: 'campaigns', iconName: 'icon-campaign' },
   { label: 'Adventure Forge', to: '/adventures', icon: 'adventure', iconName: 'icon-adventure' },
   { label: 'Join Session', to: '/sessions', icon: 'dice', iconName: 'icon-dice' },
   { label: 'Library', to: '/library', icon: 'library', iconName: 'icon-library' },
-  { label: 'Characters', to: '/characters', icon: 'characters', iconName: 'icon-character' },
+  { label: 'Characters', to: '/characters', icon: 'characters', iconName: 'icon-character', feature: 'characters' },
   { label: 'Rules Lookup', to: '/rules-lookup', icon: 'rules', iconName: 'icon-rules' },
   { label: 'AI DM', to: '/settings/ai', icon: 'ai', iconName: 'icon-ai' },
   { label: 'About & Credits', to: '/about', icon: 'about', iconName: 'icon-about' },
@@ -43,6 +45,8 @@ watch(
   },
 )
 
+const hostNavItems = computed(() => navItems.filter((item) => !item.feature || features[item.feature]))
+
 const visibleNavItems = computed(() =>
   tableOfThisBrowser.value
     ? [{
@@ -51,7 +55,7 @@ const visibleNavItems = computed(() =>
         icon: 'dice',
         iconName: 'icon-dice',
       }]
-    : navItems,
+    : hostNavItems.value,
 )
 
 /** Forgets the table (the one way out of the player navigation, for a login that has outlived its table). */

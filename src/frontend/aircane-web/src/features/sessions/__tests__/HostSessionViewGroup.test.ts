@@ -87,6 +87,7 @@ vi.mock('../combat', async (importOriginal) => ({
 
 import * as charactersApi from '@/features/characters/api'
 import * as generationApi from '@/features/adventure-generation/api'
+import { features } from '@/shared/features'
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -909,5 +910,55 @@ describe('HostSessionView: deny, remove and presence', () => {
     vi.mocked(sessionsApi.getParticipants).mockClear()
     await vi.advanceTimersByTimeAsync(60_000)
     expect(sessionsApi.getParticipants).not.toHaveBeenCalled()
+  })
+})
+
+describe('HostSessionView and the Characters feature flag', () => {
+  afterEach(() => {
+    features.characters = true
+  })
+
+  const mira = [{ id: 'c1', name: 'Mira', role: charactersApi.CharacterRole.Player }] as never
+
+  it('with the feature on, reads the campaigns characters and offers them for assignment', async () => {
+    features.characters = true
+    vi.mocked(charactersApi.listCharacters).mockResolvedValue(mira)
+
+    const { wrapper } = await mountHost({ participants: [person('alice')] })
+
+    expect(charactersApi.listCharacters).toHaveBeenCalledWith('campaign-1')
+    expect(wrapper.find('select[aria-label="Assign character to alice"]').exists()).toBe(true)
+  })
+
+  it('with the feature off, does not read the characters, and offers no assign dropdown or Character label', async () => {
+    features.characters = false
+    vi.mocked(charactersApi.listCharacters).mockResolvedValue(mira)
+
+    const { wrapper } = await mountHost({ participants: [person('alice')] })
+
+    expect(charactersApi.listCharacters).not.toHaveBeenCalled()
+    expect(wrapper.find('select[aria-label="Assign character to alice"]').exists()).toBe(false)
+    expect(text(wrapper)).not.toContain('Select character')
+    expect(text(wrapper)).not.toContain('Character:')
+  })
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])('with the feature %s, the Remove confirmation mentions the character: %s', async (on, mentions) => {
+    features.characters = on
+    const confirmFn = vi.fn((_message: string) => false)
+    vi.stubGlobal('confirm', confirmFn)
+    const { wrapper } = await mountHost({
+      adventure: false,
+      participants: [person('p-alice', { displayName: 'Alice', characterId: 'char-mira' })],
+    })
+
+    await wrapper.find('[data-testid="remove-participant"]').trigger('click')
+    await flushPromises()
+
+    const asked = confirmFn.mock.calls[0][0]
+    expect(asked).toContain('Remove Alice from this session?')
+    expect(/character/i.test(asked)).toBe(mentions)
   })
 })

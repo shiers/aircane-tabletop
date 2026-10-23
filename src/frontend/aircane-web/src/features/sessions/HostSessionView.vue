@@ -43,6 +43,7 @@ import type {
 } from '../adventures/api'
 import { getAdventureDraft } from '../adventure-generation/api'
 import { listCharacters, CharacterRole } from '../characters/api'
+import { features } from '@/shared/features'
 import { buildJoinLink, eligiblePlayers } from './lobby'
 import { clearInviteCode, loadInviteCode } from './inviteCodeStorage'
 import { denyConfirmation, removeConfirmation } from './hostActions'
@@ -187,14 +188,17 @@ async function loadGroupContext(): Promise<void> {
   }
 
   // The campaign's characters are what the Participants panel offers to assign, whatever the session is
-  // for: without them the panel has nothing to put in its "Character" dropdown.
-  try {
-    const characters = await listCharacters(campaignId)
-    availableCharacters.value = characters
-      .filter((c) => c.role === CharacterRole.Player)
-      .map((c) => ({ id: c.id, name: c.name }))
-  } catch {
-    // Non-critical: the panel shows the current assignments without the dropdown.
+  // for: without them the panel has nothing to put in its "Character" dropdown. With the Characters feature
+  // off the panel has no dropdown, so they are not read at all.
+  if (features.characters) {
+    try {
+      const characters = await listCharacters(campaignId)
+      availableCharacters.value = characters
+        .filter((c) => c.role === CharacterRole.Player)
+        .map((c) => ({ id: c.id, name: c.name }))
+    } catch {
+      // Non-critical: the panel shows the current assignments without the dropdown.
+    }
   }
 
   // The rest is only needed while setting up or running a group adventure.
@@ -477,7 +481,8 @@ async function handleRemove(participantId: string): Promise<void> {
     : null
   const name = person?.displayName ?? (index >= 0 ? order[index].participantName : 'this player')
 
-  if (!confirm(removeConfirmation(name, { inRun: index >= 0, holdsTurn, nextName, characterName }))) return
+  const charactersEnabled = features.characters
+  if (!confirm(removeConfirmation(name, { inRun: index >= 0, holdsTurn, nextName, characterName, charactersEnabled }))) return
   try {
     await store.removeParticipant(sessionId, participantId)
   } catch {

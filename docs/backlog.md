@@ -372,8 +372,10 @@ hero banners, panel art, thumbnails, portraits, nav icons, button art, ornaments
 the `v-bg-asset` directive and `AircaneImg` / `NavIcon` / `ThumbnailPlaceholder`
 fallback components, and layout consistency fixes (common page template, sidebar
 width, duplicate headings, background removal from pages that should be clean).
-Blocked only on `new-character-button-art.png` regeneration for the Characters
-page. All other assets are ready to wire.
+Previously blocked only on `new-character-button-art.png` regeneration for the
+Characters page; that is no longer a blocker, because the Characters UI is hidden
+(see Stretch Goals: Characters and character creation). All other assets are
+ready to wire.
 
 ### Playwright E2E in CI
 
@@ -510,7 +512,55 @@ Localize the UI and support non-English source documents.
 
 ---
 
-_Last updated: 2026-10-18 — first-launch setup wizard delivered (PR #7, audited
+## Stretch Goals
+
+Features that are built, or partly built, but are not essential to Aircane today. They are parked on purpose, not
+abandoned: the code stays in the repository, and where there is a UI it is hidden behind a feature flag
+(`src/frontend/aircane-web/src/shared/features.ts`, documented in `docs/setup/feature-flags.md`).
+
+### Characters and character creation
+
+**Decision (2026-10-23):** character management and creation is a stretch goal, not essential for Aircane.
+Aircane already works with no characters. Group and solo runs are played with players who have no character
+assigned, and the AI treats character sheets as external (the "NO CHARACTER ATTACHED" prompt blocks, and roll
+requests that need no linked character). So the Characters UI is **hidden, not removed**: all character code,
+routes, backend endpoints and database data are intact.
+
+**What is hidden while the flag is off:** the sidebar item; the dashboard "Character Sheets" card and "Create
+Character" quick action; the `/characters` and `/characters/:characterId/field-review` routes (they redirect to the
+dashboard); the host's Participants-panel Character column and assign dropdown; the group lobby's "as <character>"
+line; the player's Character section on the Party tab (which instead shows whose turn it is); and the character
+wording in the remove-player and replace-seat confirmations. Left as they were: the Adventure Forge (it already sends
+no `characterIds`), the library upload form's "Character" source type, and the game system definition editor's
+character schema section (a follow-up decision: hide it, or keep it because the schema will drive the future form).
+
+**How to re-enable the UI:** set `VITE_ENABLE_CHARACTERS=true` (see `.env.example` and
+`docs/setup/feature-flags.md`) and restart the dev server or rebuild. Nothing else changes.
+
+**What a future implementation has to deal with:**
+
+- **The validator is D&D-shaped.** `CharacterSchemaValidator` requires at least one class, a class level of 1 to 20
+  (and a total level of 1 to 20), a hit die above 0, and ability scores of 1 to 30. `CharacterService` derives
+  `Level` from the sum of the class levels.
+- **The form is D&D-only.** `CharacterForm.vue` has six abilities, a computed D&D proficiency bonus, and requires a
+  class and a level.
+- **Level is not optional in the data model.** `Character.Level` is a non-nullable `int` column and
+  `CreateCharacterRequest.Level` is non-nullable, so a system with no levels needs a migration (and a decision on
+  whether `Level` becomes nullable).
+- **Every import mapper assumes levels.** The Foundry, D&D Beyond, Pathbuilder, Roll20 and PDF mappers all produce
+  `Classes[].Level`, and the draft sanitiser clamps levels to 1 to 20.
+- **`PartyAnalysisService` is D&D-only and unreachable from the UI.** The Adventure Forge sends no `characterIds`, so
+  party analysis never runs.
+- **A likely direction.** Use the game system definition's character schema as the validator when one exists; make
+  class, level and hit die optional; render the form from the schema (the import review already does this with the
+  FormDescriptor renderer); and decide whether `Level` becomes nullable.
+- **The AI side is already ready.** The roll prompts assume external sheets, so characters can come back without
+  touching them.
+
+---
+
+_Last updated: 2026-10-23 — Characters UI hidden behind a feature flag and recorded as a
+stretch goal. Earlier (2026-10-18): first-launch setup wizard delivered (PR #7, audited
 PR #37); group play, curated model list, art assets/UI polish, Playwright CI, and
 adventure prompt enforcement added to backlog. Earlier (2026-10-18): adventure
 forge, campaign integration and play polish delivered (async generation with

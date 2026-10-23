@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ParticipantApprovalPanel from '../ParticipantApprovalPanel.vue'
@@ -7,6 +7,7 @@ import InvitePlayersPanel from '@/features/adventures/components/InvitePlayersPa
 import * as sessionsApi from '../api'
 import { ParticipantRole, SessionAccessMode, SessionStatus, type ParticipantDto, type SessionDto } from '../api'
 import { useSessionStore } from '../store'
+import { features } from '@/shared/features'
 
 /**
  * The host's side of a returning player: a waiting request with the same name as someone already in the session
@@ -167,5 +168,25 @@ describe('the session store: replace seat', () => {
       ['new-bifur', true, 'char-1'],
       ['nori', false, null],
     ])
+  })
+})
+
+describe('ReplaceSeatControl wording and the Characters feature flag', () => {
+  afterEach(() => {
+    features.characters = true
+  })
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])('with the feature %s, the confirmation mentions the character: %s', async (on, mentions) => {
+    features.characters = on
+    const wrapper = mountPanel([ghost, back])
+
+    await wrapper.find('[data-testid="replace-seat"]').trigger('click')
+
+    const confirmation = wrapper.find('[data-testid="replace-seat-confirm"]').text()
+    expect(/character/i.test(confirmation)).toBe(mentions)
+    expect(confirmation).toContain('their place in the turn order')
   })
 })

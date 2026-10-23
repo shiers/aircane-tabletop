@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { AxiosError, type AxiosResponse } from 'axios'
 import GroupLobbyPanel from '../components/GroupLobbyPanel.vue'
 import { ParticipantRole, SessionAccessMode, SessionStatus, type ParticipantDto, type SessionDto } from '../api'
 import * as adventuresApi from '@/features/adventures/api'
 import { groupRunState } from '@/features/adventures/__tests__/fixtures'
+import { features } from '@/shared/features'
 
 vi.mock('qrcode', () => ({ default: { toCanvas: vi.fn().mockResolvedValue(undefined) } }))
 
@@ -331,5 +332,35 @@ describe('GroupLobbyPanel', () => {
       expect(wrapper.emitted('started')).toBeUndefined()
       expect(wrapper.find('[data-testid="start-error"]').text()).toBe(detail)
     })
+  })
+})
+
+describe('GroupLobbyPanel and the Characters feature flag', () => {
+  afterEach(() => {
+    features.characters = true
+  })
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])('with the feature %s, the turn order says who plays which character: %s', (on, shown) => {
+    features.characters = on
+
+    const wrapper = mountLobby([person('alice', { characterId: 'char-1' })], {
+      availableCharacters: [{ id: 'char-1', name: 'Mira' }],
+    })
+
+    expect(wrapper.find('[data-testid="turn-order-item"]').text().includes('as Mira')).toBe(shown)
+  })
+
+  it('with the feature off, the lobby has no character dropdown and waits for no character', () => {
+    features.characters = false
+
+    const wrapper = mountLobby([person('alice')], { availableCharacters: [{ id: 'char-1', name: 'Mira' }] })
+
+    expect(wrapper.find('select[aria-label^="Assign character"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/character/i)
+    // Starting needs only an approved player.
+    expect(wrapper.find('[data-testid="start-adventure-button"]').attributes('disabled')).toBeUndefined()
   })
 })

@@ -37,7 +37,7 @@ See the [full setup guide](docs/setup/getting-started.md) for prerequisites and 
 - **AI DM Runtime** - Configure the AI as assistant, co-DM, or full DM with adjustable authority levels. The AI adapts to your game system's mechanics automatically.
 - **Rules Lookup** - Ask rules questions grounded in your imported sources with citations.
 - **Adventure Generation** - Generate solo or group adventures scaled to your party's level and composition, with system-appropriate encounter balancing.
-- **Character Management** - Dynamic character sheets driven by your game system's schema. Import from PDF/JSON, create manually, or use templates.
+- **Character Management** *(planned, currently hidden)* - Dynamic character sheets driven by your game system's schema. Import from PDF/JSON, create manually, or use templates. The UI is switched off for now, because adventures run fine without characters; see [Feature Flags](docs/setup/feature-flags.md) to turn it on.
 - **Dice Roller** - Supports any dice convention: d20+modifier, dice pools, Fudge dice, exploding dice, step dice, and more.
 - **LAN Multiplayer** - Host a session, share an invite code or QR code, and play together on the local network.
 - **Campaign State** - Event-sourced state with undo, audit trail, and session continuity.
@@ -53,6 +53,7 @@ See the [full setup guide](docs/setup/getting-started.md) for prerequisites and 
 | [LAN Hosting](docs/setup/lan-hosting.md) | Host a session for local network players |
 | [Desktop Wrapper](docs/setup/desktop.md) | Build the installable Tauri desktop app (backend as a sidecar) |
 | [Docker Environment](docs/setup/docker.md) | Docker Compose services and commands |
+| [Feature Flags](docs/setup/feature-flags.md) | Features that are built but switched off, and how to turn them on |
 | [Architecture Overview](docs/architecture/overview.md) | Tech stack, data flows, project structure |
 | [Known Limitations](docs/known-limitations.md) | Current MVP boundaries |
 

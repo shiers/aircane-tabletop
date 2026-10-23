@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { charactersEnabled } from './flags'
 
 test.describe('App Navigation', () => {
   test('sidebar contains all main navigation links', async ({ page }) => {
@@ -11,11 +12,17 @@ test.describe('App Navigation', () => {
     await expect(nav.getByText('Dashboard')).toBeVisible()
     await expect(nav.getByText('Campaigns')).toBeVisible()
     await expect(nav.getByText('Library')).toBeVisible()
-    await expect(nav.getByText('Characters')).toBeVisible()
     await expect(nav.getByText('Rules Lookup')).toBeVisible()
     await expect(nav.getByText('AI DM')).toBeVisible()
     await expect(nav.getByText('Adventure Forge')).toBeVisible()
     await expect(nav.getByText('Join Session')).toBeVisible()
+
+    // Characters is behind a feature flag (VITE_ENABLE_CHARACTERS): listed only while it is on.
+    if (charactersEnabled) {
+      await expect(nav.getByText('Characters')).toBeVisible()
+    } else {
+      await expect(nav.getByText('Characters')).toHaveCount(0)
+    }
   })
 
   test('clicking Library navigates to /library', async ({ page }) => {
@@ -33,10 +40,21 @@ test.describe('App Navigation', () => {
   })
 
   test('clicking Characters navigates to /characters', async ({ page }) => {
+    test.skip(!charactersEnabled, 'The Characters feature is off (set VITE_ENABLE_CHARACTERS=true)')
     await page.goto('/')
     const nav = page.locator('nav[aria-label="Main navigation"]')
     await nav.getByText('Characters').click()
     await expect(page).toHaveURL('/characters')
+  })
+
+  test('/characters redirects to the dashboard while the Characters feature is off', async ({ page }) => {
+    test.skip(charactersEnabled, 'The Characters feature is on')
+
+    for (const path of ['/characters', '/characters/some-id/field-review']) {
+      await page.goto(path)
+      await expect(page).toHaveURL('/')
+      await expect(page.getByRole('heading', { name: /welcome back, dungeon master/i })).toBeVisible()
+    }
   })
 
   test('clicking Rules Lookup navigates to /rules-lookup', async ({ page }) => {

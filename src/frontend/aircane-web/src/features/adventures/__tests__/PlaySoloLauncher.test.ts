@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -6,6 +6,7 @@ import PlaySoloLauncher from '../components/PlaySoloLauncher.vue'
 import { useCampaignStore } from '@/features/campaigns/store'
 import { useAdventureSessionStore } from '../stores/adventureSessionStore'
 import { AiRole, AiAuthority, type CampaignDto } from '@/features/campaigns/api'
+import { features } from '@/shared/features'
 
 vi.mock('@microsoft/signalr', () => ({
   HubConnectionBuilder: vi.fn(),
@@ -194,5 +195,25 @@ describe('PlaySoloLauncher', () => {
     expect(wrapper.find('[data-testid="launcher-error"]').text()).toContain('only approved adventures')
     expect(wrapper.find('[data-testid="resume-button"]').exists()).toBe(false)
     expect(router.currentRoute.value.path).toBe('/')
+  })
+})
+
+describe('PlaySoloLauncher and the Characters feature flag', () => {
+  afterEach(() => {
+    features.characters = true
+  })
+
+  // A solo run starts from a campaign alone: there is no character picker, with the feature on or off.
+  it.each([true, false])('offers only a campaign to pick, with the Characters feature %s', async (on) => {
+    features.characters = on
+    const { wrapper } = await mountLauncher([campaign()])
+
+    await wrapper.find('[data-testid="play-solo-button"]').trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.find('[data-testid="play-solo-panel"]')
+    expect(panel.findAll('select')).toHaveLength(1)
+    expect(panel.find('[data-testid="campaign-select"]').exists()).toBe(true)
+    expect(panel.text()).not.toMatch(/character/i)
   })
 })

@@ -35,5 +35,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: [],
+    // The tests of the character features (and of the screens that show them) run with the Characters flag on,
+    // as before it existed. The tests of the flag itself turn it on and off explicitly (`features.characters`).
+    env: { VITE_ENABLE_CHARACTERS: 'true' },
   },
 })

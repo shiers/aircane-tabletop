@@ -24,7 +24,9 @@ COPY src/frontend/aircane-web/package.json src/frontend/aircane-web/package-lock
 RUN npm ci --silent
 
 COPY src/frontend/aircane-web/ ./
-RUN npm run build
+# Bundle only. `npm run build` also type-checks, which needs the e2e specs under tests/ (not copied into this stage);
+# the type-check is a required step of Frontend CI (docs/setup/frontend-typecheck.md).
+RUN npx vite build
 
 # ═══════════════════════════════════════════════════════════════
 # Stage 2: Backend restore and build

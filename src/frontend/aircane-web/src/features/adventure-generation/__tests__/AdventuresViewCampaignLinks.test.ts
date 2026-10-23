@@ -79,8 +79,12 @@ type Wrapper = Awaited<ReturnType<typeof mountPage>>['wrapper']
 const cards = (w: Wrapper) => w.findAll('[data-testid="adventure-card"]')
 const buttons = (c: ReturnType<typeof cards>[number]) => c.findAll('button, a').map((b) => b.text())
 
-beforeEach(() => vi.clearAllMocks())
-afterEach(() => vi.unstubAllGlobals())
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('Adventure Forge: every adventure, with its campaign', () => {
   it('lists all adventures, the ones in no campaign first, each assigned one labelled with its campaign', async () => {
@@ -103,7 +107,7 @@ describe('Adventure Forge: every adventure, with its campaign', () => {
 
   it('Remove from campaign names the campaign, then unassigns and keeps the adventure in the list', async () => {
     vi.mocked(api.unassignAdventure).mockResolvedValue(adventure({ id: 'adv-2', title: 'In Friday' }))
-    const confirmFn = vi.fn(() => false)
+    const confirmFn = vi.fn((_message: string) => false)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountPage([IN_C1()])
 
@@ -115,7 +119,7 @@ describe('Adventure Forge: every adventure, with its campaign', () => {
     await cards(wrapper)[0].find('[data-testid="remove-from-campaign-button"]').trigger('click')
     await flushPromises()
 
-    const asked = confirmFn.mock.calls.at(-1)?.[0] as unknown as string
+    const asked = confirmFn.mock.calls.at(-1)?.[0]
     expect(asked).toContain('In Friday')
     expect(asked).toContain('Friday Night')
     expect(asked).toContain('stays in the Adventure Forge')
@@ -130,7 +134,7 @@ describe('Adventure Forge: every adventure, with its campaign', () => {
     vi.mocked(api.assignAdventureToCampaign)
       .mockRejectedValueOnce(conflict({ code: 'adventure-in-other-campaign', currentCampaignName: 'Friday Night' }))
       .mockResolvedValueOnce({ ...IN_C1(), campaignId: 'c2', campaignName: 'Tuesday Group' })
-    const confirmFn = vi.fn(() => true)
+    const confirmFn = vi.fn((_message: string) => true)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountPage([IN_C1()])
 
@@ -142,7 +146,7 @@ describe('Adventure Forge: every adventure, with its campaign', () => {
     await cards(wrapper)[0].find('[data-testid="assign-select"]').setValue('c2')
     await flushPromises()
 
-    const asked = confirmFn.mock.calls.at(-1)?.[0] as unknown as string
+    const asked = confirmFn.mock.calls.at(-1)?.[0]
     expect(asked).toContain('In Friday')
     expect(asked).toContain('Friday Night')
     expect(asked).toContain('Tuesday Group')
@@ -154,7 +158,7 @@ describe('Adventure Forge: every adventure, with its campaign', () => {
     vi.mocked(api.assignAdventureToCampaign).mockRejectedValue(
       conflict({ code: 'game-system-mismatch', adventureGameSystem: 'D&D 5e 2014', campaignGameSystem: 'Pathfinder 2e' }),
     )
-    const confirmFn = vi.fn(() => false)
+    const confirmFn = vi.fn((_message: string) => false)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountPage([adventure()])
 
@@ -163,7 +167,7 @@ describe('Adventure Forge: every adventure, with its campaign', () => {
     await cards(wrapper)[0].find('[data-testid="assign-select"]').setValue('c1')
     await flushPromises()
 
-    const asked = confirmFn.mock.calls.at(-1)?.[0] as unknown as string
+    const asked = confirmFn.mock.calls.at(-1)?.[0]
     expect(asked).toContain('D&D 5e 2014')
     expect(asked).toContain('Pathfinder 2e')
     expect(api.assignAdventureToCampaign).toHaveBeenCalledTimes(1)
@@ -188,14 +192,14 @@ describe('Adventure Forge: every adventure, with its campaign', () => {
       completedRuns: 1, abandonedRuns: 0, transcriptEntries: 1, indexedChunks: 0,
     })
     vi.mocked(api.deleteAdventure).mockResolvedValue(undefined)
-    const confirmFn = vi.fn(() => true)
+    const confirmFn = vi.fn((_message: string) => true)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountPage([adventure()])
 
     await cards(wrapper)[0].find('[data-testid="delete-button"]').trigger('click')
     await flushPromises()
 
-    const asked = confirmFn.mock.calls.at(-1)?.[0] as unknown as string
+    const asked = confirmFn.mock.calls.at(-1)?.[0]
     expect(asked).toContain('"Loose End"')
     expect(asked).toContain('1 run (1 completed)')
     expect(asked).toContain('1 transcript entry')

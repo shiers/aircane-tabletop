@@ -54,7 +54,10 @@ watch(() => props.joinUrl, renderQrCode)
 const urlCopied = ref(false)
 const codeCopied = ref(false)
 
-async function copyToClipboard(text: string, flag: typeof urlCopied): Promise<void> {
+const copiedFlags = { url: urlCopied, code: codeCopied }
+
+async function copyToClipboard(text: string, which: keyof typeof copiedFlags): Promise<void> {
+  const flag = copiedFlags[which]
   try {
     await navigator.clipboard.writeText(text)
     flag.value = true
@@ -143,7 +146,7 @@ const statusClass = computed(() => {
               type="button"
               class="shrink-0 rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-medium text-gray-300 hover:border-gray-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 transition-colors"
               :aria-label="urlCopied ? 'Copied!' : 'Copy join URL'"
-              @click="copyToClipboard(joinUrl, urlCopied)"
+              @click="copyToClipboard(joinUrl, 'url')"
             >
               <span v-if="urlCopied" class="text-green-400">✓ Copied</span>
               <span v-else>Copy</span>
@@ -166,7 +169,7 @@ const statusClass = computed(() => {
               type="button"
               class="shrink-0 rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-medium text-gray-300 hover:border-gray-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 transition-colors"
               :aria-label="codeCopied ? 'Copied!' : 'Copy invite code'"
-              @click="copyToClipboard(inviteCode, codeCopied)"
+              @click="copyToClipboard(inviteCode, 'code')"
             >
               <span v-if="codeCopied" class="text-green-400">✓ Copied</span>
               <span v-else>Copy</span>

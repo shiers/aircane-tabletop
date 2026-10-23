@@ -18,13 +18,15 @@ const meta = computed(() => {
     .join(' · ')
 })
 
+/** Badge colours by status. A status with no entry (Draft) gets the default amber. */
+const STATUS_CLASSES: Partial<Record<CampaignAdventure['status'], string>> = {
+  Approved: 'border-green-700 bg-green-900/50 text-green-300',
+  Active: 'border-aircane-700 bg-aircane-900/50 text-aircane-300',
+  Rejected: 'border-red-700 bg-red-900/50 text-red-300',
+}
+
 const statusClass = computed(
-  () =>
-    ({
-      Approved: 'border-green-700 bg-green-900/50 text-green-300',
-      Active: 'border-aircane-700 bg-aircane-900/50 text-aircane-300',
-      Rejected: 'border-red-700 bg-red-900/50 text-red-300',
-    })[props.adventure.status] ?? 'border-yellow-700 bg-yellow-900/50 text-yellow-300',
+  () => STATUS_CLASSES[props.adventure.status] ?? 'border-yellow-700 bg-yellow-900/50 text-yellow-300',
 )
 </script>
 

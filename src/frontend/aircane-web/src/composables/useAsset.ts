@@ -61,7 +61,7 @@ export function useAsset(options: AssetOptions): UseAssetReturn {
     console.warn(`[Aircane] Asset failed to load: ${path}`)
   }
 
-  const backgroundStyle = computed<Record<string, string>>(() => {
+  const backgroundStyle = computed((): Record<string, string> => {
     if (failed.value || type === 'ornament') return {}
     return {
       backgroundColor: fallbackColor ?? FALLBACK_COLORS[type],

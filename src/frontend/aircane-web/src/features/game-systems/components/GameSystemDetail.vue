@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useGameSystemStore } from '../stores/useGameSystemStore'
-import type { GameSystemDefinitionDetail } from '../types'
 
 const props = defineProps<{
   /** The game system definition ID to display. */

@@ -180,7 +180,7 @@ describe('AdventureSoloSession', () => {
     // Recap, then the saved exchanges, then the divider.
     const order = wrapper
       .findAll('[data-testid="narration-feed"] > *')
-      .map((el) => el.attributes('data-testid') === 'recap-block' ? 'recap' : (el.attributes('data-kind') ?? el.tagName))
+      .map((el) => el.attributes('data-testid') === 'recap-block' ? 'recap' : (el.attributes('data-kind') ?? el.element.tagName))
     expect(order).toEqual(['recap', 'player', 'dm', 'separator'])
   })
 

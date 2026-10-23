@@ -123,6 +123,9 @@ npm run build
 npx vite preview --host --port 4173
 ```
 
+`npm run build` type-checks first (about 20 seconds from a cold start) and stops on a type error; see
+[Frontend Type-Check](./frontend-typecheck.md). `npx vite build` skips the check if you only need the bundle.
+
 `vite preview` serves the same proxy settings (`vite.config.ts`) as the dev server, has no hot-reload
 client, and never reloads the page by itself.
 

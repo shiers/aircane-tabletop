@@ -4,7 +4,7 @@
  * A 🗝 key icon sits in the leading slot, a ✦ star ornament trails the input,
  * and the code is entered uppercased with wide letter-spacing (maxlength 8).
  */
-const props = withDefaults(
+withDefaults(
   defineProps<{
     /** Current invite code value. */
     modelValue: string

@@ -14,7 +14,9 @@ const conflict = (status: number, data: Record<string, unknown>) =>
 
 const ADVENTURE = { id: 'a1', title: 'The Sunken Archive' }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 describe('conflictOf', () => {
   it('reads a 409 with a known code', () => {

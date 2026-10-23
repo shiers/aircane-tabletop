@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useCampaignStore } from './store'
-import { AiRole, AiAuthority, type CampaignDto, type CreateCampaignRequest, type UpdateCampaignRequest } from './api'
+import type { CampaignDto, CreateCampaignRequest, UpdateCampaignRequest } from './api'
 import CampaignForm from './components/CampaignForm.vue'
 import CampaignList from './components/CampaignList.vue'
 

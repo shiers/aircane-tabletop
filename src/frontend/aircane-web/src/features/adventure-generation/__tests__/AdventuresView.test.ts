@@ -110,7 +110,9 @@ beforeEach(() => {
   hub.connection.invoke.mockResolvedValue(undefined)
   vi.mocked(api.generateAdventure).mockResolvedValue({ jobId: 'job-1', status: 'Queued', message: '' })
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('Adventure Forge: unassigned adventures', () => {
   it('AdventureForge_ShowsUnassignedAdventures_OnLoad', async () => {

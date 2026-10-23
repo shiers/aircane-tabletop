@@ -55,6 +55,7 @@ See the [full setup guide](docs/setup/getting-started.md) for prerequisites and 
 | [Docker Environment](docs/setup/docker.md) | Docker Compose services and commands |
 | [Feature Flags](docs/setup/feature-flags.md) | Features that are built but switched off, and how to turn them on |
 | [Frontend Type-Check](docs/setup/frontend-typecheck.md) | What `npm run typecheck` covers, the coverage guard, and the CI step |
+| [Frontend Lint](docs/setup/frontend-lint.md) | `npm run lint`, its rule decisions, and installing with `npm ci` |
 | [Architecture Overview](docs/architecture/overview.md) | Tech stack, data flows, project structure |
 | [Known Limitations](docs/known-limitations.md) | Current MVP boundaries |
 
@@ -110,6 +111,9 @@ npm run test
 # Frontend type-check (app, vitest specs, vite.config.ts and the e2e specs); `npm run build` runs it first
 npm run typecheck
 
+# Frontend lint (ESLint: the app, the specs, scripts and the e2e specs); `npm run lint:fix` applies autofixes
+npm run lint
+
 # E2E tests
 cd tests/e2e/playwright
 npx playwright test
@@ -118,6 +122,10 @@ npx playwright test
 docker compose down -v
 docker compose up postgres -d
 ```
+
+Frontend CI runs `npm ci`, `npm run lint`, `npm run typecheck`, `npm run build` and `npm test`, in that order, and
+each must pass. Install with `npm ci` for the exact versions in `package-lock.json`; use `npm install <package>`
+only when you change a dependency, and commit the lockfile with it.
 
 ---
 

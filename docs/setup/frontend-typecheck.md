@@ -52,7 +52,7 @@ suppressions in the frontend today.
 
 ## Where it runs
 
-- **Frontend CI** (`.github/workflows/frontend.yml`): a "Type check" step before "Build", with no `continue-on-error`.
+- **Frontend CI** (`.github/workflows/frontend.yml`): after `npm ci` and the [Lint](./frontend-lint.md) step, a "Type check" step before "Build", with no `continue-on-error`.
 - **`npm run build`**, and so `build.ps1`, `build.sh` and the desktop build, all of which run it from a full checkout.
 - **Not in `Dockerfile.production`.** The image builds the frontend from a copy of `src/frontend/aircane-web` alone,
   where the e2e specs do not exist, so it runs `npx vite build` and relies on CI for the check.

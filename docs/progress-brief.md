@@ -13,6 +13,13 @@
 > are all delivered. Only the real PF2e ORC rules text remains fully maintainer-gated.
 > **Latest work:** Internet Tunnel / Remote Play via Cloudflare Tunnel + security hardening —
 > see "Latest Session" immediately below.
+>
+> **Note on the frontend gate.** Status lines in this brief that say `vue-tsc` was clean or had 0 errors predate
+> the real gate: plain `vue-tsc` (what `npm run build` ran) read a root tsconfig with no files, so it checked nothing,
+> and the project carried 37 type errors nobody saw. The frontend gate is now `npm run typecheck` (`vue-tsc -b` over
+> the app, the vitest specs, `vite.config.ts` and the e2e specs, preceded by the coverage guard
+> `scripts/check-typecheck-coverage.mjs`) and `npm run lint` (ESLint), both required steps of Frontend CI. See
+> [Frontend Type-Check](setup/frontend-typecheck.md) and [Frontend Lint](setup/frontend-lint.md).
 
 ---
 
@@ -22,7 +29,7 @@
 after). Built via a Kiro design → plan → implement → review workflow (the design loop reconciled the
 original brief's idealised type/route names against the real repo before any code was written);
 reviewer approved and build/tests verified green before merge. Verified: backend build 0 errors,
-**2125 unit + 96 integration** tests green; frontend `vue-tsc` 0 errors + **317 vitest**.
+**2125 unit + 96 integration** tests green; frontend **317 vitest** (type-check and lint: see the frontend-gate note at the top).
 
 **What it is:** source-specific import adapters that funnel into the **existing** character import
 pipeline. Each source is an adapter that extracts raw field values; nothing bypasses the canonical
@@ -150,7 +157,7 @@ renders nulls as dashes in the issue. Populating those is a follow-up once those
 Delivered internet play plus the security hardening that is a hard prerequisite for exposing the
 app publicly. Committed on `feature/internet-tunnel-remote-play` and opened as PR #6 (base `dev`);
 Desktop CI is green on Windows/macOS/Linux. Verified: backend build clean, **1964 unit + 34
-integration** tests green; frontend `vue-tsc` clean + **108 session tests**; desktop `cargo check`
+integration** tests green; frontend **108 session tests** (type-check and lint: see the frontend-gate note at the top); desktop `cargo check`
 clean + **3 tunnel tests**.
 
 **Phase A — security hardening (built first):**
@@ -204,7 +211,7 @@ session view.
 
 Autonomous session finishing the remaining actionable P1 items. Committed in logical green groups
 and pushed to `feature/library-import-ux`. Verified: backend build clean (0 errors), full backend
-suite green (**1963 unit + 24 integration**), frontend **208 tests** + `vue-tsc` clean. The
+suite green (**1963 unit + 24 integration**), frontend **208 tests** (type-check and lint: see the frontend-gate note at the top). The
 completed items were **removed from the active list in `docs/backlog.md`** and recorded under a
 "Completed P1 Work" reference section.
 
@@ -270,7 +277,7 @@ license).
 ## Earlier Session — Library Import UX
 
 Focused on making document import safer and less duplicate-prone. All changes verified green
-(frontend `vue-tsc` + full vitest suite; full backend unit suite).
+(frontend full vitest suite and, per the frontend-gate note at the top, type-check and lint; full backend unit suite).
 
 1. **`SourceType` enum fix.** The frontend `SourceType` enum values were off-by-one vs the
    backend, so every document (including the built-in D&D 5e SRD and PF2e rulebooks) showed the

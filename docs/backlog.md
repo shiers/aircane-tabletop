@@ -2,6 +2,13 @@
 
 This document lists planned features and improvements beyond the Aircane Tabletop MVP, organized by priority.
 
+> **Note on the frontend gate.** Status lines in this document that say `vue-tsc` was clean or had 0 errors predate
+> the real gate: plain `vue-tsc` (what `npm run build` ran) read a root tsconfig with no files, so it checked nothing,
+> and the project carried 37 type errors nobody saw. The frontend gate is now `npm run typecheck` (`vue-tsc -b` over
+> the app, the vitest specs, `vite.config.ts` and the e2e specs, preceded by the coverage guard
+> `scripts/check-typecheck-coverage.mjs`) and `npm run lint` (ESLint), both required steps of Frontend CI. See
+> [Frontend Type-Check](setup/frontend-typecheck.md) and [Frontend Lint](setup/frontend-lint.md).
+
 ---
 
 ## Intentionally Not Auto-Built (Maintainer Decision Required)
@@ -70,7 +77,7 @@ and Generic VTT use a two-call handshake so the user picks a system first. Tests
 detector precedence/negative tests, DDB URL parse/status tests (DDB API mocked with **WireMock.Net
 1.6.11**), PDF-hint tests, endpoint integration tests (happy paths, `requiresSourceConfirmation`,
 preserved legacy `400 "ruleset is required."`, DDB `422`), and anonymised fixtures per source. Verified:
-backend 2125 unit + 96 integration green, frontend `vue-tsc` + 317 vitest green. **Caveat:** the D&D
+backend 2125 unit + 96 integration green, frontend 317 vitest green (type-check and lint: see the frontend-gate note at the top). **Caveat:** the D&D
 Beyond URL path depends on an unofficial API that may change — PDF export is the documented fallback.
 
 ### In-App "Report a bug" Feedback Feature
@@ -95,7 +102,7 @@ secrets are in .NET user-secrets for `Aircane.Api` (token verified against the I
 ### Solo Adventure Execution (AI-run play of a generated adventure)
 
 > **✅ Delivered on `dev`** (`feat(adventures): solo adventure execution for generated adventures`).
-> Backend unit (2,421), integration (140, incl. 6 against real PostgreSQL) and frontend (411) suites green; `vue-tsc` clean; migration `AddAdventureSession` applies cleanly on top of the full chain.
+> Backend unit (2,421), integration (140, incl. 6 against real PostgreSQL) and frontend (411) suites green (type-check and lint: see the frontend-gate note at the top); migration `AddAdventureSession` applies cleanly on top of the full chain.
 
 An approved generated adventure can be played solo: the AI DM runs one player through it scene by scene,
 narrating, tracking state, and advancing the story from the player's actions.
@@ -138,7 +145,7 @@ integration test factory no longer reaches a real AI provider; see below.)_
 
 ### Adventure Forge, Campaigns and Play Polish (generation, resume, AI DM behaviour)
 
-> **✅ Delivered and merged to `dev`** (PRs #19–#36, 2026-10-12 → 2026-10-18). Backend unit (2,520) and integration (144, incl. real-PostgreSQL) and frontend (478) suites green; `vue-tsc` clean. Migrations added: `AddGeneratedAdventureCampaignId`, `AddAdventureSessionPendingRoll`, `AddAdventureSessionEntry`.
+> **✅ Delivered and merged to `dev`** (PRs #19–#36, 2026-10-12 → 2026-10-18). Backend unit (2,520) and integration (144, incl. real-PostgreSQL) and frontend (478) suites green (type-check and lint: see the frontend-gate note at the top). Migrations added: `AddGeneratedAdventureCampaignId`, `AddAdventureSessionPendingRoll`, `AddAdventureSessionEntry`.
 
 Follow-on work that turned solo execution into something you can actually use day to day.
 
@@ -197,7 +204,7 @@ running it in CI.
 > **✅ Delivered and merged to `dev`** (PR #7 commits `a1e5554`, `ec8ee07`,
 > `c81b117`; Ollama probe timeout raised in `765b8cf`; spec audit and model
 > description fix in PR #37). Frontend (24 setup-specific) and integration
-> (5 setup status) tests green; `vue-tsc` clean.
+> (5 setup status) tests green (type-check and lint: see the frontend-gate note at the top).
 
 A fullscreen setup wizard shown once on first launch (or when the AI provider
 is still Fake and the wizard has not been previously dismissed).

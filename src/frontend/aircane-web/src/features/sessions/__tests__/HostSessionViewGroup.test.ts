@@ -755,7 +755,7 @@ describe('HostSessionView: deny, remove and presence', () => {
 
   it('Deny asks, naming the person, then declines the request on the server', async () => {
     vi.mocked(sessionsApi.denyParticipant).mockResolvedValue(person('walt', { isApproved: false, isDenied: true }))
-    const confirmFn = vi.fn(() => false)
+    const confirmFn = vi.fn((_message: string) => false)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountHost({ adventure: false, participants: [person('walt', { displayName: 'Walt', isApproved: false })] })
 
@@ -796,7 +796,7 @@ describe('HostSessionView: deny, remove and presence', () => {
     vi.mocked(charactersApi.listCharacters).mockResolvedValue([
       { id: 'char-mira', name: 'Mira', role: 0 } as never,
     ])
-    const confirmFn = vi.fn(() => true)
+    const confirmFn = vi.fn((_message: string) => true)
     vi.stubGlobal('confirm', confirmFn)
     const participants = [{ ...inRun[0], characterId: 'char-mira' }, inRun[1], inRun[2]]
     const { wrapper } = await mountRunning(participants)
@@ -805,7 +805,7 @@ describe('HostSessionView: deny, remove and presence', () => {
     await wrapper.findAll('[data-testid="remove-participant"]')[0].trigger('click')
     await flushPromises()
 
-    const asked = confirmFn.mock.calls[0][0] as string
+    const asked = confirmFn.mock.calls[0][0]
     expect(asked).toContain('Remove Alice from this session?')
     expect(asked).toContain('loses their seat')
     expect(asked).toContain('the turn moves on to Bob')
@@ -825,13 +825,13 @@ describe('HostSessionView: deny, remove and presence', () => {
   })
 
   it('removing someone who is not acting says they leave the turn order', async () => {
-    const confirmFn = vi.fn(() => false)
+    const confirmFn = vi.fn((_message: string) => false)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountRunning(inRun)
 
     await wrapper.findAll('[data-testid="remove-turn-player"]')[2].trigger('click')
 
-    const asked = confirmFn.mock.calls[0][0] as string
+    const asked = confirmFn.mock.calls[0][0]
     expect(asked).toContain('Remove Cara from this session?')
     expect(asked).toContain("leave the adventure's turn order")
     expect(asked).not.toContain('turn moves on')

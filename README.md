@@ -54,6 +54,7 @@ See the [full setup guide](docs/setup/getting-started.md) for prerequisites and 
 | [Desktop Wrapper](docs/setup/desktop.md) | Build the installable Tauri desktop app (backend as a sidecar) |
 | [Docker Environment](docs/setup/docker.md) | Docker Compose services and commands |
 | [Feature Flags](docs/setup/feature-flags.md) | Features that are built but switched off, and how to turn them on |
+| [Frontend Type-Check](docs/setup/frontend-typecheck.md) | What `npm run typecheck` covers, the coverage guard, and the CI step |
 | [Architecture Overview](docs/architecture/overview.md) | Tech stack, data flows, project structure |
 | [Known Limitations](docs/known-limitations.md) | Current MVP boundaries |
 
@@ -105,6 +106,9 @@ dotnet test
 # Frontend tests
 cd src/frontend/aircane-web
 npm run test
+
+# Frontend type-check (app, vitest specs, vite.config.ts and the e2e specs); `npm run build` runs it first
+npm run typecheck
 
 # E2E tests
 cd tests/e2e/playwright

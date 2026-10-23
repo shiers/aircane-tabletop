@@ -1,3 +1,5 @@
+/// <reference types="vitest" />
+// (The reference gives `defineConfig` the `test` option below; it is type-only, so Vite's config is unchanged.)
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'

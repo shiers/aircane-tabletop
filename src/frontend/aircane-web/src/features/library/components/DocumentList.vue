@@ -95,11 +95,6 @@ const sourceTypeLabel: Record<SourceType, string> = {
   [SourceType.Generated]: 'Generated',
 }
 
-/** Documents that have failed import - used to show per-row error details. */
-const failedDocuments = computed(() =>
-  store.documents.filter((d) => d.importStatus === ImportStatus.Failed),
-)
-
 /** Build a map of folderId → folder display name for quick lookup. */
 const folderNameById = computed<Record<string, string>>(() => {
   const map: Record<string, string> = {}

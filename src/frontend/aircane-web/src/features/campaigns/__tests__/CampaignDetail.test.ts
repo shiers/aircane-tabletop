@@ -105,7 +105,9 @@ beforeEach(() => {
   hub.connection.start.mockResolvedValue(undefined)
   hub.connection.invoke.mockResolvedValue(undefined)
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('CampaignDetail', () => {
   it('CampaignDetail_ShowsAdventuresSection', async () => {

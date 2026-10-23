@@ -3,7 +3,7 @@
  * DisplayNameField - styled v-model text field for a player's display name.
  * Mirrors InviteCodeField but uses a person icon and no letter-spacing.
  */
-const props = withDefaults(
+withDefaults(
   defineProps<{
     /** Current display name value. */
     modelValue: string

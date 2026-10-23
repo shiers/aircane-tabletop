@@ -1,0 +1,22 @@
+{
+  // Type-checks the Playwright specs. Referenced from src/frontend/aircane-web/tsconfig.json, so `npm run typecheck`
+  // there covers them. The e2e folder has no complete install of its own (and CI does not install it), so
+  // @playwright/test and @types/node are resolved from the frontend's node_modules.
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "../../../src/frontend/aircane-web/node_modules/.tmp/tsconfig.e2e.tsbuildinfo",
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"],
+    "typeRoots": ["../../../src/frontend/aircane-web/node_modules/@types"],
+    "paths": {
+      "@playwright/test": ["../../../src/frontend/aircane-web/node_modules/@playwright/test"]
+    }
+  },
+  "include": ["*.ts", "tests/**/*.ts"]
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import LanJoinScreen from '../LanJoinScreen.vue'
 import { SessionAccessMode, SessionStatus } from '../api'
 
@@ -95,6 +95,44 @@ describe('LanJoinScreen', () => {
     expect(buttons.length).toBeGreaterThanOrEqual(2)
     const buttonTexts = buttons.map((b) => b.text())
     expect(buttonTexts.some((t) => t.includes('Copy'))).toBe(true)
+  })
+
+  describe('copy buttons', () => {
+    const copyButtons = (wrapper: ReturnType<typeof mountScreen>) =>
+      wrapper.findAll('button').filter((b) => b.text().includes('Copy') || b.text().includes('Copied'))
+
+    function stubClipboard() {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+      return writeText
+    }
+
+    it('copies the join URL and shows "Copied" on that button only', async () => {
+      const writeText = stubClipboard()
+      const wrapper = mountScreen()
+      const [urlButton, codeButton] = copyButtons(wrapper)
+
+      await urlButton.trigger('click')
+      await flushPromises()
+
+      expect(writeText).toHaveBeenCalledWith('http://192.168.1.10:5173/join/session-1')
+      expect(urlButton.text()).toContain('Copied')
+      expect(urlButton.attributes('aria-label')).toBe('Copied!')
+      expect(codeButton.text()).not.toContain('Copied')
+    })
+
+    it('copies the invite code and shows "Copied" on that button only', async () => {
+      const writeText = stubClipboard()
+      const wrapper = mountScreen()
+      const [urlButton, codeButton] = copyButtons(wrapper)
+
+      await codeButton.trigger('click')
+      await flushPromises()
+
+      expect(writeText).toHaveBeenCalledWith('ABC123')
+      expect(codeButton.text()).toContain('Copied')
+      expect(urlButton.text()).not.toContain('Copied')
+    })
   })
 
   it('renders the QR code canvas with an accessible aria-label', () => {

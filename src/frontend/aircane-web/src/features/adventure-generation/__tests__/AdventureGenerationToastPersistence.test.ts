@@ -88,7 +88,9 @@ beforeEach(() => {
   vi.mocked(api.generateAdventure).mockResolvedValue({ jobId: JOB, status: 'Queued', message: 'started' })
 })
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('Adventure generation survives navigation', () => {
   it('AdventureGenerationToast_ShowsSuccess_WhenCompletedEventReceivedAfterNavigation', async () => {

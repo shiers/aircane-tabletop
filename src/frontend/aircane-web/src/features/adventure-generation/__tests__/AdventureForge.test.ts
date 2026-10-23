@@ -197,7 +197,7 @@ describe('Adventure generation (async, SignalR progress)', () => {
   })
 
   it('the form is enabled again once generation has finished', async () => {
-    const { wrapper, store } = await setup()
+    const { store } = await setup()
     await store.start(REQUEST)
     completed() // on the forge page: auto-navigates away, so check the store gate instead
     await flushPromises()

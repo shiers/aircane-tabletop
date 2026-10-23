@@ -28,7 +28,7 @@ const rulesetSuggestions = computed<string[]>(() => {
   for (const doc of store.documents) {
     if (!doc.ruleset) continue
     // When a system is chosen, only show rulesets for that system; otherwise show all known.
-    if (system && doc.gameSystem.trim().toLowerCase() !== system) continue
+    if (system && (doc.gameSystem ?? '').trim().toLowerCase() !== system) continue
     seen.add(doc.ruleset)
   }
   return [...seen].sort((a, b) => a.localeCompare(b))

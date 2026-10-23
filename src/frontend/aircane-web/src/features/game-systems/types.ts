@@ -181,7 +181,7 @@ export interface FormSection {
   id: string
   label: string
   fields: FormField[]
-  visibleWhen?: VisibilityCondition
+  visibleWhen?: VisibilityCondition | null
 }
 
 export interface FormField {

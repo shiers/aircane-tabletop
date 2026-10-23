@@ -208,6 +208,26 @@ const myTurnRun = (overrides: Partial<PlayerAdventureRun> = {}) =>
     ...overrides,
   })
 
+/** A character as the characters API returns it. */
+function characterDto(overrides: Partial<charactersApi.CharacterDto> = {}): charactersApi.CharacterDto {
+  return {
+    id: 'char-1',
+    campaignId: 'campaign-1',
+    campaignName: 'Friday Night',
+    ownerParticipantId: 'participant-1',
+    role: charactersApi.CharacterRole.Player,
+    name: 'Thorin Stonehelm',
+    gameSystem: 'D&D 5e',
+    ruleset: '2014',
+    level: 3,
+    canonicalJson: '{}',
+    currentStateJson: '{}',
+    createdAt: '2024-01-01T10:00:00Z',
+    updatedAt: '2024-01-01T10:00:00Z',
+    ...overrides,
+  }
+}
+
 const routes = [
   { path: '/sessions/:sessionId/play', name: 'play-session', component: PlayerSessionView },
   { path: '/join/:sessionId', name: 'join-session', component: { template: '<div>join</div>' } },
@@ -1117,7 +1137,7 @@ describe('PlayerSessionView', () => {
 
     it('shows the player\'s character by name, not by id', async () => {
       mockStore.participants[0] = { ...mockStore.participants[0], characterId: 'char-1' }
-      mockedListCharacters.mockResolvedValue([{ id: 'char-1', name: 'Thorin Stonehelm' }])
+      mockedListCharacters.mockResolvedValue([characterDto()])
       try {
         const { wrapper } = await mountView()
 
@@ -1241,7 +1261,7 @@ describe('PlayerSessionView', () => {
     it('with the feature off, never reads the characters, even for a player who has one assigned', async () => {
       features.characters = false
       mockStore.participants[0] = { ...mockStore.participants[0], characterId: 'char-1' }
-      mockedListCharacters.mockResolvedValue([{ id: 'char-1', name: 'Thorin Stonehelm' }] as never)
+      mockedListCharacters.mockResolvedValue([characterDto()])
       try {
         const { wrapper } = await mountView()
 

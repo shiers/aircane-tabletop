@@ -54,7 +54,9 @@ async function mountHome(campaigns: CampaignDto[], runs: AdventureSessionDto[] =
 
 const rows = (w: ReturnType<typeof mount>) => w.findAll('[data-testid="recent-campaign"]')
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 describe('Dashboard: Recent Campaigns', () => {
   it('Dashboard_ShowsAllCampaigns_NotJustWithSessions', async () => {

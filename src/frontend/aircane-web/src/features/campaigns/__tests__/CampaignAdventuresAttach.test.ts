@@ -100,7 +100,9 @@ beforeEach(() => {
   hub.connection.start.mockResolvedValue(undefined)
   hub.connection.invoke.mockResolvedValue(undefined)
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('Campaign page: the two ways to let an adventure go', () => {
   it('offers Remove from campaign and a separate, visually distinct Delete adventure', async () => {
@@ -118,7 +120,7 @@ describe('Campaign page: the two ways to let an adventure go', () => {
 
   it('Remove from campaign asks lightly, says the adventure stays in the Forge, then detaches only', async () => {
     vi.mocked(genApi.unassignAdventure).mockResolvedValue(adventure())
-    const confirmFn = vi.fn(() => false)
+    const confirmFn = vi.fn((_message: string) => false)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountDetail([adventure(), adventure({ id: 'adv-2', title: 'Second' })])
 
@@ -131,7 +133,7 @@ describe('Campaign page: the two ways to let an adventure go', () => {
     await cards(wrapper)[0].find('[data-testid="remove-from-campaign-button"]').trigger('click')
     await flushPromises()
 
-    const asked = confirmFn.mock.calls.at(-1)?.[0] as unknown as string
+    const asked = confirmFn.mock.calls.at(-1)?.[0]
     expect(asked).toContain('The Sunken Archive')
     expect(asked).toContain('stays in the Adventure Forge')
     expect(genApi.unassignAdventure).toHaveBeenCalledWith('adv-1')
@@ -142,7 +144,7 @@ describe('Campaign page: the two ways to let an adventure go', () => {
   it('Delete adventure names the adventure and exactly what goes, and says it cannot be undone', async () => {
     vi.mocked(genApi.getAdventureDeleteImpact).mockResolvedValue(IMPACT)
     vi.mocked(genApi.deleteAdventure).mockResolvedValue(undefined)
-    const confirmFn = vi.fn(() => true)
+    const confirmFn = vi.fn((_message: string) => true)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountDetail([adventure()])
 
@@ -150,7 +152,7 @@ describe('Campaign page: the two ways to let an adventure go', () => {
     await flushPromises()
 
     expect(genApi.getAdventureDeleteImpact).toHaveBeenCalledWith('adv-1')
-    const asked = confirmFn.mock.calls.at(-1)?.[0] as unknown as string
+    const asked = confirmFn.mock.calls.at(-1)?.[0]
     expect(asked).toContain('"The Sunken Archive"')
     expect(asked).toContain('3 runs (2 completed, 1 abandoned)')
     expect(asked).toContain('41 transcript entries')
@@ -202,7 +204,7 @@ describe('Campaign page: the two ways to let an adventure go', () => {
 
   it('does not even ask to delete when the impact says a run is in progress', async () => {
     vi.mocked(genApi.getAdventureDeleteImpact).mockResolvedValue({ ...IMPACT, inProgressRuns: 1 })
-    const confirmFn = vi.fn(() => true)
+    const confirmFn = vi.fn((_message: string) => true)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountDetail([adventure()])
 
@@ -290,7 +292,7 @@ describe('Campaign page: attaching an adventure', () => {
       .mockRejectedValueOnce(mismatch) // the first click, declined
       .mockRejectedValueOnce(mismatch) // the second click, agreed...
       .mockResolvedValueOnce({ ...LOOSE, campaignId: CAMPAIGN_ID }) // ...and sent again with the flag
-    const confirmFn = vi.fn(() => false)
+    const confirmFn = vi.fn((_message: string) => false)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountDetail([], [LOOSE])
     await openPicker(wrapper)
@@ -298,7 +300,7 @@ describe('Campaign page: attaching an adventure', () => {
     // Declined: nothing is attached.
     await options(wrapper)[0].find('[data-testid="attach-option-button"]').trigger('click')
     await flushPromises()
-    const asked = confirmFn.mock.calls.at(-1)?.[0] as unknown as string
+    const asked = confirmFn.mock.calls.at(-1)?.[0]
     expect(asked).toContain('Loose End')
     expect(asked).toContain('Pathfinder 2e')
     expect(asked).toContain('D&D 5e 2014')
@@ -319,7 +321,7 @@ describe('Campaign page: attaching an adventure', () => {
         code: 'adventure-in-other-campaign', detail: 'x', currentCampaignId: 'other', currentCampaignName: 'Tuesday Group',
       }))
       .mockResolvedValueOnce({ ...ELSEWHERE, campaignId: CAMPAIGN_ID })
-    const confirmFn = vi.fn(() => true)
+    const confirmFn = vi.fn((_message: string) => true)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountDetail([], [ELSEWHERE])
     await openPicker(wrapper)
@@ -328,7 +330,7 @@ describe('Campaign page: attaching an adventure', () => {
     await options(wrapper)[0].find('[data-testid="attach-option-button"]').trigger('click')
     await flushPromises()
 
-    const asked = confirmFn.mock.calls.at(-1)?.[0] as unknown as string
+    const asked = confirmFn.mock.calls.at(-1)?.[0]
     expect(asked).toContain('Over There')
     expect(asked).toContain('Tuesday Group')
     expect(asked).toContain('Friday Night')
@@ -341,7 +343,7 @@ describe('Campaign page: attaching an adventure', () => {
       .mockRejectedValueOnce(conflict({ code: 'adventure-in-other-campaign', currentCampaignName: 'Tuesday Group' }))
       .mockRejectedValueOnce(conflict({ code: 'game-system-mismatch', adventureGameSystem: 'A', campaignGameSystem: 'B' }))
       .mockResolvedValueOnce({ ...ELSEWHERE, campaignId: CAMPAIGN_ID })
-    const confirmFn = vi.fn(() => true)
+    const confirmFn = vi.fn((_message: string) => true)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountDetail([], [ELSEWHERE])
     await openPicker(wrapper)
@@ -359,7 +361,7 @@ describe('Campaign page: attaching an adventure', () => {
   it("a run in progress is not offered a confirmation: the server's message is shown", async () => {
     const detail = '"Over There" has a run in progress, so it cannot be moved to another campaign. Finish or abandon the run first.'
     vi.mocked(genApi.assignAdventureToCampaign).mockRejectedValue(conflict({ code: 'adventure-run-in-progress', detail }))
-    const confirmFn = vi.fn(() => true)
+    const confirmFn = vi.fn((_message: string) => true)
     vi.stubGlobal('confirm', confirmFn)
     const { wrapper } = await mountDetail([], [ELSEWHERE])
     await openPicker(wrapper)

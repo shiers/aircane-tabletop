@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useGameSystemStore } from '../stores/useGameSystemStore'
+import type { GameSystemDefinitionSummary } from '../types'
 
 // Mock the API module
 vi.mock('../api', () => ({
@@ -77,8 +78,10 @@ describe('useGameSystemStore', () => {
     })
 
     it('sets loading during fetch', async () => {
-      let resolve: (value: unknown[]) => void
-      vi.mocked(listGameSystems).mockReturnValue(new Promise((r) => { resolve = r }))
+      let resolve: (value: GameSystemDefinitionSummary[]) => void
+      vi.mocked(listGameSystems).mockReturnValue(
+        new Promise<GameSystemDefinitionSummary[]>((r) => { resolve = r }),
+      )
 
       const store = useGameSystemStore()
       const promise = store.fetchAll()

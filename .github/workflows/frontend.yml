@@ -7,6 +7,7 @@ on:
       - dev
     paths:
       - 'src/frontend/**'
+      - 'tests/e2e/**'
   pull_request:
     branches:
       - main
@@ -38,7 +39,13 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install
 
-      - name: Type check and build
+      # Required: no continue-on-error. Covers the app, the vitest specs, vite.config.ts and the e2e specs, and fails if
+      # the check ever stops covering them (docs/setup/frontend-typecheck.md).
+      - name: Type check
+        run: npm run typecheck
+
+      # Runs the type-check again first (about 10 seconds, since the compile is cached), then bundles.
+      - name: Build
         run: npm run build
 
       - name: Test

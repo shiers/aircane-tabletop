@@ -8,7 +8,7 @@ withDefaults(
     /** Label of the empty "no filter" option. */
     placeholder?: string
   }>(),
-  { placeholder: 'Any game system' },
+  { id: undefined, placeholder: 'Any game system' },
 )
 
 const emit = defineEmits<{

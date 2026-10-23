@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Guards the type-check against silently checking nothing.
  *

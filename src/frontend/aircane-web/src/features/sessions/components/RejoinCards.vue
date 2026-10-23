@@ -86,7 +86,7 @@ async function checkAll(): Promise<void> {
   checking.value = false
 }
 
-async function rejoin(card: Card): Promise<void> {
+async function rejoinCard(card: Card): Promise<void> {
   if (card.busy || card.closed) return
   card.busy = true
   card.problem = null
@@ -159,7 +159,7 @@ onMounted(checkAll)
             :disabled="card.busy"
             :aria-label="`Rejoin ${card.sessionName ?? 'the session'} as ${card.displayName || 'Player'}`"
             data-testid="rejoin-button"
-            @click="rejoin(card)"
+            @click="rejoinCard(card)"
           >
             {{ card.busy ? 'Rejoining…' : 'Rejoin' }}
           </button>

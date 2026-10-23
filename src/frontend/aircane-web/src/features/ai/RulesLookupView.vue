@@ -8,6 +8,7 @@ import {
 } from './api'
 import LicenseAttributionModal from '@/features/library/components/LicenseAttributionModal.vue'
 import GameSystemDropdown from './components/GameSystemDropdown.vue'
+import { apiErrorMessage } from '@/shared/api/errors'
 import { useGameSystemStore } from '@/features/game-systems/stores/useGameSystemStore'
 
 const licensesModalOpen = ref(false)
@@ -78,9 +79,8 @@ async function submitQuestion() {
 
   try {
     result.value = await askRulesQuestion(request)
-  } catch (e: any) {
-    error.value =
-      e?.response?.data?.error ?? e?.message ?? 'Failed to get an answer. Please try again.'
+  } catch (e) {
+    error.value = apiErrorMessage(e, 'error', 'Failed to get an answer. Please try again.')
   } finally {
     loading.value = false
   }

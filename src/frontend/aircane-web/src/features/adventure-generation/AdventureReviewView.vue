@@ -8,6 +8,7 @@ import {
   lookupAdventureMode,
   type AdventureDraft,
 } from './api'
+import { apiErrorMessage, apiErrorStatus } from '@/shared/api/errors'
 import PlaySoloLauncher from '@/features/adventures/components/PlaySoloLauncher.vue'
 import StartGroupLauncher from '@/features/adventures/components/StartGroupLauncher.vue'
 
@@ -56,12 +57,11 @@ async function loadDraft() {
     draft.value = await getAdventureDraft(props.adventureId)
     // Only decides which play button to show, so a failure here just means "offer solo".
     adventureMode.value = await lookupAdventureMode(props.adventureId, draft.value.campaignId)
-  } catch (e: any) {
-    const status = e?.response?.status
-    if (status === 404) {
+  } catch (e) {
+    if (apiErrorStatus(e) === 404) {
       error.value = 'Adventure not found.'
     } else {
-      error.value = e?.response?.data?.detail ?? e?.message ?? 'Failed to load adventure draft.'
+      error.value = apiErrorMessage(e, 'detail', 'Failed to load adventure draft.')
     }
   } finally {
     loading.value = false
@@ -76,9 +76,8 @@ async function handleApprove() {
     await approveAdventure(props.adventureId)
     approveSuccess.value = true
     draft.value = { ...draft.value, status: 'Approved' }
-  } catch (e: any) {
-    const data = e?.response?.data
-    error.value = data?.detail ?? e?.message ?? 'Failed to approve adventure.'
+  } catch (e) {
+    error.value = apiErrorMessage(e, 'detail', 'Failed to approve adventure.')
   } finally {
     approving.value = false
   }

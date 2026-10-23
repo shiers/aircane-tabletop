@@ -34,10 +34,15 @@ jobs:
           cache: 'npm'
           cache-dependency-path: src/frontend/aircane-web/package-lock.json
 
+      # Installs exactly what package-lock.json says (and fails if it disagrees with package.json), so lint, the
+      # type-check and the build run on the same versions as everyone else.
       - name: Install dependencies
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install
+        run: npm ci
+
+      # Required: no continue-on-error. ESLint over the app, the specs, the scripts and the e2e specs
+      # (docs/setup/frontend-lint.md).
+      - name: Lint
+        run: npm run lint
 
       # Required: no continue-on-error. Covers the app, the vitest specs, vite.config.ts and the e2e specs, and fails if
       # the check ever stops covering them (docs/setup/frontend-typecheck.md).

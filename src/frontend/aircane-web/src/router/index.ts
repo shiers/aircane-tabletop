@@ -1,5 +1,13 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type NavigationGuard } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
+import { features } from '@/shared/features'
+
+/**
+ * The Characters feature is hidden unless its flag is on (src/shared/features.ts). Its routes stay defined, so
+ * turning the flag on brings them back, but while it is off they lead to the dashboard: a bookmark or a typed
+ * address never shows a broken page. The guard runs before the lazy component is loaded.
+ */
+const charactersFeatureGuard: NavigationGuard = () => (features.characters ? true : { name: 'home' })
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -30,11 +38,13 @@ const router = createRouter({
       path: '/characters',
       name: 'characters',
       component: () => import('@/features/characters/index'),
+      beforeEnter: charactersFeatureGuard,
     },
     {
       path: '/characters/:characterId/field-review',
       name: 'character-field-review',
       component: () => import('@/features/characters/CharacterFieldReview.vue'),
+      beforeEnter: charactersFeatureGuard,
       props: (route) => ({
         characterId: route.params.characterId as string,
         unmappedFields: route.query.unmappedFields

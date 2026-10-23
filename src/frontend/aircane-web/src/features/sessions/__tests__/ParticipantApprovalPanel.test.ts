@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ParticipantApprovalPanel from '../ParticipantApprovalPanel.vue'
 import { ParticipantRole, type ParticipantDto } from '../api'
+import { features } from '@/shared/features'
 
 const mockPendingParticipant: ParticipantDto = {
   id: 'participant-1',
@@ -162,5 +163,44 @@ describe('ParticipantApprovalPanel', () => {
     // Both participants are Players
     const playerLabels = wrapper.findAll('p.text-xs.text-gray-400')
     expect(playerLabels.some((el) => el.text() === 'Player')).toBe(true)
+  })
+})
+
+describe('ParticipantApprovalPanel and the Characters feature flag', () => {
+  afterEach(() => {
+    features.characters = true
+  })
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])('with the feature %s, the Character label and assign dropdown are shown: %s', (on, shown) => {
+    features.characters = on
+
+    const wrapper = mountPanel({ participants: [mockApprovedParticipant] })
+
+    expect(wrapper.text().includes('Character:')).toBe(shown)
+    expect(wrapper.find('select').exists()).toBe(shown)
+    expect(wrapper.find('[aria-label="Assign character to Gandalf"]').exists()).toBe(shown)
+  })
+
+  it('with the feature off, shows no character at all, even for someone who has one, but keeps the person and Remove', () => {
+    features.characters = false
+    const holder = { ...mockApprovedParticipant, characterId: 'char-2' }
+
+    const wrapper = mountPanel({ participants: [holder], availableCharacters: mockCharacters })
+
+    expect(wrapper.text()).toContain('Gandalf')
+    expect(wrapper.text()).not.toContain('Gandalf the Grey')
+    expect(wrapper.text()).not.toMatch(/character/i)
+    expect(wrapper.find('[data-testid="remove-participant"]').exists()).toBe(true)
+  })
+
+  it('with the feature off and no characters to offer, there is no dash standing in for a character either', () => {
+    features.characters = false
+
+    const wrapper = mountPanel({ participants: [mockApprovedParticipant], availableCharacters: [] })
+
+    expect(wrapper.text()).not.toMatch(/character/i)
   })
 })

@@ -4,6 +4,7 @@ import ThumbnailPlaceholder from '@/shared/components/ThumbnailPlaceholder.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useCampaignStore } from '@/features/campaigns/store'
 import { listInProgressAdventureSessions, type AdventureSessionDto } from '@/features/adventures/api'
+import { features as featureFlags, type FeatureName } from '@/shared/features'
 
 // Recent Campaigns: every campaign, most recently active first. A campaign counts as active when it
 // was last changed, or when an adventure run in it was last played, whichever is later. No play
@@ -41,7 +42,8 @@ const recentCampaigns = computed(() => {
     .slice(0, MAX_RECENT)
 })
 
-const features = [
+// A card or action with a `flag` is shown only while that feature flag is on (src/shared/features.ts).
+const allFeatures = [
   {
     icon: 'library',
     title: 'Document Library',
@@ -68,6 +70,7 @@ const features = [
     gradient: 'from-emerald-600/20 to-teal-600/20',
     iconColor: 'text-emerald-400',
     thumbnail: '/assets/dashboard/character-sheets-thumbnail.png',
+    flag: 'characters' as FeatureName,
   },
   {
     icon: 'dice',
@@ -98,7 +101,9 @@ const features = [
   },
 ]
 
-const quickActions = [
+const features = computed(() => allFeatures.filter((card) => !card.flag || featureFlags[card.flag]))
+
+const allQuickActions = [
   {
     label: 'Start AI DM',
     to: '/campaigns',
@@ -113,6 +118,7 @@ const quickActions = [
     label: 'Create Character',
     to: '/characters',
     art: '/assets/dashboard/quick-action-create-character-card.png',
+    flag: 'characters' as FeatureName,
   },
   {
     label: 'Roll Dice',
@@ -120,6 +126,8 @@ const quickActions = [
     art: '/assets/dashboard/quick-action-roll-dice-card.png',
   },
 ]
+
+const quickActions = computed(() => allQuickActions.filter((action) => !action.flag || featureFlags[action.flag]))
 </script>
 
 <template>
@@ -210,7 +218,10 @@ const quickActions = [
       </div>
 
       <!-- Quick action cards -->
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        class="grid gap-4 sm:grid-cols-2"
+        :class="quickActions.length === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'"
+      >
         <RouterLink
           v-for="action in quickActions"
           :key="action.label"

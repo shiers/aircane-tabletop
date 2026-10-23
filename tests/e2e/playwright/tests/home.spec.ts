@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { charactersEnabled } from './flags'
 
 test.describe('Home Page', () => {
   test('renders the welcome heading and description', async ({ page }) => {
@@ -16,10 +17,10 @@ test.describe('Home Page', () => {
   test('displays feature cards', async ({ page }) => {
     await page.goto('/')
 
-    // Check that all 6 feature cards render
+    // Check that the feature cards render (the Character Sheets card is behind the Characters feature flag)
     await expect(page.getByRole('heading', { name: 'Document Library' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Campaign Management' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Character Sheets' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Character Sheets' })).toHaveCount(charactersEnabled ? 1 : 0)
     await expect(page.getByRole('heading', { name: 'Join Session' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'AI DM Runtime' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Adventure Generation' })).toBeVisible()
@@ -30,7 +31,7 @@ test.describe('Home Page', () => {
 
     await expect(page.getByRole('link', { name: /start ai dm/i })).toBeVisible()
     await expect(page.getByRole('link', { name: /import documents/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /create character/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: /create character/i })).toHaveCount(charactersEnabled ? 1 : 0)
     await expect(page.getByRole('link', { name: /roll dice/i })).toBeVisible()
   })
 

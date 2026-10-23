@@ -11,6 +11,7 @@ import type { PlayerAdventureRun } from '../api'
 import { SessionAccessMode, SessionStatus, ParticipantRole } from '../api'
 import { saveParticipantSession, loadParticipantSession } from '../participantSession'
 import { getOrCreateRejoinSecret, getRejoinSecret } from '../rejoinSecrets'
+import { features } from '@/shared/features'
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -1176,6 +1177,81 @@ describe('PlayerSessionView', () => {
 
       expect(scrollTo).toHaveBeenCalledWith({ top: 0 })
       main.remove()
+    })
+  })
+
+  // ── The Characters feature flag ───────────────────────────────────────────
+
+  describe('the Characters feature flag', () => {
+    afterEach(() => {
+      features.characters = true
+    })
+
+    const partyRows = (wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) =>
+      wrapper.findAll('[data-testid="party-list"] li')
+
+    it('with the feature on, the Party tab shows the Character section and each member\'s character status', async () => {
+      features.characters = true
+
+      const { wrapper } = await mountView()
+
+      const panel = wrapper.find('[data-testid="party-panel"]')
+      expect(panel.text()).toContain('Waiting for character assignment')
+      expect(panel.text()).toContain('No character yet')
+      expect(panel.text()).toContain('Character ready')
+      expect(panel.find('[data-testid="party-turn"]').exists()).toBe(false)
+    })
+
+    it('with the feature off, the Party tab lists the party and whose turn it is, and nothing about characters', async () => {
+      features.characters = false
+
+      const { wrapper } = await mountView()
+
+      const panel = wrapper.find('[data-testid="party-panel"]')
+      expect(panel.findAll('h2').map((h) => h.text())).toEqual(['Party'])
+      const [me, bifur] = partyRows(wrapper)
+      expect(me.text()).toContain('Thorin (you)')
+      expect(me.find('[data-testid="party-turn"]').exists()).toBe(false)
+      expect(bifur.text()).toContain('Bifur')
+      expect(bifur.find('[data-testid="party-turn"]').text()).toBe('Acting')
+      expect(panel.text()).not.toMatch(/character/i)
+      expect(wrapper.text()).not.toContain('Waiting for character assignment')
+    })
+
+    it('with the feature off, marks you when it is your turn', async () => {
+      features.characters = false
+      mockedGetRun.mockResolvedValue(myTurnRun())
+
+      const { wrapper } = await mountView()
+
+      const [me, bifur] = partyRows(wrapper)
+      expect(me.find('[data-testid="party-turn"]').text()).toBe('Your turn')
+      expect(bifur.find('[data-testid="party-turn"]').exists()).toBe(false)
+    })
+
+    it('with the feature off, marks nobody once the adventure is over', async () => {
+      features.characters = false
+      mockedGetRun.mockResolvedValue(makeRun({ status: 'Completed' }))
+
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('[data-testid="party-turn"]').exists()).toBe(false)
+    })
+
+    it('with the feature off, never reads the characters, even for a player who has one assigned', async () => {
+      features.characters = false
+      mockStore.participants[0] = { ...mockStore.participants[0], characterId: 'char-1' }
+      mockedListCharacters.mockResolvedValue([{ id: 'char-1', name: 'Thorin Stonehelm' }] as never)
+      try {
+        const { wrapper } = await mountView()
+
+        expect(mockedListCharacters).not.toHaveBeenCalled()
+        expect(charactersApi.listAllCharacters).not.toHaveBeenCalled()
+        expect(wrapper.find('[data-testid="my-character"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Thorin Stonehelm')
+      } finally {
+        mockStore.participants[0] = { ...mockStore.participants[0], characterId: null }
+      }
     })
   })
 })

@@ -19,6 +19,8 @@ export interface RemovalContext {
   nextName: string | null
   /** The character assigned to them, if any. */
   characterName: string | null
+  /** Whether the Characters feature is on; when it is off the confirmation says nothing about characters. */
+  charactersEnabled?: boolean
 }
 
 export function removeConfirmation(displayName: string, context: RemovalContext): string {
@@ -32,11 +34,13 @@ export function removeConfirmation(displayName: string, context: RemovalContext)
   } else if (context.inRun) {
     lines.push('• They leave the adventure\'s turn order.')
   }
-  lines.push(
-    context.characterName
-      ? `• Their character, ${context.characterName}, is unassigned.`
-      : '• Any character assigned to them is unassigned.',
-  )
+  if (context.charactersEnabled !== false) {
+    lines.push(
+      context.characterName
+        ? `• Their character, ${context.characterName}, is unassigned.`
+        : '• Any character assigned to them is unassigned.',
+    )
+  }
   return (
     `Remove ${displayName} from this session?\n\n${lines.join('\n')}\n\n` +
     'They can ask to join again with the invite code; you would have to approve them.'

@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test'
+import { charactersEnabled } from './flags'
 
 test.describe('Characters Page', () => {
+  // The Characters feature is hidden unless VITE_ENABLE_CHARACTERS=true (docs/setup/feature-flags.md).
+  test.skip(!charactersEnabled, 'The Characters feature is off (set VITE_ENABLE_CHARACTERS=true)')
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/characters')
   })

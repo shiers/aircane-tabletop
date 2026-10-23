@@ -14,6 +14,7 @@
  * the campaign is already running this adventure in another play session the server refuses, and says so.
  */
 import { ref, computed, watch } from 'vue'
+import { features } from '@/shared/features'
 import { SessionStatus, type ParticipantDto, type SessionDto } from '../api'
 import {
   eligiblePlayers,
@@ -204,7 +205,7 @@ async function handleStart(): Promise<void> {
           <span class="w-5 shrink-0 text-right text-sm text-gray-500">{{ index + 1 }}</span>
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm font-medium text-white">{{ player.name }}</span>
-            <span v-if="player.character" class="block truncate text-xs text-gray-400">as {{ player.character }}</span>
+            <span v-if="features.characters && player.character" class="block truncate text-xs text-gray-400">as {{ player.character }}</span>
           </span>
           <span class="flex shrink-0 gap-1">
             <button

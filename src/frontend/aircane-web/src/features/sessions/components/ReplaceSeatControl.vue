@@ -8,6 +8,7 @@
  */
 import { computed, ref } from 'vue'
 import type { ParticipantDto } from '../api'
+import { features } from '@/shared/features'
 
 const props = defineProps<{
   request: ParticipantDto
@@ -74,7 +75,7 @@ function confirm(): void {
     >
       <p>
         Give <strong data-testid="replace-seat-target">{{ existing.displayName }}</strong>'s seat to this request?
-        It takes their character and their place in the turn order, and the turn if it is theirs.
+        It takes {{ features.characters ? 'their character and ' : '' }}their place in the turn order, and the turn if it is theirs.
         The {{ existing.displayName }} already at the table is signed out.
       </p>
       <div class="mt-3 flex flex-wrap gap-2">

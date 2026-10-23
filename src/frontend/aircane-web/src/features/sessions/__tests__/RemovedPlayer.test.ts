@@ -188,3 +188,23 @@ describe('hostActions: what the host is asked', () => {
     expect(text).not.toMatch(/turn/i)
   })
 })
+
+describe('removeConfirmation with the Characters feature off', () => {
+  it('says nothing about characters, whether or not one is assigned', () => {
+    for (const characterName of ['Mira', null]) {
+      const text = removeConfirmation('Alice', { inRun: true, holdsTurn: true, nextName: 'Bob', characterName, charactersEnabled: false })
+
+      expect(text).toContain('Remove Alice from this session?')
+      expect(text).toContain('the turn moves on to Bob')
+      expect(text).not.toMatch(/character/i)
+    }
+  })
+
+  it('still names the character when the feature is on, or when the caller does not say', () => {
+    const on = removeConfirmation('Alice', { inRun: false, holdsTurn: false, nextName: null, characterName: 'Mira', charactersEnabled: true })
+    const unsaid = removeConfirmation('Alice', { inRun: false, holdsTurn: false, nextName: null, characterName: 'Mira' })
+
+    expect(on).toContain('Their character, Mira, is unassigned.')
+    expect(unsaid).toContain('Their character, Mira, is unassigned.')
+  })
+})

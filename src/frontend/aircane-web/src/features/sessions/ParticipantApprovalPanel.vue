@@ -8,6 +8,7 @@
 import { computed } from 'vue'
 import { ParticipantRole, type ParticipantDto } from './api'
 import ReplaceSeatControl from './components/ReplaceSeatControl.vue'
+import { features } from '@/shared/features'
 
 // ---------------------------------------------------------------------------
 // Props & Emits
@@ -182,33 +183,35 @@ function onAssignCharacter(participantId: string, event: Event): void {
             </p>
           </div>
 
-          <!-- Character assignment, and removal -->
+          <!-- Character assignment (only while the Characters feature is on), and removal -->
           <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs text-gray-500">Character:</span>
-            <span
-              v-if="availableCharacters.length === 0"
-              class="text-sm text-gray-400"
-            >
-              {{ characterName(participant.characterId) }}
-            </span>
-            <select
-              v-else
-              :id="`character-select-${participant.id}`"
-              :value="participant.characterId ?? ''"
-              :disabled="loading"
-              class="rounded-md border border-gray-600 bg-gray-700 px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:opacity-50"
-              :aria-label="`Assign character to ${participant.displayName}`"
-              @change="onAssignCharacter(participant.id, $event)"
-            >
-              <option value="" disabled>Select character…</option>
-              <option
-                v-for="character in availableCharacters"
-                :key="character.id"
-                :value="character.id"
+            <template v-if="features.characters">
+              <span class="text-xs text-gray-500">Character:</span>
+              <span
+                v-if="availableCharacters.length === 0"
+                class="text-sm text-gray-400"
               >
-                {{ character.name }}
-              </option>
-            </select>
+                {{ characterName(participant.characterId) }}
+              </span>
+              <select
+                v-else
+                :id="`character-select-${participant.id}`"
+                :value="participant.characterId ?? ''"
+                :disabled="loading"
+                class="rounded-md border border-gray-600 bg-gray-700 px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-aircane-400 disabled:opacity-50"
+                :aria-label="`Assign character to ${participant.displayName}`"
+                @change="onAssignCharacter(participant.id, $event)"
+              >
+                <option value="" disabled>Select character…</option>
+                <option
+                  v-for="character in availableCharacters"
+                  :key="character.id"
+                  :value="character.id"
+                >
+                  {{ character.name }}
+                </option>
+              </select>
+            </template>
             <button
               v-if="participant.role !== ParticipantRole.Host"
               type="button"

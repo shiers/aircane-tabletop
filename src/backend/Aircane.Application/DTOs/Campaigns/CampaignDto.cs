@@ -5,6 +5,10 @@ namespace Aircane.Application.DTOs.Campaigns;
 /// <summary>
 /// Read model returned for campaign queries.
 /// </summary>
+/// <param name="GameSystemDefinitionId">
+/// The game system definition the campaign is bound to, or null when it is not bound (the campaign then has only
+/// its <c>GameSystem</c> and <c>Ruleset</c> strings).
+/// </param>
 public sealed record CampaignDto(
     Guid Id,
     string Name,
@@ -14,4 +18,5 @@ public sealed record CampaignDto(
     AiAuthority AiAuthority,
     Guid? ActiveAdventureId,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    Guid? GameSystemDefinitionId = null);

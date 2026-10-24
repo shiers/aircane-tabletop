@@ -96,7 +96,7 @@ This checklist verifies release readiness for the Aircane Tabletop MVP. Run thro
 | # | Action | Expected Result | Pass |
 |---|--------|-----------------|------|
 | 8.1 | Navigate to Adventure Generation | Generation input form appears | [ ] |
-| 8.2 | Fill in parameters: ruleset, party size, level range, tone, length, and difficulty | Generation starts; progress or staged output is shown | [ ] |
+| 8.2 | Fill in parameters: game system (pick one from the list, or choose Not listed and type the ruleset and game system name), party size, level (one value: the character's level for Solo, the average party level for Group), tone, length, and difficulty | Generation starts; progress or staged output is shown | [ ] |
 | 8.3 | Wait for generation to complete | Draft adventure is created with overview, scenes, NPCs, and encounters | [ ] |
 | 8.4 | Review the draft in the review UI | Sections are editable; regenerate option is available per section | [ ] |
 | 8.5 | Approve the adventure | Adventure status changes to "Approved" and appears in the adventure list | [ ] |

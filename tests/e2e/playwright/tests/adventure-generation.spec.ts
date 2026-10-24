@@ -11,8 +11,9 @@ test.describe('Adventure Generation Page', () => {
     await expect(page.getByText('Solo')).toBeVisible()
     await expect(page.getByText('Group')).toBeVisible()
 
-    // Core fields
-    await expect(page.getByLabel(/ruleset/i)).toBeVisible()
+    // Core fields (the game system is picked from a list; the Ruleset and Game system name boxes only appear for
+    // "Not listed", see the test below)
+    await expect(page.locator('#game-system-selector')).toBeVisible()
     await expect(page.getByLabel(/tone/i)).toBeVisible()
     await expect(page.getByLabel(/length/i)).toBeVisible()
     await expect(page.getByLabel(/difficulty/i)).toBeVisible()
@@ -24,6 +25,23 @@ test.describe('Adventure Generation Page', () => {
 
     // Submit button
     await expect(page.getByRole('button', { name: /generate adventure/i })).toBeVisible()
+  })
+
+  test('defaults to the D&D 5e 2014 game system, with no free-text boxes', async ({ page }) => {
+    await page.goto('/adventures/generate')
+
+    await expect(page.locator('#game-system-selector option:checked')).toContainText(/dungeons & dragons/i)
+    await expect(page.getByLabel(/ruleset/i)).toHaveCount(0)
+  })
+
+  test('"Not listed" reveals the Ruleset and Game system name boxes, and a note about the rulebooks', async ({ page }) => {
+    await page.goto('/adventures/generate')
+
+    await page.locator('#game-system-selector').selectOption({ label: 'Not listed' })
+
+    await expect(page.getByLabel(/ruleset/i)).toBeVisible()
+    await expect(page.getByLabel(/game system name/i)).toBeVisible()
+    await expect(page.getByText(/no built-in rules for this system/i)).toBeVisible()
   })
 
   test('switches between Solo and Group mode', async ({ page }) => {

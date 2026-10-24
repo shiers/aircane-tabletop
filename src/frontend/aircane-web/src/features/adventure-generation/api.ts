@@ -6,6 +6,11 @@ export interface GenerateAdventureRequest {
   mode: AdventureMode
   ruleset: string
   gameSystem: string
+  /**
+   * The game system definition this adventure is for, when the user picked one Aircane has. Null or absent for a
+   * system with no definition ("Not listed"); `ruleset` and `gameSystem` are sent either way.
+   */
+  gameSystemDefinitionId?: string | null
   partySize: number
   averageLevel: number
   tone: string
@@ -159,6 +164,8 @@ export interface CampaignAdventure {
   status: 'Draft' | 'Approved' | 'Active' | 'Rejected'
   gameSystem: string
   ruleset: string
+  /** The definition the adventure was generated for; null or absent when it has none. */
+  gameSystemDefinitionId?: string | null
   mode: string | null
   length: string | null
   averageLevel: number | null

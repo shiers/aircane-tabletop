@@ -3,6 +3,10 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAdventureGenerationStore } from './store'
 import { useCampaignStore } from '@/features/campaigns/store'
+import type { CampaignDto } from '@/features/campaigns/api'
+import { useGameSystemStore } from '@/features/game-systems/stores/useGameSystemStore'
+import GameSystemSelector from '@/features/game-systems/components/GameSystemSelector.vue'
+import type { GameSystemDefinitionSummary } from '@/features/game-systems/types'
 import { apiErrorMessage, apiValidationMessage } from '@/shared/api/errors'
 import {
   type GenerateAdventureRequest,
@@ -12,8 +16,6 @@ import ModeToggle from './components/ModeToggle.vue'
 import ContentRatioSlider from './components/ContentRatioSlider.vue'
 
 const mode = ref<AdventureMode>('Solo')
-const ruleset = ref('D&D 5e 2014')
-const gameSystem = ref('D&D 5e 2014')
 const partySize = ref(4)
 const averageLevel = ref(1)
 const tone = ref('epic')
@@ -27,6 +29,7 @@ const setting = ref('')
 const store = useAdventureGenerationStore()
 const route = useRoute()
 const campaignStore = useCampaignStore()
+const gameSystemStore = useGameSystemStore()
 
 // Arriving from a campaign's page (/adventures/generate?campaignId=...): the adventure is generated
 // for, and saved against, that campaign.
@@ -34,10 +37,132 @@ const campaignId = computed(() => {
   const q = route.query.campaignId
   return typeof q === 'string' && q ? q : null
 })
-const campaignName = computed(() => campaignStore.campaigns.find((c) => c.id === campaignId.value)?.name ?? null)
-onMounted(() => {
-  if (campaignId.value && !campaignStore.campaigns.length) void campaignStore.fetchCampaigns().catch(() => {})
+const campaign = computed(() => campaignStore.campaigns.find((c) => c.id === campaignId.value) ?? null)
+const campaignName = computed(() => campaign.value?.name ?? null)
+
+// ── Game system ──────────────────────────────────────────────────────────────────────────────────────────
+// What the adventure is for. A system Aircane has a definition for (the usual case) is sent as that definition's id,
+// with its name as both the ruleset and the game system. "Not listed" is for any other system: the user's own two
+// strings and no id. Aircane is meant to run any game from uploaded rulebooks, so that path is a normal one.
+const DEFAULT_SYSTEM = 'D&D 5e 2014'
+const DEFAULT_DEFINITION_IDENTIFIER = 'dnd-5e-2014'
+
+const definitionId = ref<string | null>(null)
+const notListed = ref(false)
+// The two text boxes, shown with "Not listed". They start as the old defaults, so that a form submitted before the
+// definitions have loaded sends what it always did.
+const ruleset = ref(DEFAULT_SYSTEM)
+const gameSystem = ref(DEFAULT_SYSTEM)
+const usingCampaignSystem = ref(false)
+const systemTouched = ref(false)
+
+const selectedDefinition = computed(() => gameSystemStore.definitions.find((d) => d.id === definitionId.value) ?? null)
+
+/** What goes into the request for the game system. */
+const requestSystem = computed(() => {
+  const definition = selectedDefinition.value
+  if (definition) return { gameSystemDefinitionId: definition.id, ruleset: definition.name, gameSystem: definition.name }
+  return { gameSystemDefinitionId: null, ruleset: ruleset.value.trim(), gameSystem: gameSystem.value.trim() }
 })
+
+const campaignSystemLabel = computed(() => {
+  if (selectedDefinition.value) return selectedDefinition.value.name
+  const c = campaign.value
+  return c ? [c.gameSystem, c.ruleset].filter(Boolean).join(' · ') : ''
+})
+const campaignSystemChanged = computed(() => campaign.value !== null && !usingCampaignSystem.value)
+
+const normalize = (value: string): string => value.trim().toLowerCase().split(/\s+/).filter(Boolean).join(' ')
+
+/**
+ * The active definition a campaign is for. A campaign bound to one says so with its id (when that definition is no
+ * longer active there is nothing to select, and the campaign's own strings are used). Campaigns are not bound today,
+ * but one made from the game system selector carries the definition's name as its game system, so an exact match on
+ * the name (or identifier) finds it. Anything else, such as a campaign typed in by hand, matches none.
+ */
+function definitionOfCampaign(c: CampaignDto, definitions: GameSystemDefinitionSummary[]): GameSystemDefinitionSummary | null {
+  if (c.gameSystemDefinitionId) return definitions.find((d) => d.id === c.gameSystemDefinitionId) ?? null
+  const wanted = normalize(c.gameSystem)
+  if (!wanted) return null
+  return definitions.find((d) => normalize(d.name) === wanted || normalize(d.identifier) === wanted) ?? null
+}
+
+function selectCampaignSystem(c: CampaignDto): void {
+  const definition = definitionOfCampaign(c, gameSystemStore.definitions)
+  usingCampaignSystem.value = true
+  if (definition) {
+    definitionId.value = definition.id
+    notListed.value = false
+    return
+  }
+  definitionId.value = null
+  notListed.value = true
+  ruleset.value = c.ruleset
+  gameSystem.value = c.gameSystem
+}
+
+// The first choice is made once both the definitions and (when there is one) the campaign are known; until then the
+// form already works, with the defaults above.
+const definitionsLoaded = ref(false)
+const campaignLookedUp = ref(!campaignId.value)
+// With a campaign, Generate waits for the campaign, so a system is never picked for the wrong one.
+const campaignPending = computed(() => !!campaignId.value && !campaignLookedUp.value)
+let systemResolved = false
+
+function resolveInitialSystem(): void {
+  if (systemResolved || !definitionsLoaded.value || !campaignLookedUp.value) return
+  systemResolved = true
+  if (systemTouched.value) return
+
+  if (campaign.value) {
+    selectCampaignSystem(campaign.value)
+    return
+  }
+  const standard = gameSystemStore.definitions.find((d) => d.identifier === DEFAULT_DEFINITION_IDENTIFIER)
+  if (standard) definitionId.value = standard.id
+  else notListed.value = true // no definitions to offer: say it in words, starting from the usual one
+}
+watch([definitionsLoaded, campaignLookedUp], resolveInitialSystem, { immediate: true })
+
+// Loaded here, during setup, so that the selector (which only asks when nobody has) does not ask again.
+void (async () => {
+  if (gameSystemStore.definitions.length === 0) await gameSystemStore.fetchAll()
+  definitionsLoaded.value = true
+})()
+
+onMounted(async () => {
+  if (campaignId.value && !campaign.value) {
+    try {
+      await campaignStore.fetchCampaigns()
+    } catch {
+      // The banner then says "this campaign", and the form uses the default system.
+    }
+  }
+  campaignLookedUp.value = true
+})
+
+function pickDefinition(id: string | null): void {
+  systemTouched.value = true
+  // Leaving a definition for "Not listed": its name is not something to type over.
+  if (id === null && definitionId.value !== null) {
+    ruleset.value = ''
+    gameSystem.value = ''
+  }
+  definitionId.value = id
+}
+
+function pickNotListed(value: boolean): void {
+  notListed.value = value
+}
+
+function changeSystem(): void {
+  usingCampaignSystem.value = false
+  systemTouched.value = true
+}
+
+function useCampaignSystem(): void {
+  if (campaign.value) selectCampaignSystem(campaign.value)
+}
 // True while the request is being posted or a generation job is running (form locked either way).
 const submitting = ref(false)
 const loading = computed(() => submitting.value || store.isGenerating)
@@ -70,13 +195,20 @@ watch([combatRatio, explorationRatio], adjustRoleplay)
 
 async function submitForm() {
   if (loading.value) return
-  submitting.value = true
   error.value = null
+
+  const system = requestSystem.value
+  if (!system.ruleset || !system.gameSystem) {
+    error.value = 'Enter the ruleset and the game system, or pick one from the list.'
+    return
+  }
+  submitting.value = true
 
   const request: GenerateAdventureRequest = {
     mode: mode.value,
-    ruleset: ruleset.value.trim(),
-    gameSystem: gameSystem.value.trim(),
+    ruleset: system.ruleset,
+    gameSystem: system.gameSystem,
+    gameSystemDefinitionId: system.gameSystemDefinitionId,
     partySize: partySize.value,
     averageLevel: averageLevel.value,
     tone: tone.value,
@@ -158,34 +290,94 @@ async function submitForm() {
           <ModeToggle v-model="toggleMode" :disabled="loading" />
         </fieldset>
 
-        <!-- Ruleset and Game System -->
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label for="ruleset" class="block text-sm font-medium text-gray-300 mb-1">
-              Ruleset
-            </label>
-            <input
-              id="ruleset"
-              v-model="ruleset"
-              type="text"
-              placeholder="e.g. D&D 5e 2014"
-              class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:ring-2 focus:ring-aircane-500 focus:outline-none"
+        <!-- Game system: the campaign's, one Aircane has a definition for, or the user's own words -->
+        <div class="space-y-3" data-testid="forge-game-system">
+          <div
+            v-if="usingCampaignSystem"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-700 bg-surface-850 px-4 py-3"
+            data-testid="forge-campaign-system"
+          >
+            <p class="min-w-0 break-words text-sm text-gray-300">
+              Using the campaign's game system:
+              <span class="font-medium text-white" data-testid="forge-campaign-system-name">{{ campaignSystemLabel }}</span>
+            </p>
+            <button
+              type="button"
+              class="shrink-0 rounded-md border border-gray-600 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-aircane-500 disabled:cursor-not-allowed disabled:opacity-50"
+              data-testid="forge-change-system"
               :disabled="loading"
-            />
+              @click="changeSystem"
+            >
+              Change
+            </button>
           </div>
-          <div>
-            <label for="game-system" class="block text-sm font-medium text-gray-300 mb-1">
-              Game System
-            </label>
-            <input
-              id="game-system"
-              v-model="gameSystem"
-              type="text"
-              placeholder="e.g. D&D 5e 2014"
-              class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:ring-2 focus:ring-aircane-500 focus:outline-none"
+
+          <template v-else>
+            <GameSystemSelector
+              :model-value="definitionId"
+              :not-listed="notListed"
+              allow-not-listed
               :disabled="loading"
+              @update:model-value="pickDefinition"
+              @update:not-listed="pickNotListed"
             />
-          </div>
+
+            <p
+              v-if="campaignSystemChanged"
+              class="break-words text-sm text-amber-300"
+              data-testid="forge-system-changed"
+            >
+              The adventure will be saved to this campaign, but it may not match the campaign's game system.
+              <button
+                type="button"
+                class="ml-1 underline hover:text-amber-200 focus:outline-none focus:ring-2 focus:ring-aircane-500 disabled:opacity-50"
+                data-testid="forge-use-campaign-system"
+                :disabled="loading"
+                @click="useCampaignSystem"
+              >
+                Use the campaign's game system
+              </button>
+            </p>
+
+            <!-- A system Aircane has no definition for: the user says what it is -->
+            <div v-if="notListed" class="space-y-3" data-testid="forge-unlisted">
+              <p class="text-sm text-gray-300" data-testid="forge-unlisted-note">
+                No built-in rules for this system. Aircane will use your uploaded rulebooks and general knowledge.
+              </p>
+              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label for="ruleset" class="block text-sm font-medium text-gray-300 mb-1">
+                    Ruleset <span aria-hidden="true" class="text-red-400">*</span>
+                  </label>
+                  <input
+                    id="ruleset"
+                    v-model="ruleset"
+                    type="text"
+                    required
+                    aria-required="true"
+                    placeholder="e.g. 6th Edition"
+                    class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:ring-2 focus:ring-aircane-500 focus:outline-none"
+                    :disabled="loading"
+                  />
+                </div>
+                <div>
+                  <label for="game-system" class="block text-sm font-medium text-gray-300 mb-1">
+                    Game system name <span aria-hidden="true" class="text-red-400">*</span>
+                  </label>
+                  <input
+                    id="game-system"
+                    v-model="gameSystem"
+                    type="text"
+                    required
+                    aria-required="true"
+                    placeholder="e.g. Shadowrun"
+                    class="w-full rounded-md border border-gray-700 bg-surface-850 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:ring-2 focus:ring-aircane-500 focus:outline-none"
+                    :disabled="loading"
+                  />
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- Party Size (Group mode) and Level -->
@@ -327,7 +519,7 @@ async function submitForm() {
         <!-- Submit -->
         <button
           type="submit"
-          :disabled="loading || !ratioValid"
+          :disabled="loading || !ratioValid || campaignPending"
           class="generate-button disabled:cursor-not-allowed disabled:opacity-50"
           v-bg-asset="{ url: '/assets/adventure-forge/generate-adventure-button-art.png', fallback: 'transparent', size: '100% 100%' }"
         >

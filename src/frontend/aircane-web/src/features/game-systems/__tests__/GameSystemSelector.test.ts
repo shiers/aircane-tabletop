@@ -109,3 +109,90 @@ describe('GameSystemSelector', () => {
     expect(wrapper.emitted('update:modelValue')![0]).toEqual([null])
   })
 })
+
+describe('GameSystemSelector with a "Not listed" option', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  function mountSelector(props: { modelValue?: string | null; allowNotListed?: boolean; notListed?: boolean; disabled?: boolean } = {}) {
+    useGameSystemStore().definitions = [...mockDefinitions]
+    return mount(GameSystemSelector, { props: { modelValue: null, ...props } })
+  }
+
+  it('offers no "Not listed" option unless asked to (the campaign form is unchanged)', () => {
+    const wrapper = mountSelector()
+
+    expect(wrapper.findAll('option').map((o) => o.text())).not.toContain('Not listed')
+    expect(wrapper.find('option[value=""]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('adds "Not listed" after the definitions, and stops offering "nothing chosen" as a choice', () => {
+    const wrapper = mountSelector({ allowNotListed: true })
+
+    const options = wrapper.findAll('option')
+    expect(options.at(-1)!.text()).toBe('Not listed')
+    expect(options).toHaveLength(4)
+    expect(wrapper.find('option[value=""]').attributes('disabled')).toBeDefined()
+  })
+
+  it('shows "Not listed" as the current choice, with no definition summary', () => {
+    const wrapper = mountSelector({ allowNotListed: true, notListed: true })
+
+    expect(wrapper.find<HTMLSelectElement>('select').element.value).toBe('__not-listed__')
+    expect(wrapper.text()).not.toContain('Wizards of the Coast')
+  })
+
+  it('ignores notListed without allowNotListed', () => {
+    const wrapper = mountSelector({ modelValue: 'def-1', notListed: true })
+
+    expect(wrapper.find<HTMLSelectElement>('select').element.value).toBe('def-1')
+  })
+
+  it('emits a null model value and notListed true when "Not listed" is chosen', async () => {
+    const wrapper = mountSelector({ modelValue: 'def-1', allowNotListed: true })
+
+    await wrapper.find('select').setValue('__not-listed__')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[null]])
+    expect(wrapper.emitted('update:notListed')).toEqual([[true]])
+  })
+
+  it('emits the id and notListed false when a definition is chosen', async () => {
+    const wrapper = mountSelector({ allowNotListed: true, notListed: true })
+
+    await wrapper.find('select').setValue('def-2')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([['def-2']])
+    expect(wrapper.emitted('update:notListed')).toEqual([[false]])
+  })
+
+  it('can be disabled', () => {
+    expect(mountSelector({ disabled: true }).find('select').attributes('disabled')).toBeDefined()
+    expect(mountSelector().find('select').attributes('disabled')).toBeUndefined()
+  })
+
+  it('says it is loading while the definitions load, and does not ask for them again if someone already is', () => {
+    const store = useGameSystemStore()
+    store.definitions = []
+    store.loading = true
+    const fetchAll = vi.spyOn(store, 'fetchAll').mockResolvedValue()
+
+    const wrapper = mount(GameSystemSelector, { props: { modelValue: null } })
+
+    expect(wrapper.find('option[value=""]').text()).toBe('Loading game systems…')
+    expect(fetchAll).not.toHaveBeenCalled()
+  })
+
+  it('asks for the definitions when there are none and nobody is loading them', () => {
+    const store = useGameSystemStore()
+    store.definitions = []
+    store.loading = false
+    const fetchAll = vi.spyOn(store, 'fetchAll').mockResolvedValue()
+
+    mount(GameSystemSelector, { props: { modelValue: null } })
+
+    expect(fetchAll).toHaveBeenCalledTimes(1)
+  })
+})

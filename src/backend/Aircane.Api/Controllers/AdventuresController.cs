@@ -121,7 +121,7 @@ public sealed class AdventuresController : ControllerBase
             return NotFound(new ProblemDetails { Title = "Adventure not found", Status = StatusCodes.Status404NotFound });
 
         var campaign = await _dbContext.Campaigns.AsNoTracking()
-            .Select(c => new { c.Id, c.Name, c.GameSystem })
+            .Select(c => new { c.Id, c.Name, c.GameSystem, c.GameSystemDefinitionId })
             .FirstOrDefaultAsync(c => c.Id == request.CampaignId, cancellationToken);
         if (campaign is null)
             return NotFound(new ProblemDetails { Title = "Campaign not found", Status = StatusCodes.Status404NotFound });
@@ -145,7 +145,9 @@ public sealed class AdventuresController : ControllerBase
                 }
             }
 
-            if (!request.ConfirmMismatch && !await SameGameSystemAsync(adventure.GameSystem, campaign.GameSystem, cancellationToken))
+            if (!request.ConfirmMismatch && !await SameGameSystemAsync(
+                    adventure.GameSystem, ReadDefinitionId(adventure.RequestJson),
+                    campaign.GameSystem, campaign.GameSystemDefinitionId, cancellationToken))
             {
                 return Conflict(Problem409(
                     "game-system-mismatch",
@@ -219,13 +221,21 @@ public sealed class AdventuresController : ControllerBase
     }
 
     /// <summary>
-    /// Whether an adventure's game system and a campaign's name the same system. Both are free text, so each is
-    /// canonicalized against the known game system definitions first (name or identifier, ignoring case and
-    /// surrounding space), then compared ignoring case; the campaign's known aliases count as the same too.
-    /// When either side is blank there is nothing to compare, so it is not a mismatch.
+    /// Whether an adventure's game system and a campaign's name the same system. When both carry a game system
+    /// definition id, the ids decide: the same definition is the same system, whatever the strings say, and two
+    /// different definitions are not. Otherwise (one side has no definition, which includes every older adventure)
+    /// the free-text names are compared: each is canonicalized against the known game system definitions first (name
+    /// or identifier, ignoring case and surrounding space), then compared ignoring case; the campaign's known
+    /// aliases count as the same too. When either name is blank there is nothing to compare, so it is not a mismatch.
     /// </summary>
-    private async Task<bool> SameGameSystemAsync(string adventureSystem, string campaignSystem, CancellationToken cancellationToken)
+    private async Task<bool> SameGameSystemAsync(
+        string adventureSystem, Guid? adventureDefinitionId,
+        string campaignSystem, Guid? campaignDefinitionId,
+        CancellationToken cancellationToken)
     {
+        if (adventureDefinitionId.HasValue && campaignDefinitionId.HasValue)
+            return adventureDefinitionId.Value == campaignDefinitionId.Value;
+
         if (string.IsNullOrWhiteSpace(adventureSystem) || string.IsNullOrWhiteSpace(campaignSystem))
             return true;
 
@@ -236,6 +246,38 @@ public sealed class AdventuresController : ControllerBase
 
         var equivalents = await _gameSystems.GetEquivalentNamesAsync(campaignSystem, cancellationToken);
         return equivalents.Any(n => string.Equals(n.Trim(), adventureName.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The game system definition id in an adventure's stored generation request, or null when there is none (an
+    /// adventure generated before it was recorded, or for a system with no definition) or the request is unreadable.
+    /// Read by hand so that an old or odd request cannot fail on the members it requires.
+    /// </summary>
+    private static Guid? ReadDefinitionId(string requestJson)
+    {
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(requestJson);
+            if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return null;
+
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "gameSystemDefinitionId", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind == System.Text.Json.JsonValueKind.String
+                    && Guid.TryParse(property.Value.GetString(), out var id)
+                    && id != Guid.Empty)
+                {
+                    return id;
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // unreadable: no definition
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -265,6 +307,7 @@ public sealed class AdventuresController : ControllerBase
             Status = status.ToString(),
             Ruleset = ruleset,
             GameSystem = gameSystem,
+            GameSystemDefinitionId = request?.GameSystemDefinitionId,
             CreatedAt = createdAt,
             UpdatedAt = updatedAt,
             CampaignId = campaignId,
@@ -540,6 +583,9 @@ public sealed class AdventuresController : ControllerBase
     /// Queues an adventure generation job and returns immediately. Progress and the result are
     /// pushed over SignalR (<c>AdventureGenerationProgress</c> / <c>Completed</c> / <c>Failed</c>);
     /// the finished adventure is then fetched with <c>GET /api/adventures/{id}</c>.
+    /// An optional <c>gameSystemDefinitionId</c> names the game system definition the adventure is for: it must
+    /// exist and be active (otherwise 400), and a blank <c>ruleset</c> or <c>gameSystem</c> is filled from it, as
+    /// campaign creation does (the definition's version and name). Without one the request works as it always has.
     /// </summary>
     [HttpPost("generate")]
     [ProducesResponseType(typeof(GenerateAdventureResponse), StatusCodes.Status202Accepted)]
@@ -549,15 +595,23 @@ public sealed class AdventuresController : ControllerBase
         [FromQuery] Guid? campaignId,
         CancellationToken cancellationToken)
     {
-        var validationResult = await _validator.ValidateAsync(request, cancellationToken);
-        if (!validationResult.IsValid)
+        // The definition is resolved first so that the values filled in from it are the ones validated.
+        var (resolved, definitionError) = await ResolveGameSystemDefinitionAsync(request, cancellationToken);
+
+        var validationResult = await _validator.ValidateAsync(resolved, cancellationToken);
+        if (!validationResult.IsValid || definitionError is not null)
         {
-            return BadRequest(validationResult.ToValidationProblemDetails());
+            var problem = validationResult.ToValidationProblemDetails();
+            if (definitionError is not null)
+                problem.Errors[nameof(GenerateAdventureRequest.GameSystemDefinitionId)] = [definitionError];
+            return BadRequest(problem);
         }
 
+        request = resolved;
+
         _logger.LogInformation(
-            "Adventure generation requested. Mode={Mode}, Ruleset={Ruleset}, PartySize={PartySize}, Level={Level}",
-            request.Mode, request.Ruleset, request.PartySize, request.AverageLevel);
+            "Adventure generation requested. Mode={Mode}, Ruleset={Ruleset}, GameSystemDefinitionId={DefinitionId}, PartySize={PartySize}, Level={Level}",
+            request.Mode, request.Ruleset, request.GameSystemDefinitionId, request.PartySize, request.AverageLevel);
 
         if (campaignId.HasValue && !await _dbContext.Campaigns.AnyAsync(c => c.Id == campaignId, cancellationToken))
             return NotFound(new ProblemDetails { Title = "Campaign not found", Status = StatusCodes.Status404NotFound });
@@ -567,6 +621,36 @@ public sealed class AdventuresController : ControllerBase
 
         return Accepted(new GenerateAdventureResponse(
             job.JobId, "Queued", "Adventure generation started."));
+    }
+
+    /// <summary>
+    /// Checks the request's game system definition, if it names one: it must exist and be active. When it does, a
+    /// blank ruleset or game system is filled from it (the definition's version and name, as campaign creation
+    /// does). Returns the request to use, and an error message when the definition cannot be used. A request without
+    /// a definition id comes back unchanged. An empty id is left for the validator to report.
+    /// </summary>
+    private async Task<(GenerateAdventureRequest Request, string? Error)> ResolveGameSystemDefinitionAsync(
+        GenerateAdventureRequest request, CancellationToken cancellationToken)
+    {
+        if (request.GameSystemDefinitionId is not { } definitionId || definitionId == Guid.Empty)
+            return (request, null);
+
+        // Only the three fields needed, not the whole definition (the registry would also parse its JSON).
+        var definition = await _dbContext.GameSystemDefinitions.AsNoTracking()
+            .Where(d => d.Id == definitionId)
+            .Select(d => new { d.Name, d.Version, d.IsActive })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (definition is null)
+            return (request, "The selected game system was not found.");
+        if (!definition.IsActive)
+            return (request, "The selected game system is no longer active.");
+
+        return (request with
+        {
+            GameSystem = string.IsNullOrWhiteSpace(request.GameSystem) ? definition.Name : request.GameSystem,
+            Ruleset = string.IsNullOrWhiteSpace(request.Ruleset) ? definition.Version : request.Ruleset,
+        }, null);
     }
 
     /// <summary>

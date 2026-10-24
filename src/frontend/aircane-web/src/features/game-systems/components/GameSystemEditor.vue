@@ -3,6 +3,7 @@ import { reactive, ref, computed, onMounted } from 'vue'
 import { useGameSystemStore } from '../stores/useGameSystemStore'
 import DiceConventionPreview from './DiceConventionPreview.vue'
 import type { ValidationResult } from '../types'
+import { formatRulesetLabels, parseRulesetLabels, readRulesetLabels, rulesetLabelsError } from '../rulesetLabels'
 
 const props = defineProps<{
   /** When provided, the editor operates in edit mode. */
@@ -43,6 +44,8 @@ const form = reactive({
     description: '',
     license: 'user-created',
   },
+  // metadata.rulesets, edited as one comma-separated field
+  rulesetLabels: '',
   diceConventions: '{}',
   resolutionRules: '{}',
   characterSchema: '{}',
@@ -60,12 +63,17 @@ const localError = ref<string | null>(null)
 
 const isEditMode = computed(() => !!props.definitionId)
 
+const rulesets = computed(() => parseRulesetLabels(form.rulesetLabels))
+const rulesetsError = computed(() => rulesetLabelsError(rulesets.value))
+
 const definitionJson = computed(() => {
   try {
     const definition: Record<string, unknown> = {
       schemaVersion: 1,
       metadata: {
         ...form.metadata,
+        // Left out when empty: a definition without labels has no ruleset constraint.
+        ...(rulesets.value.length > 0 ? { rulesets: rulesets.value } : {}),
       },
       diceConventions: JSON.parse(form.diceConventions),
       resolutionRules: JSON.parse(form.resolutionRules),
@@ -98,6 +106,7 @@ onMounted(async () => {
         form.metadata.genre = parsed.metadata?.genre ?? ''
         form.metadata.description = parsed.metadata?.description ?? ''
         form.metadata.license = parsed.metadata?.license ?? 'user-created'
+        form.rulesetLabels = formatRulesetLabels(readRulesetLabels(parsed))
         form.diceConventions = JSON.stringify(parsed.diceConventions ?? {}, null, 2)
         form.resolutionRules = JSON.stringify(parsed.resolutionRules ?? {}, null, 2)
         form.characterSchema = JSON.stringify(parsed.characterSchema ?? {}, null, 2)
@@ -151,6 +160,12 @@ async function handleSave(): Promise<void> {
 
   if (!form.metadata.name.trim()) {
     localError.value = 'Name is required.'
+    activeTab.value = 'metadata'
+    return
+  }
+
+  if (rulesetsError.value) {
+    localError.value = rulesetsError.value
     activeTab.value = 'metadata'
     return
   }
@@ -334,6 +349,23 @@ async function handleSave(): Promise<void> {
             placeholder="Brief description of the game system…"
             class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
           />
+        </div>
+        <div>
+          <label for="gs-ruleset-labels" class="mb-1 block text-sm font-medium text-gray-300">Ruleset labels</label>
+          <input
+            id="gs-ruleset-labels"
+            v-model="form.rulesetLabels"
+            type="text"
+            placeholder="e.g. 2014"
+            aria-describedby="gs-ruleset-labels-help"
+            :aria-invalid="rulesetsError ? 'true' : undefined"
+            class="block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-aircane-500 focus:outline-none focus:ring-2 focus:ring-aircane-500"
+          />
+          <p id="gs-ruleset-labels-help" class="mt-1 text-xs text-gray-400">
+            How your books for this system are filed, for example 2014. Leave empty if the system has one edition.
+            Separate several labels with commas.
+          </p>
+          <p v-if="rulesetsError" class="mt-1 text-xs text-red-400">{{ rulesetsError }}</p>
         </div>
       </div>
 

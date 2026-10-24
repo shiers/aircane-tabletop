@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useGameSystemStore } from '../stores/useGameSystemStore'
+import { readRulesetLabels } from '../rulesetLabels'
 
 const props = defineProps<{
   /** The game system definition ID to display. */
@@ -26,6 +27,11 @@ onMounted(async () => {
     }
   }
 })
+
+// The DTO carries the labels; an older API response without them falls back to the definition JSON.
+const rulesetLabels = computed<string[]>(() =>
+  definition.value?.rulesets ?? readRulesetLabels(parsedDefinition.value),
+)
 
 const sections = computed(() => {
   if (!parsedDefinition.value) return []
@@ -95,6 +101,17 @@ function formatSectionLabel(key: string): string {
         <div class="mt-2 flex gap-2">
           <span class="rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-300">{{ definition.license }}</span>
           <span v-if="definition.isBuiltIn" class="rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-300">Built-in</span>
+        </div>
+        <div class="mt-3" data-testid="ruleset-labels">
+          <p class="text-xs font-medium text-gray-400">Ruleset labels</p>
+          <div v-if="rulesetLabels.length > 0" class="mt-1 flex flex-wrap gap-2">
+            <span
+              v-for="label in rulesetLabels"
+              :key="label"
+              class="max-w-full break-words rounded bg-aircane-900/40 px-2 py-0.5 text-xs text-aircane-200"
+            >{{ label }}</span>
+          </div>
+          <p v-else class="mt-1 text-xs text-gray-500">None: rules lookups search every edition of this system.</p>
         </div>
       </div>
 

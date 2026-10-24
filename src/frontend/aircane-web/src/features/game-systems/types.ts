@@ -22,6 +22,11 @@ export interface GameSystemDefinitionSummary {
 export interface GameSystemDefinitionDetail extends GameSystemDefinitionSummary {
   schemaVersion: number
   definitionJson: string
+  /**
+   * Ruleset labels: how the books for this system are filed in the library (e.g. "2014").
+   * Empty or missing means the system has one edition and retrieval applies no ruleset filter.
+   */
+  rulesets?: string[] | null
 }
 
 /** Validation error from the API. */

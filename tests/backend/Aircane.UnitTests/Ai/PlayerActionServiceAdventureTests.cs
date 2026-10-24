@@ -50,7 +50,10 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private PlayerActionService CreateSut(IAdventureSessionService adventureService, bool withPolicyServices = true)
+    private PlayerActionService CreateSut(
+        IAdventureSessionService adventureService,
+        bool withPolicyServices = true,
+        IRetrievalScopeResolver? retrievalScopeResolver = null)
     {
         var roleService = new AiRoleConfigurationService();
         var authorityService = new AiAuthorityConfigurationService();
@@ -73,7 +76,8 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
             NullLogger<PlayerActionService>.Instance,
             adventureService,
             withPolicyServices ? roleService : null,
-            withPolicyServices ? authorityService : null);
+            withPolicyServices ? authorityService : null,
+            retrievalScopeResolver);
     }
 
     private async Task<(Campaign Campaign, Session Session)> SeedCampaignAsync(
@@ -514,6 +518,32 @@ public sealed class PlayerActionServiceAdventureTests : IDisposable
 
         await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 14"));
 
+        var golden = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Ai", "Golden", "solo-adventure-prompt.golden.txt"));
+        Assert.Equal(golden, RenderPrompt(_aiProvider.LastMessages));
+    }
+
+    // As production runs it: the built-in definitions seeded and the retrieval scope resolver wired in. The
+    // fixture's "D&D 5e" / "2014" campaign resolves to the D&D 5e 2014 definition, whose label is "2014", so
+    // the prompt is still byte-for-byte the golden file.
+    [Fact]
+    public async Task SoloAdventurePrompt_IsByteForByteUnchanged_WithTheRetrievalScopeResolver()
+    {
+        var serializer = new Aircane.Application.GameSystems.GameSystemDefinitionSerializer();
+        await new Aircane.Workers.Seeding.GameSystemDefinitionSeeder(
+            _db, serializer, new Aircane.Application.Validation.GameSystemDefinitionValidator(),
+            NullLogger<Aircane.Workers.Seeding.GameSystemDefinitionSeeder>.Instance).SeedAsync();
+        var resolver = new Aircane.Infrastructure.Retrieval.RetrievalScopeResolver(
+            _db, new Aircane.Infrastructure.GameSystems.GameSystemCanonicalizer(_db), serializer);
+
+        var (campaign, session, _) = await SeedRunAsync();
+        var sut = CreateSut(_realAdventureService, retrievalScopeResolver: resolver);
+        _aiProvider.NextOutput = AsksForStealthRoll();
+        await sut.ProcessActionAsync(Request(campaign, session, "I sneak past the guard"));
+        _aiProvider.NextOutput = Output();
+
+        await sut.ProcessActionAsync(Request(campaign, session, "I rolled a 14"));
+
+        Assert.Equal("dnd-5e-2014", _rag.LastRequest?.Scope?.DefinitionIdentifier);
         var golden = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Ai", "Golden", "solo-adventure-prompt.golden.txt"));
         Assert.Equal(golden, RenderPrompt(_aiProvider.LastMessages));
     }

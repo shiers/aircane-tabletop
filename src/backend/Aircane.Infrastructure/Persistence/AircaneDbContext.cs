@@ -517,6 +517,7 @@ public class AircaneDbContext : DbContext
 
             // Ignore rich domain navigation properties - only persist the JSON blob
             entity.Ignore(e => e.Tags);
+            entity.Ignore(e => e.Rulesets);
             entity.Ignore(e => e.DiceConventions);
             entity.Ignore(e => e.ResolutionRules);
             entity.Ignore(e => e.CharacterSchema);

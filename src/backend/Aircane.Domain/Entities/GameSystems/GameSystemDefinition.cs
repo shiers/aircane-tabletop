@@ -36,6 +36,13 @@ public class GameSystemDefinition : EntityBase
     /// <summary>Tags for categorization and search (e.g., "d20", "fantasy", "levels").</summary>
     public IReadOnlyList<string> Tags { get; set; } = [];
 
+    /// <summary>
+    /// The ruleset labels under which this system's books are filed in the library (e.g. "2014").
+    /// Rules retrieval for a campaign on this system only searches documents filed under one of
+    /// these labels. Empty means no ruleset constraint (the system has one edition).
+    /// </summary>
+    public IReadOnlyList<string> Rulesets { get; set; } = [];
+
     /// <summary>Dice conventions defining the system's primary and custom dice mechanics.</summary>
     public IReadOnlyList<DiceConvention> DiceConventions { get; set; } = [];
 

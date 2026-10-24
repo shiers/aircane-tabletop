@@ -260,5 +260,6 @@ public class SystemRegistry : ISystemRegistry
         entity.EncounterBudget = parsed.EncounterBudget;
         entity.AiGuidance = parsed.AiGuidance;
         entity.Tags = parsed.Tags;
+        entity.Rulesets = parsed.Rulesets;
     }
 }

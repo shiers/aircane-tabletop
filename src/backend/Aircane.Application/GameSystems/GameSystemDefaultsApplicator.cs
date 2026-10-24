@@ -48,6 +48,7 @@ public class GameSystemDefaultsApplicator : IGameSystemDefaultsApplicator
 
         // Copy over all existing properties
         result.Tags = definition.Tags;
+        result.Rulesets = definition.Rulesets;
         result.DiceConventions = definition.DiceConventions;
         result.ResolutionRules = definition.ResolutionRules;
         result.CharacterSchema = definition.CharacterSchema;

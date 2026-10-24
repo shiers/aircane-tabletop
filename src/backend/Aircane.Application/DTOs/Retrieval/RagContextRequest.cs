@@ -55,4 +55,10 @@ public sealed record RagContextRequest(
     /// pool (<see cref="TopK"/>) and <see cref="MinRelevanceScore"/> apply, and no reranker is called.
     /// Used for interactive play, where the rerank latency is not acceptable.
     /// </summary>
-    bool SkipReranking = false);
+    bool SkipReranking = false,
+
+    /// <summary>
+    /// The scope resolved from the campaign's game system definition, or null to filter by
+    /// <see cref="GameSystem"/> and <see cref="Ruleset"/>. See <see cref="SearchRequest.Scope"/>.
+    /// </summary>
+    RetrievalScope? Scope = null);

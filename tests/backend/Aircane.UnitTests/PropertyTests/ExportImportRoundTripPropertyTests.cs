@@ -59,6 +59,11 @@ public class ExportImportRoundTripPropertyTests
         from tags in Gen.ListOf(count, Gen.Elements("d20", "fantasy", "levels", "narrative", "horror", "sci-fi"))
         select (IReadOnlyList<string>)tags.Distinct().ToList();
 
+    private static Gen<IReadOnlyList<string>> RulesetsList =>
+        from count in Gen.Choose(0, 3)
+        from rulesets in Gen.ListOf(count, Gen.Elements("2014", "2024", "Remaster", "D&D 5e (2014)", "Second Edition", "Core Rules \"Revised\""))
+        select (IReadOnlyList<string>)rulesets.Distinct().ToList();
+
     private static Gen<DiceConventionType> ValidDiceConventionType =>
         Gen.Elements(
             DiceConventionType.SingleDieModifier,
@@ -252,6 +257,7 @@ public class ExportImportRoundTripPropertyTests
         from genre in OptionalGenre
         from description in OptionalDescription
         from tags in TagsList
+        from rulesets in RulesetsList
         from conventions in RoundTripDiceConventions
         from rules in RoundTripResolutionRules(conventions)
         from conditions in ValidConditionSet
@@ -261,6 +267,7 @@ public class ExportImportRoundTripPropertyTests
         select new GameSystemDefinition(identifier, name, version, 1, license, publisher, genre, description)
         {
             Tags = tags,
+            Rulesets = rulesets,
             DiceConventions = conventions,
             ResolutionRules = rules,
             ConditionSet = conditions,
@@ -320,6 +327,7 @@ public class ExportImportRoundTripPropertyTests
         Assert.Equal(definition.Genre, imported.Genre);
         Assert.Equal(definition.Description, imported.Description);
         Assert.Equal(definition.Tags, imported.Tags);
+        Assert.Equal(definition.Rulesets, imported.Rulesets);
     }
 
     /// <summary>

@@ -36,6 +36,7 @@ This document describes how Aircane turns imported rulebooks into searchable con
 | Retrieval | `src/backend/Aircane.Infrastructure/Retrieval/RetrievalService.cs` |
 | Keyword term extraction | `src/backend/Aircane.Infrastructure/Retrieval/KeywordQueryParser.cs` |
 | Ruleset normalization | `src/backend/Aircane.Infrastructure/Retrieval/RulesetNormalizer.cs` |
+| Retrieval scope from a campaign's game system definition | `src/backend/Aircane.Infrastructure/Retrieval/RetrievalScopeResolver.cs` |
 | Text normalisation (spaced letters, run-togethers) | `src/backend/Aircane.Infrastructure/DocumentProcessing/PdfPigTextExtractor.cs` |
 | Context assembly | `src/backend/Aircane.Infrastructure/Retrieval/RagContextBuilder.cs` |
 | Reranking providers (None / Ollama / Cohere) | `src/backend/Aircane.Infrastructure/Retrieval/Reranking/` (interface: `Aircane.Application/Retrieval/IRerankingProvider.cs`) |
@@ -107,11 +108,32 @@ This document describes how Aircane turns imported rulebooks into searchable con
 - **Visibility:** limited to the levels allowed for the caller's maximum visibility (`Public` < `Revealed` < `DMOnly` < `Hidden`).
 - **Disabled documents** (`IsDisabled`) are excluded.
 - **Optional filters:** `SourceType` (exact match) and `Ruleset` (normalized, see below).
-- **Game system:** expanded via `IGameSystemCanonicalizer.GetEquivalentNamesAsync` to the definition's name, its identifier and all its aliases. A document matches if its stored game system is any of those. This means canonicalized uploads and alias-tagged built-ins (`D&D 5e`) are both found by one filter. If no definition matches, the filter is an exact match on the given value.
+- **Game system:** expanded via `IGameSystemCanonicalizer.GetEquivalentNamesAsync` to the definition's name, its identifier and all its aliases. A document matches if its stored game system is any of those. This means canonicalized uploads and alias-tagged built-ins (`D&D 5e`) are both found by one filter. If no definition matches, the filter is the given value alone. The comparison is case-insensitive and ignores padding (`lower(trim(GameSystem))`). A document with a blank game system never matches a game-system filter.
 - **Ruleset:** normalized by `RulesetNormalizer` (trimmed, lower-cased, whitespace collapsed) and expanded to its alias group. The document's ruleset is compared as `lower(trim(Ruleset))`, so case and padding never matter.
   - Alias groups: `2014` (`5e 2014`, `d&d 5e 2014`, `dnd 2014`, ...), `2024` (`5.5e`, `one dnd`, `d&d 2024`, ...) and `remaster` (`pf2e remaster`, `pathfinder 2e remaster`, `2023 remaster`, ...).
   - A value outside every group (e.g. `PHB`) is matched case-insensitively against the stored value.
   - A genuinely misspelled value still matches nothing, which is why the UI offers a dropdown (section 4).
+- **Definition scope:** when the request carries a `RetrievalScope` (below), the scope replaces the game system and ruleset strings as the filter.
+
+### Retrieval scope for a campaign (`RetrievalScopeResolver`)
+
+A campaign stores its game system and ruleset as free text. A campaign created from the game system selector stores the definition's **name** as its game system and the definition's **version** (for example `1.0.0`) as its ruleset. No book is filed under `1.0.0`, so filtering by the campaign's ruleset found nothing, not even the built-in SRD. The AI DM got no rules context for any such campaign.
+
+The resolver turns a campaign into a scope, in this order:
+
+1. The campaign's `GameSystemDefinitionId`, when set, even if the definition has been deactivated.
+2. Otherwise the campaign's game system text, matched to an active definition by name, identifier or alias (the canonicalizer).
+3. Otherwise there is no scope, and retrieval filters by the campaign's own strings exactly as before.
+
+When a definition is resolved:
+- **Game systems** come from the definition: its name, identifier and aliases.
+- **Rulesets** come from the definition's `metadata.rulesets` labels (for example D&D 5e 2014 declares `["2014"]`, Pathfinder 2e Remaster `["Remaster"]`), expanded through the `RulesetNormalizer` alias groups. A definition that declares no labels (Generic Freeform, the starter templates, most imported systems) has **no ruleset filter**: every edition of that system is searched.
+- **The campaign's own ruleset is ignored.**
+- **Blank ruleset on a document (judgment call):** a document whose ruleset is blank and whose game system matches is included, as "edition unspecified". A folder registered with no default ruleset produces such documents. This applies only to a definition scope; the campaign-strings path and a ruleset picked in Rules Lookup still exclude them, as before.
+- **Blank game system on a document (judgment call):** still excluded. Nothing tells us which system it belongs to.
+- The resolved scope is logged at Debug (definition identifier and declared rulesets, never document text).
+
+`metadata.rulesets` is an optional, additive list (at most 10 labels, each at most 60 characters). A definition without it parses as "no labels", so `schemaVersion` stays 1. The built-in seeds declare their labels, and on startup the seeder adds them to built-in definitions stored before the field existed (it leaves a stored definition that already declares labels alone).
 
 ### Keyword search
 - `KeywordQueryParser` turns the question into terms:
@@ -184,6 +206,7 @@ Reranking is optional and off by default (provider "None"). It re-scores the ret
   - The game system dropdown is populated from the active Game System Definitions (definition name as value), plus "Any game system".
   - The ruleset dropdown (default "Any ruleset") is populated from `GET /api/ai/rules-question/rulesets?gameSystem=...`. This returns the distinct ruleset values on enabled documents, limited to the selected game system (alias-aware), and is reloaded whenever the game system changes. A selected ruleset the new game system doesn't have is cleared.
 - **Endpoint:** `RulesQuestionController` requires an authenticated user and resolves the caller's role (see below).
+- **Campaign:** the request may carry a `campaignId`. With a campaign and no ruleset picked, retrieval uses the campaign's definition scope (section 2). A ruleset the user picked is used exactly as given, campaign or not. The Rules Lookup UI does not send a campaign today.
 - **`RulesQuestionService.AskAsync`:**
   - Calls `RagContextBuilder` with `TopK: 10` (`RerankCandidateTopK: 25` and `PostRerankTopN: 7` when reranking is active), `MaxContextChars: 8000`, `MinRelevanceScore: 0.4` and the caller's role as `RequesterRole`.
   - `HasSourceSupport` = at least one chunk was included.
@@ -199,7 +222,9 @@ The controller reads the role claim (`ClaimTypes.Role`, issued by `ParticipantTo
 - `AskAsync` defaults to `Player`, so a caller must opt in to DM-only content.
 
 ### Other consumer
-`PlayerActionService` (AI DM) uses the same builder and the same `TopK: 10` / `MinRelevanceScore: 0.4` and reranking pool settings, but with `RequesterRole: Host`, since the AI DM narrates for the whole table. It takes `GameSystem` and `Ruleset` from the campaign, and the player's action text is the query.
+`PlayerActionService` (AI DM) uses the same builder and the same `TopK: 10` / `MinRelevanceScore: 0.4` and reranking pool settings, but with `RequesterRole: Host`, since the AI DM narrates for the whole table. The player's action text is the query. Retrieval is scoped by the campaign's definition when it resolves to one (section 2), and by the campaign's `GameSystem` and `Ruleset` otherwise. A failure to resolve falls back to the campaign's strings and never breaks the turn.
+
+The AI DM prompt's `Ruleset:` line shows, for a resolved definition, its first declared ruleset label (or the definition's name when it declares none) instead of the campaign's stored ruleset, so it no longer prints `Ruleset: 1.0.0`. An unresolved campaign prints its own ruleset, as before. The `Game System:` line is unchanged.
 
 ## 5. Recent fixes (2026-10-09)
 
@@ -243,3 +268,5 @@ Tests: `RetrievalServiceTests` (scoring, source type, ruleset aliases, available
 | 6 | Page numbers are PDF page indexes | Citations can differ from the printed page (PHB Actor feat: PDF p.154, printed p.165) | |
 | 7 | Ollama reranking is slow | One chat-model call per candidate (about 2 s each warm on the dev machine), so a 25-candidate pool adds tens of seconds | Use Cohere, a faster model, a smaller `RerankCandidateTopK`, or raise `OLLAMA_NUM_PARALLEL`. |
 | 8 | `docs/known-limitations.md` is partly stale | It says there's no cloud embedding provider and no alias table; both now exist | Update it alongside this doc. |
+| 9 | A folder registered with no default game system produces unreachable documents | Its documents get a blank game system, which no game-system filter matches, so the AI DM and any Rules Lookup with a game system never retrieve them | Follow-up: require a default game system on folder registration, or let the host set it during scan review. |
+| 10 | Forge adventures are indexed under the definition's name as their ruleset | An adventure generated from a definition is filed with ruleset `Dungeons & Dragons 5th Edition (2014)`, which a definition scope with labels (`2014`) does not match | Indexing is a manual step and the adventure context is injected into the prompt during a run, so the impact is small. Follow-up: index with the definition's label. |

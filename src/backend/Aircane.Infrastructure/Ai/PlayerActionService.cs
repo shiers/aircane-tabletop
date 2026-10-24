@@ -37,11 +37,14 @@ public sealed class PlayerActionService : IPlayerActionService
     private readonly IAdventureSessionService? _adventureSessions;
     private readonly IAiRoleConfigurationService? _roleService;
     private readonly IAiAuthorityService? _authorityService;
+    private readonly IRetrievalScopeResolver? _retrievalScopeResolver;
 
     /// <summary>
     /// The solo-adventure collaborators are optional trailing parameters so the service still works
     /// (without adventure support) where they are not registered. When <paramref name="adventureSessionService"/>
     /// is supplied but a role/authority service is not, adventure actions fail closed.
+    /// Without <paramref name="retrievalScopeResolver"/>, retrieval filters by the campaign's own
+    /// game system and ruleset strings.
     /// </summary>
     public PlayerActionService(
         ICampaignService campaignService,
@@ -56,8 +59,10 @@ public sealed class PlayerActionService : IPlayerActionService
         ILogger<PlayerActionService> logger,
         IAdventureSessionService? adventureSessionService = null,
         IAiRoleConfigurationService? roleService = null,
-        IAiAuthorityService? authorityService = null)
+        IAiAuthorityService? authorityService = null,
+        IRetrievalScopeResolver? retrievalScopeResolver = null)
     {
+        _retrievalScopeResolver = retrievalScopeResolver;
         _adventureSessions = adventureSessionService;
         _roleService = roleService;
         _authorityService = authorityService;
@@ -98,7 +103,10 @@ public sealed class PlayerActionService : IPlayerActionService
         var adventureContext = await BuildAdventureContextAsync(request.CampaignId, cancellationToken);
         var inAdventure = adventureContext is not null;
 
-        // 3a. Build RAG context (rules + adventure context)
+        // 3a. Build RAG context (rules + adventure context). When the campaign resolves to a game
+        // system definition, the definition scopes retrieval and the campaign's free-text ruleset
+        // (for a campaign created from a definition, the definition's version) is ignored.
+        var retrievalScope = await ResolveRetrievalScopeAsync(campaign, cancellationToken);
         var ragRequest = new RagContextRequest(
             Query: request.ActionText,
             GameSystem: campaign.GameSystem,
@@ -113,7 +121,8 @@ public sealed class PlayerActionService : IPlayerActionService
             // standard pool and the standard score floor apply instead.
             RerankCandidateTopK: inAdventure ? 10 : 25,
             PostRerankTopN: inAdventure ? null : 7,
-            SkipReranking: inAdventure);
+            SkipReranking: inAdventure,
+            Scope: retrievalScope);
 
         var ragResult = await _ragContextBuilder.BuildContextAsync(ragRequest, cancellationToken);
 
@@ -122,7 +131,8 @@ public sealed class PlayerActionService : IPlayerActionService
         var combatContext = await BuildCombatContextAsync(request.CampaignId, state, cancellationToken);
 
         // 4. Build AI prompt with state + adventure + combat + context + player action
-        var messages = BuildPromptMessages(request, campaign, state, ragResult, combatContext, adventureContext);
+        var messages = BuildPromptMessages(request, campaign, state, ragResult, combatContext, adventureContext,
+            retrievalScope?.DisplayRuleset);
 
         // 5. Call AI provider for structured output
         var aiOutput = await _aiProvider.StructuredChatCompletionAsync(messages, cancellationToken);
@@ -226,6 +236,32 @@ public sealed class PlayerActionService : IPlayerActionService
         }
 
         return _aiContextAdapter.BuildCombatContext(encounter, definition);
+    }
+
+    /// <summary>
+    /// Resolves the library scope for the campaign's rules retrieval from its game system definition,
+    /// or null when it has none (retrieval then filters by the campaign's own strings, as before).
+    /// Non-fatal: a failure falls back to the campaign's strings and must never break the AI DM loop.
+    /// </summary>
+    private async Task<RetrievalScope?> ResolveRetrievalScopeAsync(
+        Application.DTOs.Campaigns.CampaignDto campaign,
+        CancellationToken cancellationToken)
+    {
+        if (_retrievalScopeResolver is null)
+            return null;
+
+        try
+        {
+            return await _retrievalScopeResolver.ResolveAsync(
+                campaign.GameSystemDefinitionId, campaign.GameSystem, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "Could not resolve the retrieval scope for campaign {CampaignId}; using its game system and ruleset text.",
+                campaign.Id);
+            return null;
+        }
     }
 
     /// <summary>
@@ -434,20 +470,25 @@ public sealed class PlayerActionService : IPlayerActionService
     /// one, and <see cref="AdventureContext.PlayersWithoutCharacter"/> names the players the group
     /// no-character block covers (left out when everyone has a character). Ignored when its text is empty.
     /// </param>
+    /// <param name="rulesetLabel">
+    /// The value for the prompt's "Ruleset:" line when the campaign resolved to a game system
+    /// definition (<see cref="RetrievalScope.DisplayRuleset"/>); null prints the campaign's ruleset.
+    /// </param>
     public static IReadOnlyList<AiMessage> BuildPromptMessages(
         PlayerActionRequest request,
         Application.DTOs.Campaigns.CampaignDto campaign,
         Application.DTOs.CampaignState.CampaignStateDto state,
         RagContextResult ragResult,
         string? combatContext = null,
-        AdventureContext? adventure = null)
+        AdventureContext? adventure = null,
+        string? rulesetLabel = null)
     {
         var inAdventure = !string.IsNullOrWhiteSpace(adventure?.Text);
         var groupRun = inAdventure && adventure!.IsGroup;
         var messages = new List<AiMessage>();
 
         // System message with AI DM instructions
-        messages.Add(AiMessage.System(BuildSystemPrompt(campaign)));
+        messages.Add(AiMessage.System(BuildSystemPrompt(campaign, rulesetLabel)));
 
         // Campaign state context
         var stateContext = BuildStateContext(state);
@@ -689,12 +730,17 @@ public sealed class PlayerActionService : IPlayerActionService
     /// <summary>
     /// Builds the system prompt that instructs the AI on how to act as a DM.
     /// </summary>
-    public static string BuildSystemPrompt(Application.DTOs.Campaigns.CampaignDto campaign)
+    /// <param name="campaign">The campaign being played.</param>
+    /// <param name="rulesetLabel">
+    /// The resolved definition's ruleset label, printed instead of the campaign's ruleset (which, for a
+    /// campaign created from a definition, is the definition's version); null prints the campaign's.
+    /// </param>
+    public static string BuildSystemPrompt(Application.DTOs.Campaigns.CampaignDto campaign, string? rulesetLabel = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are an AI Dungeon Master for a tabletop RPG session.");
         sb.AppendLine($"Game System: {campaign.GameSystem}");
-        sb.AppendLine($"Ruleset: {campaign.Ruleset}");
+        sb.AppendLine($"Ruleset: {rulesetLabel ?? campaign.Ruleset}");
         sb.AppendLine($"AI Role: {campaign.AiRole}");
         sb.AppendLine();
         sb.AppendLine("INSTRUCTIONS:");

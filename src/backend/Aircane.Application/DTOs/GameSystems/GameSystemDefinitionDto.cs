@@ -18,7 +18,8 @@ public sealed record GameSystemDefinitionDto(
     bool IsBuiltIn,
     string DefinitionJson,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<string>? Rulesets = null);
 
 /// <summary>
 /// Summary DTO for listing game system definitions without full JSON.

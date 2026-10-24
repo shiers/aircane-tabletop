@@ -70,6 +70,46 @@ public sealed class GameSystemDefinitionSeeder
         {
             _logger.LogError(ex, "GameSystemDefinitionSeeder: failed to seed game-system aliases.");
         }
+
+        foreach (var definition in seeds.Where(d => d.Rulesets.Count > 0))
+        {
+            try
+            {
+                await BackfillRulesetsAsync(definition, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "GameSystemDefinitionSeeder: failed to backfill ruleset labels for '{Identifier}'.",
+                    definition.Identifier);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Adds the seed's ruleset labels to a built-in definition stored before ruleset labels existed
+    /// (idempotent). SeedOneAsync leaves an existing definition untouched, so without this an existing
+    /// install would never get them. A stored definition that already declares rulesets is left alone.
+    /// The definition's version is unchanged, so no version snapshot is added.
+    /// </summary>
+    private async Task BackfillRulesetsAsync(GameSystemDefinition seed, CancellationToken ct)
+    {
+        var stored = await _db.GameSystemDefinitions.FirstOrDefaultAsync(d => d.Id == seed.Id, ct);
+        if (stored is null || !stored.IsBuiltIn)
+            return;
+
+        var parsed = _serializer.ParseJson(stored.DefinitionJson);
+        if (!parsed.IsSuccess || parsed.Definition is null || parsed.Definition.Rulesets.Count > 0)
+            return;
+
+        parsed.Definition.Rulesets = seed.Rulesets;
+        stored.DefinitionJson = _serializer.PrintJson(parsed.Definition);
+        stored.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "GameSystemDefinitionSeeder: added ruleset labels [{Rulesets}] to built-in definition '{Identifier}'.",
+            string.Join(", ", seed.Rulesets), seed.Identifier);
     }
 
     /// <summary>

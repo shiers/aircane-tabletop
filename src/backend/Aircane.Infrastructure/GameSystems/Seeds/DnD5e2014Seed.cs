@@ -16,6 +16,11 @@ public static class DnD5e2014Seed
     public static readonly Guid DefinitionId = new("10000000-0000-0000-0000-000000000001");
 
     /// <summary>
+    /// The ruleset label the 2014 books are filed under (the built-in SRD manifest uses "2014").
+    /// </summary>
+    public static readonly IReadOnlyList<string> Rulesets = ["2014"];
+
+    /// <summary>
     /// Creates the complete D&D 5e 2014 Game System Definition.
     /// </summary>
     public static GameSystemDefinition Create()
@@ -33,6 +38,7 @@ public static class DnD5e2014Seed
             IsBuiltIn = true,
             IsActive = true,
             Tags = new List<string> { "d20", "fantasy", "levels", "classes" },
+            Rulesets = Rulesets,
             DiceConventions = CreateDiceConventions(),
             ResolutionRules = CreateResolutionRules(),
             CharacterSchema = CreateCharacterSchema(),

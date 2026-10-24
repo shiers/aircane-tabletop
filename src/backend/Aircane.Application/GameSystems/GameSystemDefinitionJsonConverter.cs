@@ -46,6 +46,10 @@ internal class GameSystemDefinitionJsonConverter : JsonConverter<GameSystemDefin
         var tags = metadata.HasValue && metadata.Value.TryGetProperty("tags", out var tagsElement)
             ? DeserializeList<string>(tagsElement)
             : new List<string>();
+        // Optional and additive: a definition written before rulesets existed reads as "no constraint".
+        var rulesets = metadata.HasValue && metadata.Value.TryGetProperty("rulesets", out var rulesetsElement)
+            ? DeserializeList<string>(rulesetsElement)
+            : new List<string>();
 
         // Extract schema version
         var schemaVersion = 1;
@@ -66,7 +70,8 @@ internal class GameSystemDefinitionJsonConverter : JsonConverter<GameSystemDefin
             genre: genre,
             description: description)
         {
-            Tags = tags
+            Tags = tags,
+            Rulesets = rulesets
         };
 
         // Parse dice conventions

@@ -58,8 +58,8 @@ public sealed class RetrievalService : IRetrievalService
         // natural-language question ("explain actor skill").
         var terms = KeywordQueryParser.ExtractTerms(request.Query);
 
-        var gameSystems = await ResolveGameSystemsAsync(request.GameSystem, cancellationToken);
-        var query = BuildFilteredQuery(request, gameSystems, allowedVisibilities);
+        var filter = await ResolveFilterAsync(request, cancellationToken);
+        var query = BuildFilteredQuery(request, filter, allowedVisibilities);
 
         var results = await query
             .Where(BuildAnyTermMatch(terms))
@@ -116,8 +116,8 @@ public sealed class RetrievalService : IRetrievalService
         var vector = new Pgvector.Vector(embedding);
 
         var allowedVisibilities = GetAllowedVisibilities(maxVisibility);
-        var gameSystems = await ResolveGameSystemsAsync(request.GameSystem, cancellationToken);
-        var query = BuildFilteredQuery(request, gameSystems, allowedVisibilities);
+        var filter = await ResolveFilterAsync(request, cancellationToken);
+        var query = BuildFilteredQuery(request, filter, allowedVisibilities);
 
         var activeProvider = _embeddingProvider.ProviderName;
         var activeModel = _embeddingProvider.ModelName;
@@ -233,11 +233,11 @@ public sealed class RetrievalService : IRetrievalService
         string? gameSystem,
         CancellationToken cancellationToken = default)
     {
-        var gameSystems = await ResolveGameSystemsAsync(gameSystem, cancellationToken);
+        var gameSystems = NormalizeGameSystems(await ResolveGameSystemsAsync(gameSystem, cancellationToken));
 
         var query = _db.SourceDocuments.Where(d => !d.IsDisabled && d.Ruleset != "");
         if (gameSystems.Count > 0)
-            query = query.Where(d => gameSystems.Contains(d.GameSystem));
+            query = query.Where(d => gameSystems.Contains(d.GameSystem.Trim().ToLower()));
 
         var rulesets = await query
             .Select(d => d.Ruleset.Trim())
@@ -269,12 +269,11 @@ public sealed class RetrievalService : IRetrievalService
     /// </summary>
     private IQueryable<ChunkWithDoc> BuildFilteredQuery(
         SearchRequest request,
-        IReadOnlyList<string> gameSystems,
+        RetrievalFilter filter,
         IReadOnlyList<ContentVisibility> allowedVisibilities)
     {
-        var rulesets = string.IsNullOrWhiteSpace(request.Ruleset)
-            ? []
-            : RulesetNormalizer.GetEquivalents(request.Ruleset);
+        var gameSystems = filter.GameSystems;
+        var rulesets = filter.Rulesets;
 
         var query = _db.DocumentChunks
             .Join(
@@ -289,15 +288,53 @@ public sealed class RetrievalService : IRetrievalService
         if (request.SourceType.HasValue)
             query = query.Where(c => c.Doc.SourceType == request.SourceType.Value);
 
+        // Case-insensitive. A document with a blank game system never matches a game-system filter.
         if (gameSystems.Count > 0)
-            query = query.Where(c => gameSystems.Contains(c.Doc.GameSystem));
+            query = query.Where(c => gameSystems.Contains(c.Doc.GameSystem.Trim().ToLower()));
 
         // Case- and whitespace-insensitive, and expanded to known aliases ("2014" == "D&D 5e 2014").
+        // For a definition scope, a document with a blank ruleset (edition unspecified) is included:
+        // its game system already matched above.
         if (rulesets.Count > 0)
-            query = query.Where(c => rulesets.Contains(c.Doc.Ruleset.Trim().ToLower()));
+        {
+            query = filter.IncludeBlankRuleset
+                ? query.Where(c => rulesets.Contains(c.Doc.Ruleset.Trim().ToLower()) || c.Doc.Ruleset.Trim() == "")
+                : query.Where(c => rulesets.Contains(c.Doc.Ruleset.Trim().ToLower()));
+        }
 
         return query;
     }
+
+    /// <summary>The metadata filter a search applies: lower-cased game systems and normalized rulesets.</summary>
+    private sealed record RetrievalFilter(
+        IReadOnlyList<string> GameSystems,
+        IReadOnlyList<string> Rulesets,
+        bool IncludeBlankRuleset);
+
+    /// <summary>
+    /// Uses the request's definition scope when it has one; otherwise the request's free-text game
+    /// system (expanded through the canonicalizer) and ruleset (expanded through the alias groups).
+    /// </summary>
+    private async Task<RetrievalFilter> ResolveFilterAsync(SearchRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Scope is { } scope)
+            return new RetrievalFilter(NormalizeGameSystems(scope.GameSystems), scope.Rulesets, IncludeBlankRuleset: true);
+
+        var gameSystems = await ResolveGameSystemsAsync(request.GameSystem, cancellationToken);
+        var rulesets = string.IsNullOrWhiteSpace(request.Ruleset)
+            ? []
+            : RulesetNormalizer.GetEquivalents(request.Ruleset);
+
+        return new RetrievalFilter(NormalizeGameSystems(gameSystems), rulesets, IncludeBlankRuleset: false);
+    }
+
+    /// <summary>Trims and lower-cases game-system spellings for a case-insensitive comparison.</summary>
+    private static IReadOnlyList<string> NormalizeGameSystems(IEnumerable<string> gameSystems) =>
+        gameSystems
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
 
     /// <summary>
     /// Case-insensitive substring match of one term against a chunk's text or section title.

@@ -17,6 +17,11 @@ public static class Pathfinder2eRemasterSeed
     /// <summary>Well-known deterministic ID for the built-in PF2e Remaster definition.</summary>
     public static readonly Guid DefinitionId = new("10000000-0000-0000-0000-000000000003");
 
+    /// <summary>
+    /// The ruleset label the Remaster books are filed under (the built-in bundle manifest uses "Remaster").
+    /// </summary>
+    public static readonly IReadOnlyList<string> Rulesets = ["Remaster"];
+
     /// <summary>Creates the complete Pathfinder 2e (Remaster) Game System Definition.</summary>
     public static GameSystemDefinition Create()
     {
@@ -33,6 +38,7 @@ public static class Pathfinder2eRemasterSeed
             IsBuiltIn = true,
             IsActive = true,
             Tags = new List<string> { "d20", "fantasy", "levels", "classes", "degrees-of-success", "three-action" },
+            Rulesets = Rulesets,
             DiceConventions = CreateDiceConventions(),
             ResolutionRules = CreateResolutionRules(),
             CharacterSchema = CreateCharacterSchema(),

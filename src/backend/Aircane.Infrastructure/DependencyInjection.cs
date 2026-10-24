@@ -169,6 +169,7 @@ public static class DependencyInjection
         services.AddScoped<ISystemRegistry, SystemRegistry>();
         services.AddScoped<IGameSystemMigrationService, GameSystemMigrationService>();
         services.AddScoped<IGameSystemCanonicalizer, GameSystemCanonicalizer>();
+        services.AddScoped<IRetrievalScopeResolver, RetrievalScopeResolver>();
         services.AddScoped<IGameSystemAliasService, GameSystemAliasService>();
         services.AddSingleton<IScanCandidateAnalyzer, ScanCandidateAnalyzer>();
 

@@ -502,7 +502,8 @@ public sealed class GameSystemsController : ControllerBase
             IsBuiltIn: definition.IsBuiltIn,
             DefinitionJson: definition.DefinitionJson,
             CreatedAt: definition.CreatedAt,
-            UpdatedAt: definition.UpdatedAt);
+            UpdatedAt: definition.UpdatedAt,
+            Rulesets: definition.Rulesets);
     }
 
     private static string? DetermineFormat(string fileName, string contentType)

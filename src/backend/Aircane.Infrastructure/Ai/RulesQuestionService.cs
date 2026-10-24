@@ -20,17 +20,24 @@ public sealed class RulesQuestionService : IRulesQuestionService
     private readonly IAiProvider _aiProvider;
     private readonly AircaneDbContext _db;
     private readonly ILogger<RulesQuestionService> _logger;
+    private readonly IRetrievalScopeResolver? _retrievalScopeResolver;
 
+    /// <summary>
+    /// Without <paramref name="retrievalScopeResolver"/>, a question that names a campaign is scoped by
+    /// the request's own game system and ruleset only.
+    /// </summary>
     public RulesQuestionService(
         IRagContextBuilder ragContextBuilder,
         IAiProvider aiProvider,
         AircaneDbContext db,
-        ILogger<RulesQuestionService> logger)
+        ILogger<RulesQuestionService> logger,
+        IRetrievalScopeResolver? retrievalScopeResolver = null)
     {
         _ragContextBuilder = ragContextBuilder;
         _aiProvider = aiProvider;
         _db = db;
         _logger = logger;
+        _retrievalScopeResolver = retrievalScopeResolver;
     }
 
     /// <inheritdoc />
@@ -46,6 +53,14 @@ public sealed class RulesQuestionService : IRulesQuestionService
             "Processing rules question: {Question} (GameSystem={GameSystem}, Ruleset={Ruleset})",
             request.Question, request.GameSystem, request.Ruleset);
 
+        // A question asked for a campaign with no ruleset picked is scoped by the campaign's game system
+        // definition. A ruleset the user picked is used exactly as given.
+        var scope = request.CampaignId is { } campaignId
+                && string.IsNullOrWhiteSpace(request.Ruleset)
+                && _retrievalScopeResolver is not null
+            ? await _retrievalScopeResolver.ResolveForCampaignAsync(campaignId, cancellationToken)
+            : null;
+
         // Retrieve relevant rules context
         var ragRequest = new RagContextRequest(
             Query: request.Question,
@@ -57,7 +72,8 @@ public sealed class RulesQuestionService : IRulesQuestionService
             MinRelevanceScore: 0.4, // Discard low-confidence chunks to reduce hallucination
             // With reranking active: retrieve 25 candidates, keep the best 7 after reranking.
             RerankCandidateTopK: 25,
-            PostRerankTopN: 7);
+            PostRerankTopN: 7,
+            Scope: scope);
 
         var ragResult = await _ragContextBuilder.BuildContextAsync(ragRequest, cancellationToken);
 

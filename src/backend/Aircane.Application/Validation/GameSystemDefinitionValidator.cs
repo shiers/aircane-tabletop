@@ -11,6 +11,12 @@ namespace Aircane.Application.Validation;
 /// </summary>
 public sealed class GameSystemDefinitionValidator : AbstractValidator<GameSystemDefinition>
 {
+    /// <summary>Maximum number of entries in <see cref="GameSystemDefinition.Rulesets"/>.</summary>
+    public const int MaxRulesets = 10;
+
+    /// <summary>Maximum length of a single ruleset label.</summary>
+    public const int MaxRulesetLength = 60;
+
     public GameSystemDefinitionValidator()
     {
         // Required metadata fields
@@ -25,6 +31,16 @@ public sealed class GameSystemDefinitionValidator : AbstractValidator<GameSystem
 
         RuleFor(x => x.SchemaVersion)
             .Equal(1).WithMessage("SchemaVersion must be 1.");
+
+        // Ruleset labels (optional): how this system's books are filed in the library.
+        RuleFor(x => x.Rulesets)
+            .Must(r => r.Count <= MaxRulesets)
+            .WithMessage($"At most {MaxRulesets} ruleset labels are allowed.");
+
+        RuleForEach(x => x.Rulesets)
+            .NotEmpty().WithMessage("Ruleset labels must not be empty.")
+            .MaximumLength(MaxRulesetLength)
+            .WithMessage($"Ruleset labels must not exceed {MaxRulesetLength} characters.");
 
         // Dice conventions validation
         RuleForEach(x => x.DiceConventions)

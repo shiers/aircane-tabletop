@@ -203,6 +203,14 @@ public class GameSystemDefinitionSerializer : IGameSystemDefinitionSerializer
             writer.WriteEndArray();
         }
 
+        if (definition.Rulesets.Count > 0)
+        {
+            writer.WriteStartArray("rulesets");
+            foreach (var ruleset in definition.Rulesets)
+                writer.WriteStringValue(ruleset);
+            writer.WriteEndArray();
+        }
+
         writer.WriteEndObject();
     }
 

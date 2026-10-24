@@ -63,7 +63,8 @@ public sealed class RagContextBuilder : IRagContextBuilder
             Query: request.Query,
             TopK: topK,
             GameSystem: request.GameSystem,
-            Ruleset: request.Ruleset);
+            Ruleset: request.Ruleset,
+            Scope: request.Scope);
 
         var chunks = await _retrievalService.SearchAsync(
             searchRequest,
